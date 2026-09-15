@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sessionkit import AuthenticationError, AuthError, DuplicateUser
 from sessionkit import UserNotFound as AuthUserNotFound
@@ -43,6 +44,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Invoice System API", lifespan=lifespan)
+
+# The web client (web/) is a separate origin in dev (Vite on its own port)
+# and likely in prod too. Auth is a Bearer token, not a cookie, so there's no
+# ambient credential for a wildcard origin to ride along with - allow_origins
+# defaults to "*" with allow_credentials=False (the two are mutually
+# exclusive per the CORS spec anyway). Tighten via INVOICE_SYSTEM_CORS_ORIGINS
+# (comma-separated) once this is deployed somewhere real.
+_cors_origins = os.environ.get("INVOICE_SYSTEM_CORS_ORIGINS", "*")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in _cors_origins.split(",")] if _cors_origins != "*" else ["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def get_application(request: Request) -> Application:

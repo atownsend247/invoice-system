@@ -16,6 +16,13 @@ with the bundled `sessionkit` CLI: `uv run sessionkit add you@example.com`
 (prompts for a password), against the file `INVOICE_SYSTEM_AUTH_DB` points
 at (default `auth.db`).
 
+## CORS
+
+`CORSMiddleware` allows every origin by default (`INVOICE_SYSTEM_CORS_ORIGINS`
+to restrict it — comma-separated) — see `CLAUDE.md` for why that's an
+acceptable default for a Bearer-token API. Needed so `web/` (a different
+port in dev, and likely a different origin in prod) can call this API at all.
+
 ## Endpoints
 
 | Method | Path | Auth | Purpose |
@@ -63,6 +70,5 @@ local, trusted tool (see `CLAUDE.md`).
 
 ## Not yet implemented
 
-Payments, marking an invoice `paid`/`overdue`, TOTP/2FA endpoints (sessionkit
-supports it; no routes expose it yet), and the web client — see
-`docs/roadmap.md`.
+Payments, marking an invoice `paid`/`overdue`, and TOTP/2FA endpoints
+(sessionkit supports it; no routes expose it yet) — see `docs/roadmap.md`.

@@ -4,10 +4,11 @@ A freelancer/small-business billing tool: Account (the business you invoice)
 → Quote → Invoice, where a quote converts into an invoice rather than the
 two being created independently. Both are exportable as PDFs.
 
-**Status: backend done, no web client yet.** Python backend (SQLite storage,
-FastAPI behind login via [sessionkit](https://github.com/atownsend247/bb-py-sessionkit),
-plus a mirrored CLI) is implemented and tested — see `docs/development.md`
-to run it and `docs/roadmap.md` for what's next.
+**Status: backend + web client done, no payments yet.** Python backend
+(SQLite storage, FastAPI behind login via
+[sessionkit](https://github.com/atownsend247/bb-py-sessionkit), plus a
+mirrored CLI) and a React/Vite SPA (`web/`) are implemented and tested —
+see `docs/development.md` to run it and `docs/roadmap.md` for what's next.
 
 ## Docs
 
@@ -23,3 +24,5 @@ to run it and `docs/roadmap.md` for what's next.
   coverage, CI shape.
 - [`docs/extracting-reusable-packages.md`](docs/extracting-reusable-packages.md)
   — playbook for carving a cross-cutting concern into its own package.
+- [`web/README.md`](web/README.md) — the web client: where things are, how
+  to run/test/build it.

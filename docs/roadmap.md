@@ -36,9 +36,13 @@
       `Depends(get_current_user)` except `/healthz` and `POST /auth/login`.
 - [ ] TOTP/2FA endpoints (sessionkit already supports it; not exposed via
       `api/auth.py` yet).
-- [ ] React/Vite SPA in `web/`: login screen, account list, quote/invoice
-      list & detail, PDF download, payment recording. `web/src/api.ts`
+- [x] React/Vite SPA in `web/`: login screen, account list/create, quote
+      list/detail (create, add line items, send, convert to invoice),
+      invoice list/detail (send, void), PDF download. `web/src/api.ts`
       attaches `Authorization: Bearer <token>` to every call except login.
+      Payment recording waits on Phase 2's `Payment` model.
+- [x] CORS enabled on the API (`CORSMiddleware` in `api/app.py`, see
+      `CLAUDE.md`) so the SPA (a different origin/port in dev) can call it.
 
 ## Phase 4 — Delivery
 

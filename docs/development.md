@@ -53,6 +53,25 @@ SQLite file; default is `invoice_system.db` in the working directory. The
 CLI is a local, trusted tool and is **not** behind login (unlike the API) —
 see `CLAUDE.md`.
 
+## Serve the web client
+
+```
+cd web
+npm install
+npm run dev
+```
+
+Requires the Node version pinned in `web/.node-version` (nodenv/similar
+picks it up automatically in that directory) — see `CLAUDE.md` gotchas if
+`npm install`/`vitest` fails with "Cannot find native binding". Vite prints
+the actual port (defaults to `:5173`, picks another if that's taken) and
+binds `localhost`, which can resolve to the IPv6 loopback only — use
+`http://localhost:<port>`, not `127.0.0.1`, if a direct request seems to
+hang. It talks to the API at `VITE_API_BASE_URL` (default
+`http://127.0.0.1:8000`) — override in `web/.env.local` (gitignored) if
+your API is elsewhere. Log in with a user created via `sessionkit add`
+above; there is no signup screen.
+
 ## Running tests
 
 ```
@@ -63,7 +82,9 @@ Run the full suite before calling a change finished, not just the file(s)
 touched — see `testing-and-ci.md` for layout and fixtures. Coverage floor is
 90% (`pyproject.toml`).
 
-No `web/` yet — see `docs/roadmap.md`.
+```
+cd web && npm test
+```
 
 ## Environment
 
@@ -73,3 +94,7 @@ No `web/` yet — see `docs/roadmap.md`.
 - `INVOICE_SYSTEM_AUTH_DB` — path to sessionkit's SQLite file used by the
   API (default `auth.db`). The `sessionkit` CLI takes the same thing as its
   own `--db` flag or `$SESSIONKIT_DB` instead.
+- `INVOICE_SYSTEM_CORS_ORIGINS` — comma-separated allowed origins for the
+  API's CORS policy (default `*` — see `CLAUDE.md`).
+- `VITE_API_BASE_URL` — the web client's API base URL (default
+  `http://127.0.0.1:8000`), read at build/dev-server time.

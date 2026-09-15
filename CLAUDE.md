@@ -24,8 +24,9 @@ independently viewable/exportable as PDFs.
   dependency), `cli/` (thin Click layer). `tests/` mirrors the package 1:1
   (`tests/{core,api,cli,storage}/`) + a root `conftest.py` with shared
   fixtures.
-- `web/` — not created yet. When a web UI is added, keep it a sibling of
-  `src/`, its own test runner and build, its own README.
+- `web/` — React 19 + TypeScript + Vite SPA, a sibling of `src/`, its own
+  test runner (Vitest) and build, its own README (`web/README.md`). Pins its
+  own Node version in `web/.node-version` (nodenv-style) — see gotchas.
 
 Login/sessions are [sessionkit](https://github.com/atownsend247/bb-py-sessionkit)
 (a separate PyPI-style dependency, pinned by git tag in `pyproject.toml`),
@@ -53,7 +54,12 @@ not through this app; there is no public signup route.
   `invoice-system-cli` entry point) — mirrors the API one-for-one over the
   same storage. **Not** behind login — it's a local, trusted tool; only the
   HTTP API is gated (see architecture rules).
-- Build: no `web/` yet — nothing to build.
+- Web: `cd web && npm install && npm run dev` (Vite on `:5173`, or whatever
+  port it lands on if that one's taken — it logs the actual one; note it
+  binds `localhost`, which may resolve to the IPv6 loopback only, so prefer
+  `localhost` over `127.0.0.1` when hitting it directly). `VITE_API_BASE_URL`
+  points it at the API (default `http://127.0.0.1:8000`). `npm test` /
+  `npm run build` in `web/` — see `web/README.md`.
 
 ## Architecture rules (don't violate)
 
@@ -90,6 +96,12 @@ not through this app; there is no public signup route.
   `api/auth.py`'s `public_router`): `GET /healthz` and `POST /auth/login`.
   Everything else, `GET /auth/me` and `POST /auth/logout` included, requires
   a valid `Authorization: Bearer <token>` header.
+- `CORSMiddleware` in `api/app.py` allows every origin by default
+  (`INVOICE_SYSTEM_CORS_ORIGINS` to restrict it, comma-separated) with
+  `allow_credentials=False` — safe only because auth is a Bearer token, not
+  a cookie, so there's no ambient credential for a third-party origin to
+  ride along with. If a cookie-based auth mode is ever added, this default
+  needs to become an explicit allowlist first.
 
 ## Conventions
 
@@ -111,12 +123,14 @@ not through this app; there is no public signup route.
   items; converting flips the Quote to `converted`.
 - Client (web UI): **one module is the only thing that talks HTTP** to the
   backend (`web/src/api.ts`) — no `fetch`/`axios` calls scattered through
-  components. A shared data-fetching hook wraps it. Money stays a string
-  client-side too — parse to a decimal library only at the point of doing
-  arithmetic, never just to render it. It must attach `Authorization: Bearer
-  <token>` (from `POST /auth/login`) to every request except the login call
-  itself, and treat a 401 as "drop the token, show the login screen" in one
-  place, not per-call. (No `web/` exists yet.)
+  components. `web/src/hooks/useAsync.ts` is the shared data-fetching hook
+  every page uses. Money stays a string client-side too — the API already
+  returns computed totals as strings, so there's no client-side decimal
+  arithmetic to do at all right now. `api.ts` attaches `Authorization:
+  Bearer <token>` (from `POST /auth/login`, held by `AuthContext` and
+  persisted to `localStorage`) to every request except login, and calls one
+  registered "unauthorized" handler on any 401 so `AuthContext` can clear the
+  session in one place, not per-call.
 - Two separate exception hierarchies get mapped to HTTP status in `api/app.py`,
   each in its own handler: this app's `AppError` (`handle_app_error`) and
   sessionkit's `AuthError` (`handle_auth_error`). Don't merge them into one
@@ -139,7 +153,13 @@ not through this app; there is no public signup route.
   rename.
 - Pin the language/runtime version everywhere it's declared (lockfile, CI,
   a `.python-version` file) and don't quietly widen it to "support" an
-  older version nobody asked for.
+  older version nobody asked for. Same for `web/`: `web/.node-version`
+  pins Node — this repo was scaffolded with a Vite major (8.x, rolldown-
+  based) that needs Node ≥22.12; on an older Node its optional native
+  binding silently fails to install and every `vitest`/`vite` invocation
+  dies with "Cannot find native binding" (an npm optional-deps bug, not a
+  code problem) — `rm -rf node_modules package-lock.json && npm install`
+  under the pinned version, not a downgrade, is the fix.
 - `sessionkit` is pinned by git tag (`@v0.1.2` in `pyproject.toml`), not a
   PyPI version — bump the tag deliberately, re-run `uv lock`, and check its
   own CHANGELOG/README for breaking changes; there's no semver guarantee
