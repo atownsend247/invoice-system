@@ -1,8 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import * as api from '../api'
 import type { User } from '../types'
-
-const TOKEN_STORAGE_KEY = 'invoice-system.token'
+import { TOKEN_STORAGE_KEY } from './tokenStorageKey'
 
 interface AuthContextValue {
   user: User | null

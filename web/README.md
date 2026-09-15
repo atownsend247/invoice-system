@@ -20,7 +20,7 @@ repo root; there is no signup screen.
 
 ```
 npm test          # vitest - unit tests, api.ts + a login/routing integration test
-npm run test:e2e  # playwright - full account -> quote -> invoice browser flow
+npm run test:e2e  # playwright - login/accounts/quotes/invoices, one spec each
 npm run build     # tsc -b && vite build
 ```
 
@@ -49,10 +49,20 @@ failure; a failed run's trace/screenshot land in `test-results/` (gitignored).
   detail pages; the add-item form only renders when its `onAdd` prop is
   passed, since invoices don't expose that route — see `../docs/api.md`).
 - `src/pages/` — one file per route (`App.tsx` wires them up).
-- `e2e/` — Playwright smoke test + the throwaway-backend script and shared
-  constants it and `playwright.config.ts` both import from
-  (`e2e/constants.ts`), so the seeded test user's credentials live in
-  exactly one place.
+- `e2e/` — Playwright, one spec file per feature area (`login`, `accounts`,
+  `quotes`, `invoices.spec.ts`) rather than one long combined flow, so each
+  can be read/run/extended on its own as the app grows. `fixtures.ts` is
+  what makes that possible: each fixture (`testAccount`, `draftQuote`,
+  `sentQuote`, `draftInvoice`) sets up its slice of backend state directly
+  through the API, not the UI, so `quotes.spec.ts` isn't the thing that has
+  to create an account first, `invoices.spec.ts` isn't the thing that has to
+  drive a quote through send-and-convert first, and no spec depends on
+  another one having run — safe to run in parallel (13 tests, 4 workers,
+  under 4s) or in any order. `constants.ts` is where the seeded test user's
+  credentials and the two throwaway ports live, imported by both
+  `playwright.config.ts` and `fixtures.ts` so there's one source of truth.
+  `start-backend.sh` is the throwaway-backend script `playwright.config.ts`
+  launches as a `webServer`.
 
 Money stays a string end-to-end, same as the API — it's only ever displayed,
 never parsed into a float (see `CLAUDE.md`).

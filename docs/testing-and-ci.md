@@ -31,6 +31,16 @@ integration test that mocks `api.ts`. See `web/README.md` for commands; it's
 excluded from the Python coverage numbers below entirely (separate
 toolchain, separate CI job — see CI shape).
 
+One spec file per feature area (`login`, `accounts`, `quotes`,
+`invoices.spec.ts`), each independent — no spec relies on another having
+run, or on execution order, because `web/e2e/fixtures.ts` seeds each one's
+starting state directly through the API rather than by reusing UI-created
+state from elsewhere. That's what makes running them in parallel (or
+picking just one file while iterating on a feature) safe rather than
+flaky. Apply the same pattern - a new API-backed fixture in `fixtures.ts`,
+not a `beforeEach` that clicks through another feature's UI - when a new
+spec needs its own starting state.
+
 ## Coverage
 
 - Enforce a floor in CI (e.g. `fail_under = 90` for `coverage.py`), applied to
