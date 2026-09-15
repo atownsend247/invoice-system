@@ -1,9 +1,9 @@
 # Invoice System — web
 
 React + TypeScript + Vite SPA for the backend in `../src/invoice_system/`.
-Accounts, quotes (draft → sent → convert to invoice), invoices (send/void),
-PDF download, and a settings page for your own business profile, behind
-login.
+A home dashboard (overdue/outstanding invoices), accounts, quotes (draft →
+sent → convert to invoice), invoices (send/void), PDF download, and a
+settings page for your own business profile, behind login.
 
 ## Develop
 
@@ -20,8 +20,8 @@ repo root; there is no signup screen.
 ## Test / build
 
 ```
-npm test          # vitest - unit tests, api.ts + a login/routing integration test
-npm run test:e2e  # playwright - login/accounts/quotes/invoices, one spec each
+npm test          # vitest - unit tests: api.ts, HomePage's overdue/outstanding logic, a login/routing integration test
+npm run test:e2e  # playwright - login/home/accounts/quotes/invoices/settings, one spec each
 npm run build     # tsc -b && vite build
 ```
 
@@ -50,17 +50,29 @@ failure; a failed run's trace/screenshot land in `test-results/` (gitignored).
   detail pages; the add-item form only renders when its `onAdd` prop is
   passed, since invoices don't expose that route — see `../docs/api.md`).
 - `src/pages/` — one file per route (`App.tsx` wires them up).
-- `e2e/` — Playwright, one spec file per feature area (`login`, `accounts`,
-  `quotes`, `invoices`, `settings.spec.ts`) rather than one long combined
-  flow, so each
+  `HomePage.tsx` exports its `isOverdue`/`isOutstanding` filters (not just
+  the component) specifically so `HomePage.test.ts` can unit-test the
+  date logic against fixed dates, without a fake clock reaching the e2e
+  layer (see the note below on why e2e can't produce a genuinely overdue
+  invoice).
+- `e2e/` — Playwright, one spec file per feature area (`login`, `home`,
+  `accounts`, `quotes`, `invoices`, `settings.spec.ts`) rather than one long
+  combined flow, so each
   can be read/run/extended on its own as the app grows. `fixtures.ts` is
   what makes that possible: each fixture (`testAccount`, `draftQuote`,
-  `sentQuote`, `draftInvoice`) sets up its slice of backend state directly
-  through the API, not the UI, so `quotes.spec.ts` isn't the thing that has
-  to create an account first, `invoices.spec.ts` isn't the thing that has to
-  drive a quote through send-and-convert first, and no spec depends on
-  another one having run — safe to run in parallel (19 tests, 5 workers,
-  under 6s) or in any order. The one exception is `settings.spec.ts`: a
+  `sentQuote`, `draftInvoice`, `sentInvoice`) sets up its slice of backend
+  state directly through the API, not the UI, so `quotes.spec.ts` isn't the
+  thing that has to create an account first, `invoices.spec.ts` isn't the
+  thing that has to drive a quote through send-and-convert first, and no
+  spec depends on another one having run — safe to run in parallel (21
+  tests, 6 workers, under 7s) or in any order. `home.spec.ts` only checks
+  that a freshly-sent invoice shows up under "Outstanding" — nothing in the
+  app can backdate a `due_date` (always computed server-side as today plus
+  a positive `payment_terms_days`, see `CLAUDE.md`), so a genuinely overdue
+  invoice can't be produced through the API/CLI/UI at all; that half of the
+  derivation logic is covered at the unit level instead
+  (`src/pages/HomePage.test.ts`). The one exception to the "safe to run in
+  parallel" claim above is `settings.spec.ts`: a
   `BusinessProfile` is a singleton per user (see `CLAUDE.md`), not a
   created-per-test record like an account, so its tests share state with
   each other by nature — each still sets its own known values up front

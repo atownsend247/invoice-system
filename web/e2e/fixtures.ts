@@ -42,6 +42,7 @@ interface TestFixtures {
   draftQuote: ApiQuote
   sentQuote: ApiQuote
   draftInvoice: ApiInvoice
+  sentInvoice: ApiInvoice
 }
 
 interface WorkerFixtures {
@@ -117,6 +118,13 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       method: 'POST',
     })
     await use(invoice)
+  },
+
+  sentInvoice: async ({ apiToken, draftInvoice }, use) => {
+    const sent = await apiFetch<ApiInvoice>(`/invoices/${draftInvoice.id}/send`, apiToken, {
+      method: 'POST',
+    })
+    await use(sent)
   },
 })
 

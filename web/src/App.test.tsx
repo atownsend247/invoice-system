@@ -8,7 +8,7 @@ import { AuthProvider } from './auth/AuthContext'
 
 vi.mock('./api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./api')>()
-  return { ...actual, login: vi.fn(), me: vi.fn(), logout: vi.fn(), listAccounts: vi.fn() }
+  return { ...actual, login: vi.fn(), me: vi.fn(), logout: vi.fn(), listAccounts: vi.fn(), listInvoices: vi.fn() }
 })
 
 const mockedApi = vi.mocked(api)
@@ -36,7 +36,7 @@ describe('App', () => {
     expect(screen.getByLabelText('Email')).toBeInTheDocument()
   })
 
-  it('logs in and lands on the accounts page', async () => {
+  it('logs in and lands on the home page', async () => {
     mockedApi.login.mockResolvedValue({
       token: 'tok_123',
       expires_at: '2026-10-01T00:00:00Z',
@@ -49,6 +49,7 @@ describe('App', () => {
       },
     })
     mockedApi.listAccounts.mockResolvedValue([])
+    mockedApi.listInvoices.mockResolvedValue([])
 
     renderApp('/login')
     const user = userEvent.setup()
@@ -57,7 +58,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Password'), 'correct horse battery staple')
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
 
-    expect(await screen.findByRole('heading', { name: 'Accounts' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Home' })).toBeInTheDocument()
     expect(mockedApi.login).toHaveBeenCalledWith('owner@acme.test', 'correct horse battery staple', undefined)
   })
 

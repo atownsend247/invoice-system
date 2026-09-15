@@ -83,5 +83,19 @@
       out of scope; only business name/address were asked to appear on
       documents.
 
+## Phase 6 — Home dashboard (done)
+
+- [x] A `web/` home page (`/`, `HomePage.tsx`, replacing the old bare
+      redirect to `/accounts`) listing `sent` invoices under "Overdue" and
+      "Outstanding" sections. This is a **presentational** derivation only
+      (`isOverdue`/`isOutstanding` compare `due_date` against today
+      client-side) — it does not implement Phase 2's `sent → overdue`
+      status transition; `Invoice.status` itself is never written as
+      `overdue` anywhere. Covered by `web/src/pages/HomePage.test.ts` (the
+      date-comparison logic, unit-tested against fixed dates) and
+      `web/e2e/home.spec.ts` (only the reachable "Outstanding" case — no
+      code path can backdate a `due_date` to produce a genuinely overdue
+      invoice through the API/CLI/UI, see `web/README.md`).
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

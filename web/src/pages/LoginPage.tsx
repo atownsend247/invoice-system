@@ -15,7 +15,7 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false)
 
   if (user) {
-    const redirectTo = (location.state as { from?: string } | null)?.from ?? '/accounts'
+    const redirectTo = (location.state as { from?: string } | null)?.from ?? '/'
     return <Navigate to={redirectTo} replace />
   }
 
@@ -25,7 +25,7 @@ export function LoginPage() {
     setSubmitting(true)
     try {
       await login(email, password, otp || undefined)
-      navigate('/accounts', { replace: true })
+      navigate('/', { replace: true })
     } catch (err) {
       const message = errorMessage(err)
       if (message.toLowerCase().includes('code')) setNeedsOtp(true)

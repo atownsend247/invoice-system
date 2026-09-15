@@ -15,12 +15,12 @@ test('bad credentials show an error and stay on the login page', async ({ page }
   await expect(page.getByRole('alert')).toContainText('incorrect email or password')
 })
 
-test('successful login lands on Accounts, and logout really ends the session', async ({ page }) => {
+test('successful login lands on Home, and logout really ends the session', async ({ page }) => {
   await page.goto('/login')
   await page.getByLabel('Email').fill(TEST_EMAIL)
   await page.getByLabel('Password').fill(TEST_PASSWORD)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Log out' }).click()
   await expect(page.getByRole('heading', { name: 'Invoice System' })).toBeVisible()

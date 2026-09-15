@@ -9,6 +9,9 @@ export function Layout() {
       <header className="app-header">
         <span className="brand">Invoice System</span>
         <nav>
+          <NavLink to="/" end>
+            Home
+          </NavLink>
           <NavLink to="/accounts">Accounts</NavLink>
           <NavLink to="/quotes">Quotes</NavLink>
           <NavLink to="/invoices">Invoices</NavLink>

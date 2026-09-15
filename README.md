@@ -10,7 +10,7 @@ two being created independently. Both are exportable as PDFs.
 mirrored CLI) and a React/Vite SPA (`web/`) are implemented and tested —
 see `docs/development.md` to run it and `docs/roadmap.md` for what's next.
 
-![Accounts screen, logged in](docs/screenshots/accounts.png)
+![Home screen, logged in](docs/screenshots/home.png)
 
 ## Docs
 

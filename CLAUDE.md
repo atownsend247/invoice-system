@@ -184,6 +184,18 @@ Three separate things are easy to conflate here — don't:
   keeping the "whose profile" question entirely at the entry-point layer.
   **Deliberately not shown on a PDF**: `title`/`first_name`/`last_name` —
   only `business_name` and the address were asked for.
+- The home page (`web/src/pages/HomePage.tsx`, route `/`) shows two
+  sections of `sent` invoices — "Overdue" (`due_date` before today) and
+  "Outstanding" (not overdue) — computed client-side by `isOverdue`/
+  `isOutstanding`, exported from that file so they're unit-testable
+  (`HomePage.test.ts`) against fixed dates without a fake clock. This is
+  **presentation only**: `Invoice.status` is never written as `overdue`
+  anywhere (that's Phase 2's unimplemented `sent → overdue` transition —
+  see `docs/roadmap.md`); a `due_date` also can't be backdated through the
+  API/CLI (`send()` always computes `clock().date() +
+  payment_terms_days`, and `payment_terms_days` must be positive), so
+  there's no way to produce a genuinely overdue invoice for e2e coverage —
+  `web/e2e/home.spec.ts` only exercises the reachable "Outstanding" case.
 - The settings page (`web/src/pages/SettingsPage.tsx`) groups
   `BusinessProfile` fields into three `<fieldset>`/`<legend>` sections
   matching the model's own three groups (user settings, business settings,
