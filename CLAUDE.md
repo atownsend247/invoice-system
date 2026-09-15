@@ -59,7 +59,8 @@ not through this app; there is no public signup route.
   binds `localhost`, which may resolve to the IPv6 loopback only, so prefer
   `localhost` over `127.0.0.1` when hitting it directly). `VITE_API_BASE_URL`
   points it at the API (default `http://127.0.0.1:8000`). `npm test` /
-  `npm run build` in `web/` — see `web/README.md`.
+  `npm run test:e2e` (Playwright; spins up its own throwaway backend + this
+  app, see `web/README.md`) / `npm run build` in `web/`.
 
 ## Architecture rules (don't violate)
 

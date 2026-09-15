@@ -21,6 +21,16 @@
   file(s) touched — cheap regression insurance, especially across the
   service/API/CLI boundary where one shared rule can silently diverge.
 
+## Web client tests
+
+`web/` has its own test runner (Vitest) for unit/integration tests, plus a
+Playwright end-to-end suite (`web/e2e/`) that drives a real browser against
+a throwaway instance of the actual backend + frontend (own SQLite files, own
+ports, torn down after) — not mocked, not the same thing as the Vitest
+integration test that mocks `api.ts`. See `web/README.md` for commands; it's
+excluded from the Python coverage numbers below entirely (separate
+toolchain, separate CI job — see CI shape).
+
 ## Coverage
 
 - Enforce a floor in CI (e.g. `fail_under = 90` for `coverage.py`), applied to
