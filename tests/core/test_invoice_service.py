@@ -9,7 +9,9 @@ from invoice_system.models import Invoice, InvoiceStatus
 
 @pytest.fixture
 def account(application):
-    return application.accounts.create_account(business_name="Acme Co", email="jane@acme.test", address="1 Main St")
+    return application.accounts.create_account(
+        business_name="Acme Co", email="jane@acme.test", address="1 Main St"
+    )
 
 
 @pytest.fixture
@@ -35,7 +37,9 @@ def test_send_invoice_assigns_number_sets_due_date_and_freezes(application, draf
     assert invoice.due_date == fake_clock().date() + timedelta(days=30)
 
     with pytest.raises(InvalidTransition):
-        application.invoices.add_line_item(invoice.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1"))
+        application.invoices.add_line_item(
+            invoice.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+        )
 
 
 def test_cannot_send_invoice_without_line_items(application, account, fake_clock):

@@ -14,7 +14,15 @@ from ..auth import build_auth
 from ..errors import AppError, Duplicate, InvalidTransition, NotFound, ValidationFailed
 from ..factory import Application, build_application
 from ..pdf import render_invoice_pdf, render_quote_pdf
-from .auth import get_current_user, protected_router as auth_protected_router, public_router as auth_public_router
+from .auth import (
+    get_current_user,
+)
+from .auth import (
+    protected_router as auth_protected_router,
+)
+from .auth import (
+    public_router as auth_public_router,
+)
 from .schemas import AccountIn, AccountOut, InvoiceOut, LineItemIn, QuoteCreateIn, QuoteOut
 
 _STATUS_BY_ERROR: list[tuple[type[AppError], int]] = [

@@ -22,6 +22,12 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format check
+        run: uv run ruff format --check .
+
       - name: Run tests with coverage
         run: uv run pytest --cov=src/invoice_system --cov-report=term-missing
 

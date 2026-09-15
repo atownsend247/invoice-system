@@ -75,7 +75,12 @@ def _render(
     table_data = [["Description", "Qty", "Unit price", "Total"]]
     for item in line_items:
         table_data.append(
-            [item.description, str(item.quantity), f"{item.unit_price} {currency}", f"{item.total} {currency}"]
+            [
+                item.description,
+                str(item.quantity),
+                f"{item.unit_price} {currency}",
+                f"{item.total} {currency}",
+            ]
         )
     total = sum((item.total for item in line_items), Decimal("0"))
     table_data.append(["", "", "Total", f"{total} {currency}"])

@@ -1,6 +1,6 @@
+from datetime import date as date_
 from datetime import timedelta
 from decimal import Decimal
-from datetime import date as date_
 
 from .clock import Clock, system_clock
 from .errors import InvalidTransition, NotFound, ValidationFailed
@@ -121,9 +121,7 @@ class QuoteService:
     def convert_to_invoice(self, quote_id: int) -> Invoice:
         quote = self._get_quote(quote_id)
         if quote.status not in (QuoteStatus.SENT, QuoteStatus.ACCEPTED):
-            raise InvalidTransition(
-                f"quote {quote_id} cannot be converted from status {quote.status.value}"
-            )
+            raise InvalidTransition(f"quote {quote_id} cannot be converted from status {quote.status.value}")
         invoice = Invoice(
             id=None,
             account_id=quote.account_id,
@@ -204,9 +202,7 @@ class InvoiceService:
     def send(self, invoice_id: int, *, due_date: date_ | None = None) -> Invoice:
         invoice = self._get_invoice(invoice_id)
         if invoice.status != InvoiceStatus.DRAFT:
-            raise InvalidTransition(
-                f"invoice {invoice_id} is not a draft (status={invoice.status.value})"
-            )
+            raise InvalidTransition(f"invoice {invoice_id} is not a draft (status={invoice.status.value})")
         if not invoice.line_items:
             raise ValidationFailed(f"invoice {invoice_id} has no line items")
         invoice.number = self._repository.next_invoice_number()

@@ -43,6 +43,9 @@ not through this app; there is no public signup route.
 - Tests: `uv run pytest --cov=src/invoice_system --cov-report=term-missing`
   (run the **full** suite before finishing a change; CI enforces a 90%
   coverage floor, see gotchas).
+- Lint/format: `uv run ruff check .` / `uv run ruff format .` (CI runs both,
+  the latter with `--check`; `ruff format` first if `ruff check` complains
+  about a line-length issue a format pass would resolve).
 - First-run / bootstrap: `uv sync && uv run invoice-system-cli init-db &&
   uv run sessionkit add you@example.com` — creates the domain SQLite file
   and applies migrations, then creates the first login account (prompts for

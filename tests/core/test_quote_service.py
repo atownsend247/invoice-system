@@ -8,7 +8,9 @@ from invoice_system.models import QuoteStatus
 
 @pytest.fixture
 def account(application):
-    return application.accounts.create_account(business_name="Acme Co", email="jane@acme.test", address="1 Main St")
+    return application.accounts.create_account(
+        business_name="Acme Co", email="jane@acme.test", address="1 Main St"
+    )
 
 
 def test_create_quote_requires_existing_account(application):
@@ -49,11 +51,15 @@ def test_cannot_send_quote_without_line_items(application, account):
 
 def test_cannot_add_line_item_to_sent_quote(application, account):
     quote = application.quotes.create_quote(account_id=account.id)
-    quote = application.quotes.add_line_item(quote.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1"))
+    quote = application.quotes.add_line_item(
+        quote.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
     quote = application.quotes.send(quote.id)
 
     with pytest.raises(InvalidTransition):
-        application.quotes.add_line_item(quote.id, description="y", quantity=Decimal("1"), unit_price=Decimal("1"))
+        application.quotes.add_line_item(
+            quote.id, description="y", quantity=Decimal("1"), unit_price=Decimal("1")
+        )
 
 
 def test_cannot_convert_draft_quote(application, account):
@@ -64,7 +70,9 @@ def test_cannot_convert_draft_quote(application, account):
 
 def test_cannot_convert_quote_twice(application, account):
     quote = application.quotes.create_quote(account_id=account.id)
-    quote = application.quotes.add_line_item(quote.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1"))
+    quote = application.quotes.add_line_item(
+        quote.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
     quote = application.quotes.send(quote.id)
     application.quotes.convert_to_invoice(quote.id)
 
@@ -74,10 +82,14 @@ def test_cannot_convert_quote_twice(application, account):
 
 def test_quote_numbers_increment_independently_of_invoice_numbers(application, account):
     first = application.quotes.create_quote(account_id=account.id)
-    first = application.quotes.add_line_item(first.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1"))
+    first = application.quotes.add_line_item(
+        first.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
     first = application.quotes.send(first.id)
     second = application.quotes.create_quote(account_id=account.id)
-    second = application.quotes.add_line_item(second.id, description="y", quantity=Decimal("1"), unit_price=Decimal("1"))
+    second = application.quotes.add_line_item(
+        second.id, description="y", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
     second = application.quotes.send(second.id)
 
     assert first.number == "Q-0001"

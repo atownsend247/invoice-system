@@ -12,7 +12,9 @@ DEFAULT_DB_PATH = "invoice_system.db"
 
 
 @click.group()
-@click.option("--db", "db_path", default=DEFAULT_DB_PATH, show_default=True, help="Path to the SQLite database file.")
+@click.option(
+    "--db", "db_path", default=DEFAULT_DB_PATH, show_default=True, help="Path to the SQLite database file."
+)
 @click.pass_context
 def cli(ctx: click.Context, db_path: str) -> None:
     application = build_application(db_path)
@@ -39,7 +41,12 @@ def account() -> None:
 @click.option("--phone", default=None)
 @click.pass_obj
 def account_create(
-    application: Application, business_name: str, email: str, address: str, contact_name: str | None, phone: str | None
+    application: Application,
+    business_name: str,
+    email: str,
+    address: str,
+    contact_name: str | None,
+    phone: str | None,
 ) -> None:
     created = application.accounts.create_account(
         business_name=business_name, email=email, address=address, contact_name=contact_name, phone=phone
@@ -74,8 +81,12 @@ def quote_create(application: Application, account_id: int, currency: str) -> No
 @click.option("--quantity", required=True, type=Decimal)
 @click.option("--unit-price", required=True, type=Decimal)
 @click.pass_obj
-def quote_add_item(application: Application, quote_id: int, description: str, quantity: Decimal, unit_price: Decimal) -> None:
-    application.quotes.add_line_item(quote_id, description=description, quantity=quantity, unit_price=unit_price)
+def quote_add_item(
+    application: Application, quote_id: int, description: str, quantity: Decimal, unit_price: Decimal
+) -> None:
+    application.quotes.add_line_item(
+        quote_id, description=description, quantity=quantity, unit_price=unit_price
+    )
     click.echo("Added line item")
 
 

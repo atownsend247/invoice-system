@@ -46,10 +46,11 @@ toolchain, separate CI job — see CI shape).
 
 **Status: implemented** — `.github/workflows/ci.yml`, on every push and PR.
 
-- Three jobs, split by concern: `backend` (pytest + coverage), `frontend`
-  (vitest, `npm run lint`, `npm run build`), `e2e` (Playwright). `backend`
-  and `frontend` run in parallel — a frontend-only change doesn't wait on a
-  Python install, and vice versa.
+- Three jobs, split by concern: `backend` (`ruff check`, `ruff format
+  --check`, pytest + coverage), `frontend` (`npm run lint` (oxlint), vitest,
+  `npm run build`), `e2e` (Playwright). `backend` and `frontend` run in
+  parallel — a frontend-only change doesn't wait on a Python install, and
+  vice versa.
 - `e2e` declares `needs: [backend, frontend]` — deliberately *not*
   parallel with them. It's the slow job (real Chromium + two real servers),
   so it only runs once the fast unit suites are known-good; failing fast on

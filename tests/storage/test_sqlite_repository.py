@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -26,7 +26,7 @@ def test_account_round_trip_preserves_fields_and_tz(repo):
         email="a@b.test",
         phone=None,
         address="1 Main St",
-        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
     created = repo.create_account(account)
     assert created.id is not None

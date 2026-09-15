@@ -1,10 +1,10 @@
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 
 
-class QuoteStatus(str, Enum):
+class QuoteStatus(StrEnum):
     DRAFT = "draft"
     SENT = "sent"
     ACCEPTED = "accepted"
@@ -13,7 +13,7 @@ class QuoteStatus(str, Enum):
     CONVERTED = "converted"
 
 
-class InvoiceStatus(str, Enum):
+class InvoiceStatus(StrEnum):
     DRAFT = "draft"
     SENT = "sent"
     PAID = "paid"

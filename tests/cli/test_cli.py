@@ -12,7 +12,18 @@ def test_full_cli_flow(tmp_path):
 
     result = runner.invoke(
         cli,
-        ["--db", str(db_path), "account", "create", "--business-name", "Acme", "--email", "a@b.test", "--address", "1 Main St"],
+        [
+            "--db",
+            str(db_path),
+            "account",
+            "create",
+            "--business-name",
+            "Acme",
+            "--email",
+            "a@b.test",
+            "--address",
+            "1 Main St",
+        ],
     )
     assert result.exit_code == 0, result.output
     assert "Created account 1" in result.output
@@ -26,7 +37,19 @@ def test_full_cli_flow(tmp_path):
 
     result = runner.invoke(
         cli,
-        ["--db", str(db_path), "quote", "add-item", "1", "--description", "Work", "--quantity", "1", "--unit-price", "100.00"],
+        [
+            "--db",
+            str(db_path),
+            "quote",
+            "add-item",
+            "1",
+            "--description",
+            "Work",
+            "--quantity",
+            "1",
+            "--unit-price",
+            "100.00",
+        ],
     )
     assert result.exit_code == 0, result.output
 

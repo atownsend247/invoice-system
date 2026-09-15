@@ -74,8 +74,8 @@ class SqliteRepository:
     def create_quote(self, quote: Quote) -> Quote:
         with self._lock:
             cur = self._conn.execute(
-                "INSERT INTO quotes (account_id, number, status, currency, issue_date, expiry_date, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO quotes (account_id, number, status, currency, issue_date, expiry_date, "
+                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     quote.account_id,
                     quote.number,

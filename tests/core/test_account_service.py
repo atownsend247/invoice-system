@@ -5,7 +5,11 @@ from invoice_system.errors import NotFound, ValidationFailed
 
 def test_create_and_get_account(application):
     account = application.accounts.create_account(
-        business_name="Acme Co", contact_name="Jane Doe", email="jane@acme.test", phone="555-1234", address="1 Main St"
+        business_name="Acme Co",
+        contact_name="Jane Doe",
+        email="jane@acme.test",
+        phone="555-1234",
+        address="1 Main St",
     )
     assert account.id is not None
 

@@ -83,7 +83,13 @@ touched — see `testing-and-ci.md` for layout and fixtures. Coverage floor is
 90% (`pyproject.toml`).
 
 ```
+uv run ruff check .      # lint
+uv run ruff format .     # format - CI only checks (--check), doesn't fix
+```
+
+```
 cd web && npm test
+cd web && npm run lint   # oxlint
 ```
 
 ## Environment
