@@ -161,12 +161,18 @@ not through this app; there is no public signup route.
 - Pin the language/runtime version everywhere it's declared (lockfile, CI,
   a `.python-version` file) and don't quietly widen it to "support" an
   older version nobody asked for. Same for `web/`: `web/.node-version`
-  pins Node — this repo was scaffolded with a Vite major (8.x, rolldown-
-  based) that needs Node ≥22.12; on an older Node its optional native
+  pins Node (currently `24.21.0`, the Active LTS at time of writing — Vite
+  8.x's own `engines` only needs `^20.19.0 || >=22.12.0`, but several
+  transitive deps in this exact install want stricter, up to `24.15.0`+;
+  bump the pin deliberately when `npm install` starts warning `EBADENGINE`
+  again rather than ignoring it). On a too-old Node, Vite's rolldown
   binding silently fails to install and every `vitest`/`vite` invocation
   dies with "Cannot find native binding" (an npm optional-deps bug, not a
   code problem) — `rm -rf node_modules package-lock.json && npm install`
-  under the pinned version, not a downgrade, is the fix.
+  under the pinned version, not a downgrade, is the fix. If `nodenv
+  install --list` doesn't show a version you know exists, `node-build`'s
+  version definitions are stale — `git -C "$(nodenv root)/plugins/node-build"
+  pull` refreshes them.
 - `sessionkit` is pinned by git tag (`@v0.1.2` in `pyproject.toml`), not a
   PyPI version — bump the tag deliberately, re-run `uv lock`, and check its
   own CHANGELOG/README for breaking changes; there's no semver guarantee
