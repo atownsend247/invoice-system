@@ -178,10 +178,15 @@ def convert_quote(quote_id: int, application: Application = Depends(get_applicat
 
 
 @domain_router.get("/quotes/{quote_id}/pdf")
-def get_quote_pdf(quote_id: int, application: Application = Depends(get_application)) -> Response:
+def get_quote_pdf(
+    quote_id: int,
+    application: Application = Depends(get_application),
+    user: SessionUser = Depends(get_current_user),
+) -> Response:
     quote = application.quotes.get_quote(quote_id)
     account = application.accounts.get_account(quote.account_id)
-    return Response(content=render_quote_pdf(account, quote), media_type="application/pdf")
+    profile = application.business_profiles.get_profile(user.id)
+    return Response(content=render_quote_pdf(account, quote, profile), media_type="application/pdf")
 
 
 @domain_router.get("/invoices", response_model=list[InvoiceOut])
@@ -197,8 +202,14 @@ def get_invoice(invoice_id: int, application: Application = Depends(get_applicat
 
 
 @domain_router.post("/invoices/{invoice_id}/send", response_model=InvoiceOut)
-def send_invoice(invoice_id: int, application: Application = Depends(get_application)) -> InvoiceOut:
-    return InvoiceOut.from_model(application.invoices.send(invoice_id))
+def send_invoice(
+    invoice_id: int,
+    application: Application = Depends(get_application),
+    user: SessionUser = Depends(get_current_user),
+) -> InvoiceOut:
+    profile = application.business_profiles.get_profile(user.id)
+    invoice = application.invoices.send(invoice_id, payment_terms_days=profile.payment_terms_days)
+    return InvoiceOut.from_model(invoice)
 
 
 @domain_router.post("/invoices/{invoice_id}/void", response_model=InvoiceOut)
@@ -207,10 +218,15 @@ def void_invoice(invoice_id: int, application: Application = Depends(get_applica
 
 
 @domain_router.get("/invoices/{invoice_id}/pdf")
-def get_invoice_pdf(invoice_id: int, application: Application = Depends(get_application)) -> Response:
+def get_invoice_pdf(
+    invoice_id: int,
+    application: Application = Depends(get_application),
+    user: SessionUser = Depends(get_current_user),
+) -> Response:
     invoice = application.invoices.get_invoice(invoice_id)
     account = application.accounts.get_account(invoice.account_id)
-    return Response(content=render_invoice_pdf(account, invoice), media_type="application/pdf")
+    profile = application.business_profiles.get_profile(user.id)
+    return Response(content=render_invoice_pdf(account, invoice, profile), media_type="application/pdf")
 
 
 @domain_router.get("/settings/business-profile", response_model=BusinessProfileOut)
@@ -229,6 +245,9 @@ def save_business_profile(
 ) -> BusinessProfileOut:
     profile = application.business_profiles.save_profile(
         user.id,
+        title=body.title,
+        first_name=body.first_name,
+        last_name=body.last_name,
         business_name=body.business_name,
         business_address=body.business_address,
         payment_terms_days=body.payment_terms_days,

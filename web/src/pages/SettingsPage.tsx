@@ -9,7 +9,7 @@ export function SettingsPage() {
   return (
     <section>
       <h1>Settings</h1>
-      <p className="meta">Your business details - shown on the quotes and invoices you send.</p>
+      <p className="meta">Your details - shown on the quotes and invoices you send.</p>
 
       {loading && <p>Loading…</p>}
       {error && (
@@ -23,8 +23,11 @@ export function SettingsPage() {
 }
 
 function BusinessProfileForm({ profile }: { profile: BusinessProfile }) {
+  const [title, setTitle] = useState(profile.title ?? '')
+  const [firstName, setFirstName] = useState(profile.first_name)
+  const [lastName, setLastName] = useState(profile.last_name)
   const [businessName, setBusinessName] = useState(profile.business_name)
-  const [businessAddress, setBusinessAddress] = useState(profile.business_address)
+  const [businessAddress, setBusinessAddress] = useState(profile.business_address ?? '')
   const [paymentTermsDays, setPaymentTermsDays] = useState(String(profile.payment_terms_days))
   const [utr, setUtr] = useState(profile.utr ?? '')
   const [vatNumber, setVatNumber] = useState(profile.vat_number ?? '')
@@ -39,16 +42,22 @@ function BusinessProfileForm({ profile }: { profile: BusinessProfile }) {
     setSubmitting(true)
     try {
       const updated = await api.saveBusinessProfile({
+        title: title || undefined,
+        first_name: firstName,
+        last_name: lastName,
         business_name: businessName,
-        business_address: businessAddress,
+        business_address: businessAddress || undefined,
         payment_terms_days: Number(paymentTermsDays),
         utr: utr || undefined,
         vat_number: vatNumber || undefined,
       })
       // Reflect what the server actually stored (e.g. a blank UTR is
       // normalised to null) rather than trusting the pre-submit input back.
+      setTitle(updated.title ?? '')
+      setFirstName(updated.first_name)
+      setLastName(updated.last_name)
       setBusinessName(updated.business_name)
-      setBusinessAddress(updated.business_address)
+      setBusinessAddress(updated.business_address ?? '')
       setPaymentTermsDays(String(updated.payment_terms_days))
       setUtr(updated.utr ?? '')
       setVatNumber(updated.vat_number ?? '')
@@ -63,16 +72,24 @@ function BusinessProfileForm({ profile }: { profile: BusinessProfile }) {
   return (
     <form className="inline-form" onSubmit={handleSubmit}>
       <label>
+        Title (optional)
+        <input value={title} onChange={(event) => setTitle(event.target.value)} />
+      </label>
+      <label>
+        First name
+        <input value={firstName} onChange={(event) => setFirstName(event.target.value)} required />
+      </label>
+      <label>
+        Last name
+        <input value={lastName} onChange={(event) => setLastName(event.target.value)} required />
+      </label>
+      <label>
         Business name
         <input value={businessName} onChange={(event) => setBusinessName(event.target.value)} required />
       </label>
       <label>
-        Business address
-        <input
-          value={businessAddress}
-          onChange={(event) => setBusinessAddress(event.target.value)}
-          required
-        />
+        Business address (optional)
+        <input value={businessAddress} onChange={(event) => setBusinessAddress(event.target.value)} />
       </label>
       <label>
         Payment terms (days)

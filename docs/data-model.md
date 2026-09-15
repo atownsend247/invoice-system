@@ -12,7 +12,7 @@ doc is read as ground truth.
 | `Quote` | id, account_id, number, status, currency, issue_date, expiry_date, created_at | `status`: `draft \| sent \| accepted \| rejected \| expired \| converted`. `number` (`Q-0001`, ...) is assigned on `send`, not on creation. |
 | `Invoice` | id, account_id, quote_id, number, status, currency, issue_date, due_date, created_at | `status`: `draft \| sent \| paid \| overdue \| void`. `quote_id` is set when created via conversion, `NULL` otherwise. `number` (`INV-0001`, ...) and `due_date` are assigned on `send`. |
 | `LineItem` | id, description, quantity, unit_price, position | One shape, shared by quotes and invoices; associated via `quote_line_items`/`invoice_line_items` join tables (`quote_id`/`invoice_id` + the same columns). `total` (`quantity * unit_price`) is a derived property, never stored. |
-| `BusinessProfile` | id, user_id, business_name, business_address, payment_terms_days, utr, vat_number, created_at, updated_at | The logged-in user's *own* business details — not `Account` (the client being billed). One per `user_id` (`UNIQUE`), which is sessionkit's `User.id` — a plain column, not an enforced FK (see `CLAUDE.md`, "Login accounts" below). `utr`/`vat_number` optional; blank input is stored as `NULL`, never `""`. |
+| `BusinessProfile` | id, user_id, title, first_name, last_name, business_name, business_address, payment_terms_days, utr, vat_number, created_at, updated_at | The logged-in user's *own* details — not `Account` (the client being billed). One per `user_id` (`UNIQUE`), which is sessionkit's `User.id` — a plain column, not an enforced FK (see `CLAUDE.md`, "Login accounts" below). `first_name`/`last_name`/`business_name` are required (validated non-blank in `BusinessProfileService`, never `NULL`). `title`/`business_address`/`utr`/`vat_number` are optional — blank input is normalised to `NULL`, never stored as `""`. |
 | counters (internal) | name, value | Backs `next_quote_number`/`next_invoice_number`; not a domain entity, not exposed via API/CLI. |
 
 ## Relationships
@@ -43,6 +43,11 @@ Invoice 1──* LineItem   (via invoice_line_items)
   when no row exists yet for that `user_id`. `save_profile` upserts: the
   first save for a `user_id` inserts, every save after that updates the
   same row (`created_at` untouched, `updated_at` bumped).
+- `business_address` was originally `NOT NULL DEFAULT ''` (migration 2);
+  migration 3 relaxed it to nullable via a rebuild-and-swap, since SQLite
+  can't `ALTER COLUMN` a constraint in place — see the migrations gotcha in
+  `CLAUDE.md`. Any pre-migration-3 row's stored `''` became `NULL` in the
+  copy, not a literal empty string surviving forward.
 
 ## Login accounts (not this schema)
 

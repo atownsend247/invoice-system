@@ -134,16 +134,22 @@ class InvoiceOut(BaseModel):
 
 
 class BusinessProfileIn(BaseModel):
+    first_name: str
+    last_name: str
     business_name: str
-    business_address: str
+    title: str | None = None
+    business_address: str | None = None
     payment_terms_days: int = 30
     utr: str | None = None
     vat_number: str | None = None
 
 
 class BusinessProfileOut(BaseModel):
+    title: str | None
+    first_name: str
+    last_name: str
     business_name: str
-    business_address: str
+    business_address: str | None
     payment_terms_days: int
     utr: str | None
     vat_number: str | None
@@ -152,6 +158,9 @@ class BusinessProfileOut(BaseModel):
     @classmethod
     def from_model(cls, profile) -> "BusinessProfileOut":
         return cls(
+            title=profile.title,
+            first_name=profile.first_name,
+            last_name=profile.last_name,
             business_name=profile.business_name,
             business_address=profile.business_address,
             payment_terms_days=profile.payment_terms_days,

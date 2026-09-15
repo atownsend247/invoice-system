@@ -8,10 +8,10 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from .models import Account, Invoice, LineItem, Quote
+from .models import Account, BusinessProfile, Invoice, LineItem, Quote
 
 
-def render_quote_pdf(account: Account, quote: Quote) -> bytes:
+def render_quote_pdf(account: Account, quote: Quote, from_profile: BusinessProfile | None = None) -> bytes:
     return _render(
         title="Quote",
         number=quote.number or f"DRAFT-{quote.id}",
@@ -22,10 +22,13 @@ def render_quote_pdf(account: Account, quote: Quote) -> bytes:
         account=account,
         line_items=quote.line_items,
         currency=quote.currency,
+        from_profile=from_profile,
     )
 
 
-def render_invoice_pdf(account: Account, invoice: Invoice) -> bytes:
+def render_invoice_pdf(
+    account: Account, invoice: Invoice, from_profile: BusinessProfile | None = None
+) -> bytes:
     return _render(
         title="Invoice",
         number=invoice.number or f"DRAFT-{invoice.id}",
@@ -36,7 +39,22 @@ def render_invoice_pdf(account: Account, invoice: Invoice) -> bytes:
         account=account,
         line_items=invoice.line_items,
         currency=invoice.currency,
+        from_profile=from_profile,
     )
+
+
+def business_profile_lines(profile: BusinessProfile | None) -> list[str]:
+    """What the "From" section shows: business name and address, if set -
+    never the account holder's personal name (see CLAUDE.md). Pulled out as
+    a pure function so the decision (what shows, in what order, when there's
+    nothing to show at all) is unit-testable without parsing rendered PDF
+    bytes - reportlab has no matching "read a PDF back" half to assert with."""
+    if profile is None or not profile.business_name.strip():
+        return []
+    lines = [profile.business_name]
+    if profile.business_address and profile.business_address.strip():
+        lines.append(profile.business_address)
+    return lines
 
 
 def _render(
@@ -50,6 +68,7 @@ def _render(
     account: Account,
     line_items: list[LineItem],
     currency: str,
+    from_profile: BusinessProfile | None,
 ) -> bytes:
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, title=f"{title} {number}")
@@ -62,8 +81,15 @@ def _render(
     ]
     if due_or_expiry_date is not None:
         story.append(Paragraph(f"{due_or_expiry_label}: {due_or_expiry_date.isoformat()}", styles["Normal"]))
-
     story.append(Spacer(1, 8 * mm))
+
+    from_lines = business_profile_lines(from_profile)
+    if from_lines:
+        story.append(Paragraph("From", styles["Heading3"]))
+        for line in from_lines:
+            story.append(Paragraph(line, styles["Normal"]))
+        story.append(Spacer(1, 8 * mm))
+
     story.append(Paragraph("Bill to", styles["Heading3"]))
     story.append(Paragraph(account.business_name, styles["Normal"]))
     if account.contact_name:

@@ -53,6 +53,28 @@ SQLite file; default is `invoice_system.db` in the working directory. The
 CLI is a local, trusted tool and is **not** behind login (unlike the API) —
 see `CLAUDE.md`.
 
+Your own business profile (shown as "From" on PDFs, drives the invoice due
+date) is managed with `settings`, keyed by an explicit `--user-id` (find it
+via `uv run sessionkit list`) since the CLI has no login session to resolve
+it from:
+
+```
+uv run invoice-system-cli settings set --user-id 1 \
+    --first-name Ada --last-name Lovelace \
+    --business-name "Acme Consulting" --business-address "1 Main St" \
+    --payment-terms-days 14 --utr 1234567890 --vat-number GB123456789
+uv run invoice-system-cli settings show --user-id 1
+```
+
+`--user-id` is also optional on `invoice send`, `quote pdf`, and `invoice
+pdf` — pass it to pull in that user's payment terms / "From" details, omit
+it for the old behaviour (fixed 30-day due date, no "From" section):
+
+```
+uv run invoice-system-cli invoice send 1 --user-id 1
+uv run invoice-system-cli quote pdf 1 -o quote.pdf --user-id 1
+```
+
 ## Serve the web client
 
 ```

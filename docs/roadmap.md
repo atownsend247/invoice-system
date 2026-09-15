@@ -56,20 +56,27 @@
       `testing-and-ci.md`) — not done; currently only the raw job logs +
       the coverage summary.
 
-## Phase 5 — User settings (business profile)
+## Phase 5 — User settings (business profile) (done)
 
-- [x] `BusinessProfile` (name/address/payment terms/UTR/VAT), one per user,
-      stored in `invoice_system.db` keyed by sessionkit's `User.id` (a
-      plain column, not an enforced FK — see `CLAUDE.md`). Backend
-      (`BusinessProfileService`, `GET`/`PUT /settings/business-profile`)
-      and a `web/` settings page + nav link, with its own e2e spec
-      (`web/e2e/settings.spec.ts`).
-- [ ] Wire `payment_terms_days` into `InvoiceService.send()`'s due-date
-      calculation, replacing the fixed `DEFAULT_INVOICE_DUE_DAYS`.
-- [ ] Wire `business_name`/`business_address` into `pdf.py` as a "from"
-      party — quote/invoice PDFs currently only show "bill to". Both of
-      these need an answer for the CLI first, since it has no "current
-      user" concept to look a profile up by (see `docs/api.md`).
+- [x] `BusinessProfile` (title/first/last name, business name/address,
+      payment terms, UTR/VAT), one per user, stored in `invoice_system.db`
+      keyed by sessionkit's `User.id` (a plain column, not an enforced FK —
+      see `CLAUDE.md`). Backend (`BusinessProfileService`, `GET`/`PUT
+      /settings/business-profile`) and a `web/` settings page + nav link,
+      with its own e2e spec (`web/e2e/settings.spec.ts`).
+- [x] `payment_terms_days` drives `InvoiceService.send()`'s due-date calc
+      (`send(invoice_id, payment_terms_days=...)`, falling back to the
+      fixed `DEFAULT_INVOICE_DUE_DAYS` when `None`).
+- [x] `business_name`/`business_address` appear as a "From" section on
+      generated PDFs (`pdf.py`'s `business_profile_lines()`), above "Bill
+      to", when `business_name` is set.
+- [x] CLI: `settings show`/`settings set --user-id`, and `--user-id` on
+      `invoice send`/`quote pdf`/`invoice pdf` — the answer to "the CLI has
+      no current user" was an explicit flag, not a guess (see `docs/api.md`).
+- [ ] `title`/`first_name`/`last_name` are captured but not surfaced
+      anywhere yet (not on a PDF, not elsewhere in the UI) - deliberately
+      out of scope; only business name/address were asked to appear on
+      documents.
 
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

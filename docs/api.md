@@ -43,18 +43,20 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | GET | `/quotes/{id}/pdf` | required | Render the quote as a PDF (`application/pdf`). |
 | GET | `/invoices` | required | List invoices, optionally filtered by `?account_id=`. |
 | GET | `/invoices/{id}` | required | Fetch one invoice with its line items and total. |
-| POST | `/invoices/{id}/send` | required | Assign an invoice number and due date (issue date + 30 days), transition `draft → sent`. 422 if no line items. |
+| POST | `/invoices/{id}/send` | required | Assign an invoice number and due date (issue date + the current user's `payment_terms_days`, default 30), transition `draft → sent`. 422 if no line items. |
 | POST | `/invoices/{id}/void` | required | Transition to `void`. 409 if already `paid`. |
-| GET | `/invoices/{id}/pdf` | required | Render the invoice as a PDF (`application/pdf`). |
-| GET | `/settings/business-profile` | required | The current user's own business profile. Never 404s — returns sensible defaults (`payment_terms_days: 30`, everything else blank/`null`) if nothing's been saved yet. |
-| PUT | `/settings/business-profile` | required | Upsert it (`business_name`, `business_address`, `payment_terms_days` required; `utr`, `vat_number` optional). 422 on a blank name/address or `payment_terms_days <= 0`. |
+| GET | `/invoices/{id}/pdf` | required | Render the invoice as a PDF (`application/pdf`), with a "From" section for the current user's business name/address if set. |
+| GET | `/settings/business-profile` | required | The current user's own profile. Never 404s — returns sensible defaults (`payment_terms_days: 30`, everything else blank/`null`) if nothing's been saved yet. |
+| PUT | `/settings/business-profile` | required | Upsert it (`first_name`, `last_name`, `business_name`, `payment_terms_days` required; `title`, `business_address`, `utr`, `vat_number` optional). 422 on a blank required field or `payment_terms_days <= 0`. |
 
 The CLI (`invoice-system-cli`) mirrors the account/quote/invoice routes
 one-for-one over the same storage, but is **not** behind login — it's a
-local, trusted tool (see `CLAUDE.md`). It does **not** cover
-`/settings/business-profile` — that's inherently a per-user resource
-(`user_id` = sessionkit's `User.id`), and the CLI has no concept of "the
-current user" at all.
+local, trusted tool (see `CLAUDE.md`). Where these routes resolve "which
+user" from the Bearer token, the CLI takes an explicit `--user-id` instead:
+`settings show`/`settings set` (no API equivalent by path, but the same
+`BusinessProfileService` underneath), `invoice send --user-id`, `quote
+pdf`/`invoice pdf --user-id`. Omit `--user-id` and those commands behave
+exactly as if no profile existed (fixed 30-day due date, no "From" section).
 
 ## Conventions
 
@@ -77,7 +79,3 @@ current user" at all.
 
 Payments, marking an invoice `paid`/`overdue`, and TOTP/2FA endpoints
 (sessionkit supports it; no routes expose it yet) — see `docs/roadmap.md`.
-`BusinessProfile` is also not yet *consumed* anywhere: `payment_terms_days`
-doesn't affect `POST /invoices/{id}/send`'s due-date calc, and
-`business_name`/`business_address` don't appear on the PDF endpoints — see
-`CLAUDE.md` conventions.

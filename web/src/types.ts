@@ -65,8 +65,11 @@ export interface Invoice {
 // client being billed). One per user; there's no id, since GET/PUT always
 // mean "my own profile" via the auth token, not an id in the URL.
 export interface BusinessProfile {
+  title: string | null
+  first_name: string
+  last_name: string
   business_name: string
-  business_address: string
+  business_address: string | null
   payment_terms_days: number
   utr: string | null
   vat_number: string | null

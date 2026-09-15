@@ -47,16 +47,19 @@ Three separate things are easy to conflate here — don't:
 - **sessionkit's `User`** (`auth.db`) — a *login* identity. Has no business
   details at all beyond email/name.
 - **`BusinessProfile`** (this app's own domain table, `business_profiles`) —
-  the logged-in user's *own* business details (name/address/payment terms/
-  UTR/VAT), shown on the quotes/invoices they send. One per user, keyed by
-  `user_id` = sessionkit's `User.id`. That's a **plain integer column, not
-  an enforced foreign key** — `business_profiles` lives in `invoice_system.db`,
-  `users` lives in the separate `auth.db`, and SQLite can't enforce a
-  cross-database constraint. Deleting a user via `sessionkit delete` leaves
-  its `business_profiles` row orphaned; nothing cleans it up automatically
-  (there's no hook for sessionkit to call into the domain db, and it
-  shouldn't gain one — see `docs/extracting-reusable-packages.md` on why a
-  vendored concern stays ignorant of the host app).
+  the logged-in user's *own* details: `title` (optional), `first_name`,
+  `last_name` (the account holder's personal name - **never shown on a
+  PDF**, see Conventions), `business_name`, `business_address` (optional),
+  `payment_terms_days`, `utr`/`vat_number` (optional). One per user, keyed
+  by `user_id` = sessionkit's `User.id`. That's a **plain integer column,
+  not an enforced foreign key** — `business_profiles` lives in
+  `invoice_system.db`, `users` lives in the separate `auth.db`, and SQLite
+  can't enforce a cross-database constraint. Deleting a user via
+  `sessionkit delete` leaves its `business_profiles` row orphaned; nothing
+  cleans it up automatically (there's no hook for sessionkit to call into
+  the domain db, and it shouldn't gain one — see
+  `docs/extracting-reusable-packages.md` on why a vendored concern stays
+  ignorant of the host app).
 
 ## Commands
 
@@ -76,7 +79,11 @@ Three separate things are easy to conflate here — don't:
 - CLI: `uv run invoice-system-cli --help` (or the installed
   `invoice-system-cli` entry point) — mirrors the API one-for-one over the
   same storage. **Not** behind login — it's a local, trusted tool; only the
-  HTTP API is gated (see architecture rules).
+  HTTP API is gated (see architecture rules). Where the API resolves "which
+  user" from the Bearer token (settings, payment-terms-driven due dates,
+  the PDF "from" party), the CLI takes an explicit `--user-id` instead
+  (`settings show/set`, `invoice send`, `quote pdf`/`invoice pdf`) — omit it
+  and those commands behave exactly as if no profile existed.
 - Web: `cd web && npm install && npm run dev` (Vite on `:5173`, or whatever
   port it lands on if that one's taken — it logs the actual one; note it
   binds `localhost`, which may resolve to the IPv6 loopback only, so prefer
@@ -158,16 +165,19 @@ Three separate things are easy to conflate here — don't:
   persisted to `localStorage`) to every request except login, and calls one
   registered "unauthorized" handler on any 401 so `AuthContext` can clear the
   session in one place, not per-call.
-- `BusinessProfile` fields are **stored but not yet consumed anywhere else**:
-  `payment_terms_days` doesn't drive `InvoiceService.send()`'s due-date calc
-  (still the fixed `DEFAULT_INVOICE_DUE_DAYS`), and `business_name`/
-  `business_address` don't appear on generated PDFs (`pdf.py` still has no
-  "from" party, only "bill to"). Wiring either in is a real, separate change
-  — `InvoiceService`/`pdf.py` would need a `payment_terms_days`/profile
-  parameter threaded through from the API layer (which knows the current
-  user), and the CLI would need an answer for "whose profile" since it has
-  no user concept at all. Don't assume either integration exists just
-  because the setting does.
+- `BusinessProfile.payment_terms_days` drives `InvoiceService.send()`'s
+  due-date calc: `send(invoice_id, payment_terms_days=...)` — pass `None`
+  (both API and CLI do, when there's no profile/`--user-id`) to fall back to
+  the fixed `DEFAULT_INVOICE_DUE_DAYS`. `business_name`/`business_address`
+  appear as a "From" section on generated PDFs (`pdf.py`'s
+  `business_profile_lines()`), **above** "Bill to", only when
+  `business_name` is actually set — never empty/blank. Neither `pdf.py` nor
+  `InvoiceService` import `BusinessProfileService` or know what a "user" is
+  — the API/CLI layers resolve the profile and pass plain values in
+  (`payment_terms_days: int | None`, `from_profile: BusinessProfile | None`),
+  keeping the "whose profile" question entirely at the entry-point layer.
+  **Deliberately not shown on a PDF**: `title`/`first_name`/`last_name` —
+  only `business_name`/`business_address` were asked for.
 - Two separate exception hierarchies get mapped to HTTP status in `api/app.py`,
   each in its own handler: this app's `AppError` (`handle_app_error`) and
   sessionkit's `AuthError` (`handle_auth_error`). Don't merge them into one
@@ -180,7 +190,17 @@ Three separate things are easy to conflate here — don't:
   baseline schema. Append a numbered entry to a `MIGRATIONS` list; a
   migration runner applies whatever's pending and tracks progress via
   `PRAGMA user_version`. Existing data must survive every migration — write
-  it as if a production database will run it unattended.
+  it as if a production database will run it unattended. SQLite can't
+  `ALTER COLUMN` to relax a `NOT NULL` constraint in place — migration 3
+  (making `business_address` optional) is the reference example of the
+  fix: create a new table with the target shape, `INSERT ... SELECT` the
+  old data across (using `NULLIF(col, '')` where an old required-with-
+  default-`''` column becomes a genuinely nullable one), `DROP` the old
+  table, `RENAME` the new one into its place. `tests/storage/
+  test_sqlite_repository.py::test_migration_3_preserves_rows_...` builds a
+  database that only ever saw migrations 1-2 and asserts the rebuild
+  doesn't lose data — write that same style of test for any migration that
+  reshapes an existing table, not just ones that add a new one.
 - Storage is a single shared SQLite connection/file — **serialise every
   access on a lock** inside the repository implementation rather than
   assuming the caller will.

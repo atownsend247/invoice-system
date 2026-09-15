@@ -39,12 +39,22 @@ class BusinessProfile:
     """The logged-in user's own business details - not a domain "Account"
     (that's the client being billed) and not sessionkit's User (that's the
     login identity). One per user, keyed by sessionkit's user id - see
-    CLAUDE.md for why that's a plain column, not an enforced foreign key."""
+    CLAUDE.md for why that's a plain column, not an enforced foreign key.
+
+    title/first_name/last_name are the account holder's own name (title is
+    the only optional one of the three, e.g. "Mr"/"Dr" - a form nicety, not
+    something anyone should be blocked from saving without). business_name
+    is still required; business_address is not (a sole trader may legally
+    trade under their home address and not want it on every document, or
+    simply not have filled it in yet)."""
 
     id: int | None
     user_id: int
+    title: str | None
+    first_name: str
+    last_name: str
     business_name: str
-    business_address: str
+    business_address: str | None
     payment_terms_days: int
     utr: str | None
     vat_number: str | None

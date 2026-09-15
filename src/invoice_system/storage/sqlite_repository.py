@@ -81,10 +81,13 @@ class SqliteRepository:
     def upsert_business_profile(self, profile: BusinessProfile) -> BusinessProfile:
         with self._lock:
             self._conn.execute(
-                "INSERT INTO business_profiles (user_id, business_name, business_address, "
-                "payment_terms_days, utr, vat_number, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "INSERT INTO business_profiles (user_id, title, first_name, last_name, "
+                "business_name, business_address, payment_terms_days, utr, vat_number, "
+                "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(user_id) DO UPDATE SET "
+                "title = excluded.title, "
+                "first_name = excluded.first_name, "
+                "last_name = excluded.last_name, "
                 "business_name = excluded.business_name, "
                 "business_address = excluded.business_address, "
                 "payment_terms_days = excluded.payment_terms_days, "
@@ -93,6 +96,9 @@ class SqliteRepository:
                 "updated_at = excluded.updated_at",
                 (
                     profile.user_id,
+                    profile.title,
+                    profile.first_name,
+                    profile.last_name,
                     profile.business_name,
                     profile.business_address,
                     profile.payment_terms_days,
@@ -113,6 +119,9 @@ class SqliteRepository:
         return BusinessProfile(
             id=row["id"],
             user_id=row["user_id"],
+            title=row["title"],
+            first_name=row["first_name"],
+            last_name=row["last_name"],
             business_name=row["business_name"],
             business_address=row["business_address"],
             payment_terms_days=row["payment_terms_days"],

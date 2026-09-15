@@ -109,11 +109,19 @@ def quote_convert(application: Application, quote_id: int) -> None:
 @quote.command("pdf")
 @click.argument("quote_id", type=int)
 @click.option("--output", "-o", type=click.Path(), required=True)
+@click.option(
+    "--user-id",
+    type=int,
+    default=None,
+    help="Show this user's business profile as the 'From' party (see 'settings show'). "
+    "Omit to render without one, same as before.",
+)
 @click.pass_obj
-def quote_pdf(application: Application, quote_id: int, output: str) -> None:
+def quote_pdf(application: Application, quote_id: int, output: str, user_id: int | None) -> None:
     fetched = application.quotes.get_quote(quote_id)
     account = application.accounts.get_account(fetched.account_id)
-    Path(output).write_bytes(render_quote_pdf(account, fetched))
+    profile = application.business_profiles.get_profile(user_id) if user_id is not None else None
+    Path(output).write_bytes(render_quote_pdf(account, fetched, profile))
     click.echo(f"Wrote {output}")
 
 
@@ -132,10 +140,20 @@ def invoice_list(application: Application, account_id: int | None) -> None:
 
 @invoice.command("send")
 @click.argument("invoice_id", type=int)
+@click.option(
+    "--user-id",
+    type=int,
+    default=None,
+    help="Use this user's payment terms (see 'settings show') for the due date. "
+    "Omit to use the fixed default, same as before.",
+)
 @click.pass_obj
-def invoice_send(application: Application, invoice_id: int) -> None:
-    sent = application.invoices.send(invoice_id)
-    click.echo(f"Invoice {invoice_id} sent as {sent.number}")
+def invoice_send(application: Application, invoice_id: int, user_id: int | None) -> None:
+    payment_terms_days = (
+        application.business_profiles.get_profile(user_id).payment_terms_days if user_id is not None else None
+    )
+    sent = application.invoices.send(invoice_id, payment_terms_days=payment_terms_days)
+    click.echo(f"Invoice {invoice_id} sent as {sent.number} (due {sent.due_date})")
 
 
 @invoice.command("void")
@@ -149,12 +167,76 @@ def invoice_void(application: Application, invoice_id: int) -> None:
 @invoice.command("pdf")
 @click.argument("invoice_id", type=int)
 @click.option("--output", "-o", type=click.Path(), required=True)
+@click.option(
+    "--user-id",
+    type=int,
+    default=None,
+    help="Show this user's business profile as the 'From' party (see 'settings show'). "
+    "Omit to render without one, same as before.",
+)
 @click.pass_obj
-def invoice_pdf(application: Application, invoice_id: int, output: str) -> None:
+def invoice_pdf(application: Application, invoice_id: int, output: str, user_id: int | None) -> None:
     fetched = application.invoices.get_invoice(invoice_id)
     account = application.accounts.get_account(fetched.account_id)
-    Path(output).write_bytes(render_invoice_pdf(account, fetched))
+    profile = application.business_profiles.get_profile(user_id) if user_id is not None else None
+    Path(output).write_bytes(render_invoice_pdf(account, fetched, profile))
     click.echo(f"Wrote {output}")
+
+
+@cli.group()
+def settings() -> None:
+    pass
+
+
+@settings.command("show")
+@click.option("--user-id", type=int, required=True, help="sessionkit's User.id - see 'sessionkit list'.")
+@click.pass_obj
+def settings_show(application: Application, user_id: int) -> None:
+    profile = application.business_profiles.get_profile(user_id)
+    click.echo(f"Title: {profile.title or '-'}")
+    click.echo(f"Name: {(profile.first_name + ' ' + profile.last_name).strip() or '-'}")
+    click.echo(f"Business name: {profile.business_name or '-'}")
+    click.echo(f"Business address: {profile.business_address or '-'}")
+    click.echo(f"Payment terms (days): {profile.payment_terms_days}")
+    click.echo(f"UTR: {profile.utr or '-'}")
+    click.echo(f"VAT number: {profile.vat_number or '-'}")
+
+
+@settings.command("set")
+@click.option("--user-id", type=int, required=True, help="sessionkit's User.id - see 'sessionkit list'.")
+@click.option("--first-name", required=True)
+@click.option("--last-name", required=True)
+@click.option("--business-name", required=True)
+@click.option("--title", default=None, help="Optional, e.g. Mr/Mrs/Dr.")
+@click.option("--business-address", default=None)
+@click.option("--payment-terms-days", type=int, default=30, show_default=True)
+@click.option("--utr", default=None)
+@click.option("--vat-number", default=None)
+@click.pass_obj
+def settings_set(
+    application: Application,
+    user_id: int,
+    first_name: str,
+    last_name: str,
+    business_name: str,
+    title: str | None,
+    business_address: str | None,
+    payment_terms_days: int,
+    utr: str | None,
+    vat_number: str | None,
+) -> None:
+    application.business_profiles.save_profile(
+        user_id,
+        title=title,
+        first_name=first_name,
+        last_name=last_name,
+        business_name=business_name,
+        business_address=business_address,
+        payment_terms_days=payment_terms_days,
+        utr=utr,
+        vat_number=vat_number,
+    )
+    click.echo(f"Saved business profile for user {user_id}")
 
 
 def main() -> None:

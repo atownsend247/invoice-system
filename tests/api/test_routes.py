@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -158,7 +160,11 @@ def test_business_profile_defaults_before_first_save(client, auth_headers):
     response = client.get("/settings/business-profile", headers=auth_headers)
     assert response.status_code == 200
     body = response.json()
+    assert body["title"] is None
+    assert body["first_name"] == ""
+    assert body["last_name"] == ""
     assert body["business_name"] == ""
+    assert body["business_address"] is None
     assert body["payment_terms_days"] == 30
     assert body["utr"] is None
     assert body["vat_number"] is None
@@ -168,6 +174,9 @@ def test_saving_business_profile_persists_and_is_returned_on_refetch(client, aut
     response = client.put(
         "/settings/business-profile",
         json={
+            "title": "Dr",
+            "first_name": "Ada",
+            "last_name": "Lovelace",
             "business_name": "Acme Consulting",
             "business_address": "1 Main St",
             "payment_terms_days": 14,
@@ -181,14 +190,85 @@ def test_saving_business_profile_persists_and_is_returned_on_refetch(client, aut
     assert response.json()["payment_terms_days"] == 14
 
     response = client.get("/settings/business-profile", headers=auth_headers)
+    assert response.json()["title"] == "Dr"
+    assert response.json()["first_name"] == "Ada"
     assert response.json()["utr"] == "1234567890"
     assert response.json()["vat_number"] == "GB123456789"
+
+
+def test_business_address_is_optional(client, auth_headers):
+    response = client.put(
+        "/settings/business-profile",
+        json={
+            "first_name": "Ada",
+            "last_name": "Lovelace",
+            "business_name": "Acme Consulting",
+            "payment_terms_days": 30,
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["business_address"] is None
 
 
 def test_saving_business_profile_without_a_name_returns_422(client, auth_headers):
     response = client.put(
         "/settings/business-profile",
-        json={"business_name": "", "business_address": "1 Main St", "payment_terms_days": 30},
+        json={"first_name": "Ada", "last_name": "Lovelace", "business_name": "", "payment_terms_days": 30},
         headers=auth_headers,
     )
     assert response.status_code == 422
+
+
+def test_saving_business_profile_without_first_name_returns_422(client, auth_headers):
+    response = client.put(
+        "/settings/business-profile",
+        json={"first_name": "", "last_name": "Lovelace", "business_name": "Acme", "payment_terms_days": 30},
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
+def test_payment_terms_from_profile_drive_the_invoice_due_date(client, auth_headers):
+    client.put(
+        "/settings/business-profile",
+        json={
+            "first_name": "Ada",
+            "last_name": "Lovelace",
+            "business_name": "Acme Consulting",
+            "payment_terms_days": 5,
+        },
+        headers=auth_headers,
+    )
+
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Client Co", "email": "a@b.test", "address": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+    client.post(
+        f"/quotes/{quote_id}/line-items",
+        json={"description": "Work", "quantity": "1", "unit_price": "100.00"},
+        headers=auth_headers,
+    )
+    client.post(f"/quotes/{quote_id}/send", headers=auth_headers)
+    invoice = client.post(f"/quotes/{quote_id}/convert", headers=auth_headers).json()
+
+    response = client.post(f"/invoices/{invoice['id']}/send", headers=auth_headers)
+    sent = response.json()
+    expected_due = date.fromisoformat(sent["issue_date"]) + timedelta(days=5)
+    assert sent["due_date"] == expected_due.isoformat()
+
+
+def test_pdf_still_renders_with_no_business_profile_set(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Client Co", "email": "a@b.test", "address": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+
+    response = client.get(f"/quotes/{quote_id}/pdf", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"

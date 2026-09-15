@@ -1,8 +1,10 @@
+import sqlite3
 from datetime import UTC, datetime
 
 import pytest
 
 from invoice_system.models import Account, BusinessProfile
+from invoice_system.storage.schema import MIGRATIONS
 from invoice_system.storage.sqlite_repository import SqliteRepository
 
 
@@ -55,6 +57,9 @@ def test_upsert_business_profile_round_trip_and_update(repo):
     first = BusinessProfile(
         id=None,
         user_id=1,
+        title="Dr",
+        first_name="Ada",
+        last_name="Lovelace",
         business_name="Acme",
         business_address="1 Main St",
         payment_terms_days=30,
@@ -67,6 +72,9 @@ def test_upsert_business_profile_round_trip_and_update(repo):
     assert inserted.id is not None
 
     fetched = repo.get_business_profile(user_id=1)
+    assert fetched.title == "Dr"
+    assert fetched.first_name == "Ada"
+    assert fetched.last_name == "Lovelace"
     assert fetched.business_name == "Acme"
     assert fetched.utr == "1234567890"
     assert fetched.vat_number is None
@@ -75,8 +83,11 @@ def test_upsert_business_profile_round_trip_and_update(repo):
     second = BusinessProfile(
         id=None,
         user_id=1,
+        title=None,
+        first_name="Grace",
+        last_name="Hopper",
         business_name="Acme Ltd",
-        business_address="2 Main St",
+        business_address=None,
         payment_terms_days=14,
         utr=None,
         vat_number="GB123456789",
@@ -86,7 +97,42 @@ def test_upsert_business_profile_round_trip_and_update(repo):
     updated = repo.upsert_business_profile(second)
 
     assert updated.id == inserted.id  # same row, not a second one
+    assert updated.title is None
+    assert updated.first_name == "Grace"
     assert updated.business_name == "Acme Ltd"
+    assert updated.business_address is None
     assert updated.payment_terms_days == 14
     assert updated.utr is None
     assert updated.vat_number == "GB123456789"
+
+
+def test_migration_3_preserves_rows_from_the_old_business_profiles_shape(tmp_path):
+    # Simulate a database that only ever saw migrations 1-2 (business_name,
+    # business_address NOT NULL DEFAULT '', no title/first_name/last_name) -
+    # exactly the shape migration 3's rebuild-and-swap has to carry forward
+    # without losing data. See the "Schema changes are forward-only
+    # migrations" gotcha in CLAUDE.md.
+    db_path = tmp_path / "old.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript(MIGRATIONS[0])
+    conn.executescript(MIGRATIONS[1])
+    conn.execute("PRAGMA user_version = 2")
+    conn.execute(
+        "INSERT INTO business_profiles "
+        "(user_id, business_name, business_address, payment_terms_days, utr, vat_number, "
+        "created_at, updated_at) VALUES (1, 'Acme', '', 30, NULL, NULL, ?, ?)",
+        ("2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00"),
+    )
+    conn.commit()
+    conn.close()
+
+    repo = SqliteRepository(db_path)
+    repo.migrate()
+
+    profile = repo.get_business_profile(user_id=1)
+    assert profile.business_name == "Acme"
+    assert profile.business_address is None  # '' from the old schema, not lost
+    assert profile.first_name == ""
+    assert profile.last_name == ""
+    assert profile.title is None
+    repo.close()

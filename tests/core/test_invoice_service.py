@@ -42,6 +42,18 @@ def test_send_invoice_assigns_number_sets_due_date_and_freezes(application, draf
         )
 
 
+def test_send_invoice_uses_payment_terms_days_when_given(application, draft_invoice, fake_clock):
+    invoice = application.invoices.send(draft_invoice.id, payment_terms_days=5)
+    assert invoice.due_date == fake_clock().date() + timedelta(days=5)
+
+
+def test_send_invoice_falls_back_to_the_default_when_payment_terms_not_given(
+    application, draft_invoice, fake_clock
+):
+    invoice = application.invoices.send(draft_invoice.id, payment_terms_days=None)
+    assert invoice.due_date == fake_clock().date() + timedelta(days=30)
+
+
 def test_cannot_send_invoice_without_line_items(application, account, fake_clock):
     # Invoices are normally only created via quote conversion, which always
     # copies at least one item - go through the repository directly to reach

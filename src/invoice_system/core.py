@@ -69,8 +69,11 @@ class BusinessProfileService:
         return BusinessProfile(
             id=None,
             user_id=user_id,
+            title=None,
+            first_name="",
+            last_name="",
             business_name="",
-            business_address="",
+            business_address=None,
             payment_terms_days=DEFAULT_PAYMENT_TERMS_DAYS,
             utr=None,
             vat_number=None,
@@ -82,16 +85,21 @@ class BusinessProfileService:
         self,
         user_id: int,
         *,
+        first_name: str,
+        last_name: str,
         business_name: str,
-        business_address: str,
         payment_terms_days: int,
+        title: str | None = None,
+        business_address: str | None = None,
         utr: str | None = None,
         vat_number: str | None = None,
     ) -> BusinessProfile:
+        if not first_name.strip():
+            raise ValidationFailed("first_name is required")
+        if not last_name.strip():
+            raise ValidationFailed("last_name is required")
         if not business_name.strip():
             raise ValidationFailed("business_name is required")
-        if not business_address.strip():
-            raise ValidationFailed("business_address is required")
         if payment_terms_days <= 0:
             raise ValidationFailed("payment_terms_days must be a positive number of days")
 
@@ -100,8 +108,13 @@ class BusinessProfileService:
         profile = BusinessProfile(
             id=existing.id if existing is not None else None,
             user_id=user_id,
+            title=title.strip() if title and title.strip() else None,
+            first_name=first_name,
+            last_name=last_name,
             business_name=business_name,
-            business_address=business_address,
+            business_address=business_address.strip()
+            if business_address and business_address.strip()
+            else None,
             payment_terms_days=payment_terms_days,
             utr=utr.strip() if utr and utr.strip() else None,
             vat_number=vat_number.strip() if vat_number and vat_number.strip() else None,
@@ -259,14 +272,21 @@ class InvoiceService:
         self._repository.add_invoice_line_item(invoice_id, item)
         return self._get_invoice(invoice_id)
 
-    def send(self, invoice_id: int, *, due_date: date_ | None = None) -> Invoice:
+    def send(
+        self,
+        invoice_id: int,
+        *,
+        due_date: date_ | None = None,
+        payment_terms_days: int | None = None,
+    ) -> Invoice:
         invoice = self._get_invoice(invoice_id)
         if invoice.status != InvoiceStatus.DRAFT:
             raise InvalidTransition(f"invoice {invoice_id} is not a draft (status={invoice.status.value})")
         if not invoice.line_items:
             raise ValidationFailed(f"invoice {invoice_id} has no line items")
         invoice.number = self._repository.next_invoice_number()
-        invoice.due_date = due_date or self._clock().date() + timedelta(days=DEFAULT_INVOICE_DUE_DAYS)
+        days = payment_terms_days if payment_terms_days is not None else DEFAULT_INVOICE_DUE_DAYS
+        invoice.due_date = due_date or self._clock().date() + timedelta(days=days)
         invoice.status = InvoiceStatus.SENT
         return self._repository.update_invoice(invoice)
 

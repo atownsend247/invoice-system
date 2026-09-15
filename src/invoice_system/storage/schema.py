@@ -74,4 +74,36 @@ MIGRATIONS: list[str] = [
         updated_at TEXT NOT NULL
     );
     """,
+    """
+    -- Adds title/first_name/last_name and relaxes business_address to
+    -- optional. SQLite can't ALTER a column's NOT NULL constraint in place,
+    -- so this is the documented rebuild-and-swap: new table, copy existing
+    -- rows across (NULLIF turns any stored '' address into a real NULL,
+    -- matching what "optional" means for every other nullable field here),
+    -- drop the old table, rename the new one into its place.
+    CREATE TABLE business_profiles_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL UNIQUE,
+        title TEXT,
+        first_name TEXT NOT NULL DEFAULT '',
+        last_name TEXT NOT NULL DEFAULT '',
+        business_name TEXT NOT NULL DEFAULT '',
+        business_address TEXT,
+        payment_terms_days INTEGER NOT NULL DEFAULT 30,
+        utr TEXT,
+        vat_number TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+
+    INSERT INTO business_profiles_new
+        (id, user_id, business_name, business_address, payment_terms_days,
+         utr, vat_number, created_at, updated_at)
+    SELECT id, user_id, business_name, NULLIF(business_address, ''), payment_terms_days,
+           utr, vat_number, created_at, updated_at
+    FROM business_profiles;
+
+    DROP TABLE business_profiles;
+    ALTER TABLE business_profiles_new RENAME TO business_profiles;
+    """,
 ]
