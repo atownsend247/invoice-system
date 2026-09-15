@@ -61,6 +61,9 @@ not through this app; there is no public signup route.
   points it at the API (default `http://127.0.0.1:8000`). `npm test` /
   `npm run test:e2e` (Playwright; spins up its own throwaway backend + this
   app, see `web/README.md`) / `npm run build` in `web/`.
+- CI: `.github/workflows/ci.yml` — `backend`, `frontend`, `e2e` (the last
+  gated on the first two passing), on every push/PR. See
+  `docs/testing-and-ci.md`.
 
 ## Architecture rules (don't violate)
 

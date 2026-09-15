@@ -44,15 +44,25 @@ toolchain, separate CI job — see CI shape).
 
 ## CI shape
 
-- Split jobs by concern (backend / frontend / anything else that has its own
-  toolchain) so a frontend-only change doesn't wait on a Python install, and
-  vice versa.
-- Publish results where they're easy to see without downloading an artifact:
-  a coverage table in the job summary, a PR comment with the diff, a "Test
-  Results" check run from the JUnit/equivalent output.
-- Cancel superseded runs for the same branch (`concurrency` +
-  `cancel-in-progress: true`) — a few seconds of setup cost, saves real minutes
-  on a repo that gets pushed to often.
+**Status: implemented** — `.github/workflows/ci.yml`, on every push and PR.
+
+- Three jobs, split by concern: `backend` (pytest + coverage), `frontend`
+  (vitest, `npm run lint`, `npm run build`), `e2e` (Playwright). `backend`
+  and `frontend` run in parallel — a frontend-only change doesn't wait on a
+  Python install, and vice versa.
+- `e2e` declares `needs: [backend, frontend]` — deliberately *not*
+  parallel with them. It's the slow job (real Chromium + two real servers),
+  so it only runs once the fast unit suites are known-good; failing fast on
+  a broken unit test shouldn't also cost the e2e minutes.
+- Coverage table in the job summary: `backend` runs `coverage report
+  --format=markdown >> $GITHUB_STEP_SUMMARY` after the test step, `if:
+  always()` so it still shows even when the coverage floor fails.
+- `concurrency: { group: ci-${{ github.workflow }}-${{ github.ref }},
+  cancel-in-progress: true }` at the workflow level cancels superseded runs
+  for the same branch.
+- **Not done yet**: a PR comment with the coverage diff, a "Test Results"
+  check run from JUnit/equivalent output (would need `pytest --junitxml`
+  and a reporter action — see `docs/roadmap.md`).
 
 ## Generated, committed artifacts
 

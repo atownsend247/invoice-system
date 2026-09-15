@@ -7,7 +7,8 @@
       repository, factory, clock, pdf), `storage/` with baseline schema +
       migration runner, `api/` and `cli/`.
 - [x] `tests/` mirror + `conftest.py` (`FakeClock`, per-test SQLite fixture).
-- [ ] CI: backend job running the full suite with the coverage floor.
+- [x] CI: backend job running the full suite with the coverage floor
+      (`.github/workflows/ci.yml`).
 
 ## Phase 1 — Core invoicing (done)
 
@@ -47,8 +48,13 @@
 ## Phase 4 — Delivery
 
 - [ ] Email delivery of quote/invoice PDFs on send.
-- [ ] CI: coverage table in job summary, cancel superseded runs (see
-      `testing-and-ci.md`).
+- [x] CI: coverage table in job summary, cancel superseded runs (see
+      `testing-and-ci.md`) — `.github/workflows/ci.yml`: backend
+      (pytest+coverage), frontend (vitest+build), e2e (Playwright, gated on
+      the other two passing first).
+- [ ] CI: a "Test Results" check run from JUnit/equivalent output (see
+      `testing-and-ci.md`) — not done; currently only the raw job logs +
+      the coverage summary.
 
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.
