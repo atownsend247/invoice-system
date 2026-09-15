@@ -164,6 +164,32 @@ def invoice_void(application: Application, invoice_id: int) -> None:
     click.echo(f"Invoice {invoice_id} voided")
 
 
+@invoice.command("pay")
+@click.argument("invoice_id", type=int)
+@click.pass_obj
+def invoice_pay(application: Application, invoice_id: int) -> None:
+    application.invoices.pay(invoice_id)
+    click.echo(f"Invoice {invoice_id} marked paid")
+
+
+@invoice.command("monthly-totals")
+@click.option(
+    "--user-id",
+    type=int,
+    required=True,
+    help="Resolve this user's reporting currency (see 'settings show') - only invoices in that "
+    "currency are counted.",
+)
+@click.pass_obj
+def invoice_monthly_totals(application: Application, user_id: int) -> None:
+    profile = application.business_profiles.get_profile(user_id)
+    for entry in application.invoices.monthly_totals(profile.currency):
+        click.echo(
+            f"{entry.month}\tpaid {entry.paid_total} {profile.currency}"
+            f"\tunpaid {entry.unpaid_total} {profile.currency}"
+        )
+
+
 @invoice.command("pdf")
 @click.argument("invoice_id", type=int)
 @click.option("--output", "-o", type=click.Path(), required=True)
@@ -202,6 +228,7 @@ def settings_show(application: Application, user_id: int) -> None:
     click.echo(f"County: {profile.county or '-'}")
     click.echo(f"Postcode: {profile.postcode or '-'}")
     click.echo(f"Payment terms (days): {profile.payment_terms_days}")
+    click.echo(f"Currency: {profile.currency}")
     click.echo(f"UTR: {profile.utr or '-'}")
     click.echo(f"VAT number: {profile.vat_number or '-'}")
 
@@ -218,6 +245,7 @@ def settings_show(application: Application, user_id: int) -> None:
 @click.option("--county", default=None)
 @click.option("--postcode", default=None)
 @click.option("--payment-terms-days", type=int, default=30, show_default=True)
+@click.option("--currency", default="GBP", show_default=True, help="Reporting currency, e.g. GBP/USD/EUR.")
 @click.option("--utr", default=None)
 @click.option("--vat-number", default=None)
 @click.pass_obj
@@ -234,6 +262,7 @@ def settings_set(
     county: str | None,
     postcode: str | None,
     payment_terms_days: int,
+    currency: str,
     utr: str | None,
     vat_number: str | None,
 ) -> None:
@@ -249,6 +278,7 @@ def settings_set(
         county=county,
         postcode=postcode,
         payment_terms_days=payment_terms_days,
+        currency=currency,
         utr=utr,
         vat_number=vat_number,
     )

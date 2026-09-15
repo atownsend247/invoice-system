@@ -10,10 +10,15 @@ doc is read as ground truth.
 |---|---|---|
 | `Account` | id, business_name, contact_name, email, phone, address, created_at | A business you provide a service to and bill. Not a login identity — see `CLAUDE.md`. |
 | `Quote` | id, account_id, number, status, currency, issue_date, expiry_date, created_at | `status`: `draft \| sent \| accepted \| rejected \| expired \| converted`. `number` (`Q-0001`, ...) is assigned on `send`, not on creation. |
-| `Invoice` | id, account_id, quote_id, number, status, currency, issue_date, due_date, created_at | `status`: `draft \| sent \| paid \| overdue \| void`. `quote_id` is set when created via conversion, `NULL` otherwise. `number` (`INV-0001`, ...) and `due_date` are assigned on `send`. |
+| `Invoice` | id, account_id, quote_id, number, status, currency, issue_date, due_date, created_at | `status`: `draft \| sent \| paid \| overdue \| void`. `quote_id` is set when created via conversion, `NULL` otherwise. `number` (`INV-0001`, ...) and `due_date` are assigned on `send`. `paid` is assigned by `InvoiceService.pay()`, only from `sent` — `overdue` is a defined enum value nothing ever actually sets (see "Not yet modelled"). |
 | `LineItem` | id, description, quantity, unit_price, position | One shape, shared by quotes and invoices; associated via `quote_line_items`/`invoice_line_items` join tables (`quote_id`/`invoice_id` + the same columns). `total` (`quantity * unit_price`) is a derived property, never stored. |
-| `BusinessProfile` | id, user_id, title, first_name, last_name, business_name, address_line1, address_line2, town_or_city, county, postcode, payment_terms_days, utr, vat_number, created_at, updated_at | The logged-in user's *own* details, in three groups (see `CLAUDE.md`): user settings (`title` optional, `first_name`/`last_name` required), business settings (`business_name` required; `address_line1`/`address_line2`/`town_or_city`/`county`/`postcode` — a UK GOV.UK Design System-style address, each line independently optional), payment and tax settings (`payment_terms_days`, `utr`/`vat_number` optional). Not `Account` (the client being billed). One per `user_id` (`UNIQUE`), which is sessionkit's `User.id` — a plain column, not an enforced FK (see `CLAUDE.md`, "Login accounts" below). Every optional field: blank input is normalised to `NULL`, never stored as `""`. |
+| `BusinessProfile` | id, user_id, title, first_name, last_name, business_name, address_line1, address_line2, town_or_city, county, postcode, payment_terms_days, currency, utr, vat_number, created_at, updated_at | The logged-in user's *own* details, in three groups (see `CLAUDE.md`): user settings (`title` optional, `first_name`/`last_name` required), business settings (`business_name` required; `address_line1`/`address_line2`/`town_or_city`/`county`/`postcode` — a UK GOV.UK Design System-style address, each line independently optional), payment and tax settings (`payment_terms_days`, `currency` — the home dashboard's *reporting* currency, defaults `"GBP"`, independent of any quote/invoice's own `currency` — `utr`/`vat_number` optional). Not `Account` (the client being billed). One per `user_id` (`UNIQUE`), which is sessionkit's `User.id` — a plain column, not an enforced FK (see `CLAUDE.md`, "Login accounts" below). Every optional field: blank input is normalised to `NULL`, never stored as `""`. |
 | counters (internal) | name, value | Backs `next_quote_number`/`next_invoice_number`; not a domain entity, not exposed via API/CLI. |
+
+`MonthlyInvoiceTotals` (`month`, `paid_total`, `unpaid_total`) is **not** a
+stored table — it's `InvoiceService.monthly_totals()`'s return shape,
+computed on read from `Invoice` rows for the home dashboard's chart. See
+the invariants below for exactly what it includes/excludes.
 
 ## Relationships
 
@@ -53,6 +58,22 @@ Invoice 1──* LineItem   (via invoice_line_items)
   `postcode` columns (plain `ADD COLUMN`/`DROP COLUMN`, no rebuild needed).
   Any pre-migration-4 value moved wholesale into `address_line1`, unparsed —
   see the migrations gotcha in `CLAUDE.md`.
+- Migration 5 added `business_profiles.currency` as a plain
+  `ADD COLUMN ... NOT NULL DEFAULT 'GBP'` — every pre-migration-5 row is
+  backfilled to `'GBP'` by the column default itself, no data-copying logic
+  needed (unlike migrations 3/4).
+- `InvoiceService.pay()` only transitions `sent → paid` — rejects `draft`
+  (never sent, nothing to have been paid for), `void` (cancelled), and an
+  already-`paid` invoice. Stricter than `void()`, which also allows `draft`.
+- `InvoiceService.monthly_totals(currency, months=12)` buckets every
+  non-`draft`, non-`void` invoice **system-wide** (not filtered by
+  account) by the calendar month of `issue_date` (when it was created, not
+  `due_date`/`created_at`'s time-of-day), for the trailing `months` months
+  ending with the current one. Only invoices whose `currency` matches the
+  argument count — a different-currency invoice is excluded, never summed
+  in regardless. `paid` invoices go in `paid_total`; everything else left
+  (`sent`) goes in `unpaid_total`. Months with no matching invoices still
+  appear, with both totals `Decimal("0")`.
 
 ## Login accounts (not this schema)
 
@@ -65,6 +86,9 @@ Invoice 1──* LineItem   (via invoice_line_items)
 
 ## Not yet modelled
 
-Payments/partial-payment tracking and an `overdue` status transition are
-future work — see `docs/roadmap.md`. There is currently no way to mark an
-`Invoice` `paid` other than direct storage access.
+Partial-payment tracking (a `Payment` model recording amounts/dates against
+an invoice) and a real `sent → overdue` status transition are future work —
+see `docs/roadmap.md`. Marking an invoice fully `paid` is implemented
+(`InvoiceService.pay()`, a status flag, not a ledger); "overdue" is only
+ever derived for display (`web/src/pages/HomePage.tsx`'s `isOverdue`), never
+written to `Invoice.status`.

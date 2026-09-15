@@ -83,8 +83,8 @@ class SqliteRepository:
             self._conn.execute(
                 "INSERT INTO business_profiles (user_id, title, first_name, last_name, "
                 "business_name, address_line1, address_line2, town_or_city, county, postcode, "
-                "payment_terms_days, utr, vat_number, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "payment_terms_days, currency, utr, vat_number, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(user_id) DO UPDATE SET "
                 "title = excluded.title, "
                 "first_name = excluded.first_name, "
@@ -96,6 +96,7 @@ class SqliteRepository:
                 "county = excluded.county, "
                 "postcode = excluded.postcode, "
                 "payment_terms_days = excluded.payment_terms_days, "
+                "currency = excluded.currency, "
                 "utr = excluded.utr, "
                 "vat_number = excluded.vat_number, "
                 "updated_at = excluded.updated_at",
@@ -111,6 +112,7 @@ class SqliteRepository:
                     profile.county,
                     profile.postcode,
                     profile.payment_terms_days,
+                    profile.currency,
                     profile.utr,
                     profile.vat_number,
                     profile.created_at.isoformat(),
@@ -138,6 +140,7 @@ class SqliteRepository:
             county=row["county"],
             postcode=row["postcode"],
             payment_terms_days=row["payment_terms_days"],
+            currency=row["currency"],
             utr=row["utr"],
             vat_number=row["vat_number"],
             created_at=datetime.fromisoformat(row["created_at"]),

@@ -4,6 +4,10 @@ test('creating a draft quote and adding a line item', async ({ authenticatedPage
   await page.goto(`/quotes/new?accountId=${testAccount.id}`)
   await expect(page.getByRole('heading', { name: 'New quote' })).toBeVisible()
   await page.getByLabel('Account').selectOption({ label: testAccount.business_name })
+  // Explicit, not relying on the field's default - it now pre-fills from
+  // the business profile's reporting currency (see CLAUDE.md), which is a
+  // shared value other specs also change, rather than a fixed 'USD'.
+  await page.getByRole('textbox', { name: 'Currency' }).fill('USD')
   await page.getByRole('button', { name: 'Create draft quote' }).click()
   await expect(page.getByRole('heading', { name: /Draft quote/ })).toBeVisible()
 

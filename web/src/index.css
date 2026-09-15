@@ -9,6 +9,8 @@
   --brand-contrast: #ffffff;
   --danger: #c0362c;
   --danger-bg: #fdecea;
+  --chart-paid: #2f9e56;
+  --chart-unpaid: #3454d1;
 
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   line-height: 1.5;
@@ -25,6 +27,8 @@
     --brand-contrast: #101018;
     --danger: #ff8b82;
     --danger-bg: #3a1f1d;
+    --chart-paid: #4cbf78;
+    --chart-unpaid: #7c93f0;
   }
 }
 
@@ -54,6 +58,79 @@ h2 {
 
 .dashboard-section {
   margin-top: 1.5rem;
+}
+
+.monthly-chart-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-bottom: 0.8rem;
+}
+
+.monthly-chart-swatch {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 2px;
+}
+
+.monthly-chart-swatch.paid {
+  background: var(--chart-paid);
+}
+
+.monthly-chart-swatch.unpaid {
+  background: var(--chart-unpaid);
+  margin-left: 0.8rem;
+}
+
+.monthly-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 0.8rem 0.6rem;
+  overflow-x: auto;
+}
+
+.monthly-chart-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1 0 2.5rem;
+}
+
+.monthly-chart-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 100px;
+  width: 100%;
+  justify-content: center;
+}
+
+.monthly-chart-bar {
+  width: 8px;
+  min-height: 2px;
+  border-radius: 2px 2px 0 0;
+}
+
+.monthly-chart-bar.paid {
+  background: var(--chart-paid);
+}
+
+.monthly-chart-bar.unpaid {
+  background: var(--chart-unpaid);
+}
+
+.monthly-chart-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 table {

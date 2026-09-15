@@ -4,11 +4,22 @@ from decimal import Decimal
 
 from .clock import Clock, system_clock
 from .errors import InvalidTransition, NotFound, ValidationFailed
-from .models import Account, BusinessProfile, Invoice, InvoiceStatus, LineItem, Quote, QuoteStatus
+from .models import (
+    Account,
+    BusinessProfile,
+    Invoice,
+    InvoiceStatus,
+    LineItem,
+    MonthlyInvoiceTotals,
+    Quote,
+    QuoteStatus,
+)
 from .repository import Repository
 
 DEFAULT_INVOICE_DUE_DAYS = 30
 DEFAULT_PAYMENT_TERMS_DAYS = 30
+DEFAULT_CURRENCY = "GBP"
+MONTHLY_TOTALS_MONTHS = 12
 
 
 class AccountService:
@@ -56,6 +67,18 @@ def _blank_to_none(value: str | None) -> str | None:
     return value.strip() if value and value.strip() else None
 
 
+def _month_start(d: date_) -> date_:
+    return date_(d.year, d.month, 1)
+
+
+def _month_key(d: date_) -> str:
+    return f"{d.year:04d}-{d.month:02d}"
+
+
+def _previous_month(d: date_) -> date_:
+    return date_(d.year - 1, 12, 1) if d.month == 1 else date_(d.year, d.month - 1, 1)
+
+
 class BusinessProfileService:
     """The logged-in user's own details (name/address/payment terms/UTR/VAT),
     one per user - see CLAUDE.md for why this is deliberately not an
@@ -83,6 +106,7 @@ class BusinessProfileService:
             county=None,
             postcode=None,
             payment_terms_days=DEFAULT_PAYMENT_TERMS_DAYS,
+            currency=DEFAULT_CURRENCY,
             utr=None,
             vat_number=None,
             created_at=now,
@@ -103,6 +127,7 @@ class BusinessProfileService:
         town_or_city: str | None = None,
         county: str | None = None,
         postcode: str | None = None,
+        currency: str = DEFAULT_CURRENCY,
         utr: str | None = None,
         vat_number: str | None = None,
     ) -> BusinessProfile:
@@ -114,6 +139,8 @@ class BusinessProfileService:
             raise ValidationFailed("business_name is required")
         if payment_terms_days <= 0:
             raise ValidationFailed("payment_terms_days must be a positive number of days")
+        if not currency.strip():
+            raise ValidationFailed("currency is required")
 
         existing = self._repository.get_business_profile(user_id)
         created_at = existing.created_at if existing is not None else self._clock()
@@ -130,6 +157,7 @@ class BusinessProfileService:
             county=_blank_to_none(county),
             postcode=_blank_to_none(postcode),
             payment_terms_days=payment_terms_days,
+            currency=currency.strip().upper(),
             utr=_blank_to_none(utr),
             vat_number=_blank_to_none(vat_number),
             created_at=created_at,
@@ -310,6 +338,50 @@ class InvoiceService:
             raise InvalidTransition(f"invoice {invoice_id} is already paid, cannot void")
         invoice.status = InvoiceStatus.VOID
         return self._repository.update_invoice(invoice)
+
+    def pay(self, invoice_id: int) -> Invoice:
+        invoice = self._get_invoice(invoice_id)
+        if invoice.status != InvoiceStatus.SENT:
+            raise InvalidTransition(
+                f"invoice {invoice_id} is not sent (status={invoice.status.value}), cannot mark paid"
+            )
+        invoice.status = InvoiceStatus.PAID
+        return self._repository.update_invoice(invoice)
+
+    def monthly_totals(
+        self, currency: str, *, months: int = MONTHLY_TOTALS_MONTHS
+    ) -> list[MonthlyInvoiceTotals]:
+        """Invoice totals for the trailing `months` months (this one
+        included), split into paid vs not, for invoices in `currency` only -
+        an invoice in a different currency is excluded rather than naively
+        summed in (see BusinessProfile.currency). Grouped by `issue_date`
+        (when the invoice was created - see CLAUDE.md), not `due_date` or
+        `created_at`. Draft invoices (not yet issued) and void ones
+        (cancelled) don't count toward either bucket."""
+        buckets: dict[str, MonthlyInvoiceTotals] = {}
+        order: list[str] = []
+        cursor = _month_start(self._clock().date())
+        for _ in range(months):
+            key = _month_key(cursor)
+            order.append(key)
+            buckets[key] = MonthlyInvoiceTotals(month=key, paid_total=Decimal("0"), unpaid_total=Decimal("0"))
+            cursor = _previous_month(cursor)
+        order.reverse()
+
+        for invoice in self._repository.list_invoices():
+            if invoice.currency != currency:
+                continue
+            if invoice.status in (InvoiceStatus.DRAFT, InvoiceStatus.VOID):
+                continue
+            bucket = buckets.get(_month_key(invoice.issue_date))
+            if bucket is None:
+                continue
+            if invoice.status == InvoiceStatus.PAID:
+                bucket.paid_total += invoice.total
+            else:
+                bucket.unpaid_total += invoice.total
+
+        return [buckets[key] for key in order]
 
     def _get_invoice(self, invoice_id: int) -> Invoice:
         invoice = self._repository.get_invoice(invoice_id)

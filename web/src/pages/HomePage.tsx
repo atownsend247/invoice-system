@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import * as api from '../api'
+import { MonthlyTotalsChart } from '../components/MonthlyTotalsChart'
 import { StatusBadge } from '../components/StatusBadge'
 import { useAsync } from '../hooks/useAsync'
 import type { Account, Invoice } from '../types'
@@ -27,6 +28,10 @@ export function isOutstanding(invoice: Invoice, asOf: string = today()): boolean
 export function HomePage() {
   const { data: invoices, loading, error } = useAsync(() => api.listInvoices(), [])
   const { data: accounts } = useAsync(() => api.listAccounts(), [])
+  const { data: monthlyTotals, error: monthlyTotalsError } = useAsync(
+    () => api.getMonthlyInvoiceTotals(),
+    [],
+  )
 
   return (
     <section>
@@ -56,6 +61,18 @@ export function HomePage() {
           />
         </>
       )}
+
+      <div className="dashboard-section">
+        <h2>Invoice totals, last 12 months</h2>
+        {monthlyTotalsError && (
+          <p className="form-error" role="alert">
+            {monthlyTotalsError}
+          </p>
+        )}
+        {monthlyTotals && (
+          <MonthlyTotalsChart currency={monthlyTotals.currency} months={monthlyTotals.months} />
+        )}
+      </div>
     </section>
   )
 }

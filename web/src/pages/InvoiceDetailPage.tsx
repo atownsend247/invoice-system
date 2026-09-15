@@ -38,6 +38,7 @@ export function InvoiceDetailPage() {
   }
 
   const canVoid = invoice.status !== 'paid' && invoice.status !== 'void'
+  const canPay = invoice.status === 'sent'
 
   return (
     <section>
@@ -75,6 +76,20 @@ export function InvoiceDetailPage() {
             }
           >
             Send
+          </button>
+        )}
+        {canPay && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              run(async () => {
+                await api.payInvoice(invoice.id)
+                refetch()
+              })
+            }
+          >
+            Mark as paid
           </button>
         )}
         {canVoid && (

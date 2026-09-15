@@ -24,7 +24,7 @@ export interface ApiInvoice {
 // Plain fetch, not Playwright's `request` fixture - these calls happen from
 // a worker-scoped fixture (apiToken), which can't depend on a test-scoped
 // one, and Node has fetch natively (see CLAUDE.md's Node version gotchas).
-async function apiFetch<T>(path: string, token: string | null, init: RequestInit = {}): Promise<T> {
+export async function apiFetch<T>(path: string, token: string | null, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   if (init.body !== undefined) headers.set('Content-Type', 'application/json')
   if (token) headers.set('Authorization', `Bearer ${token}`)
@@ -43,6 +43,7 @@ interface TestFixtures {
   sentQuote: ApiQuote
   draftInvoice: ApiInvoice
   sentInvoice: ApiInvoice
+  reportingCurrency: string
 }
 
 interface WorkerFixtures {
@@ -125,6 +126,16 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       method: 'POST',
     })
     await use(sent)
+  },
+
+  // Read-only (GET, never PUT) deliberately - the business profile is a
+  // singleton shared with settings.spec.ts (see CLAUDE.md), and a write
+  // here would race with that file's own writes across workers. Tests that
+  // need an invoice the monthly-totals chart will actually count use this
+  // to learn the currency to create it in, rather than assuming one.
+  reportingCurrency: async ({ apiToken }, use) => {
+    const profile = await apiFetch<{ currency: string }>('/settings/business-profile', apiToken)
+    await use(profile.currency)
   },
 })
 

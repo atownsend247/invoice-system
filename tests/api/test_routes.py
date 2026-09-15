@@ -170,6 +170,7 @@ def test_business_profile_defaults_before_first_save(client, auth_headers):
     assert body["county"] is None
     assert body["postcode"] is None
     assert body["payment_terms_days"] == 30
+    assert body["currency"] == "GBP"
     assert body["utr"] is None
     assert body["vat_number"] is None
 
@@ -188,6 +189,7 @@ def test_saving_business_profile_persists_and_is_returned_on_refetch(client, aut
             "county": "Greater London",
             "postcode": "SW1A 1AA",
             "payment_terms_days": 14,
+            "currency": "usd",
             "utr": "1234567890",
             "vat_number": "GB123456789",
         },
@@ -196,6 +198,7 @@ def test_saving_business_profile_persists_and_is_returned_on_refetch(client, aut
     assert response.status_code == 200
     assert response.json()["business_name"] == "Acme Consulting"
     assert response.json()["payment_terms_days"] == 14
+    assert response.json()["currency"] == "USD"
 
     response = client.get("/settings/business-profile", headers=auth_headers)
     assert response.json()["title"] == "Dr"
@@ -203,6 +206,7 @@ def test_saving_business_profile_persists_and_is_returned_on_refetch(client, aut
     assert response.json()["address_line1"] == "1 Main St"
     assert response.json()["town_or_city"] == "London"
     assert response.json()["postcode"] == "SW1A 1AA"
+    assert response.json()["currency"] == "USD"
     assert response.json()["utr"] == "1234567890"
     assert response.json()["vat_number"] == "GB123456789"
 
@@ -284,3 +288,87 @@ def test_pdf_still_renders_with_no_business_profile_set(client, auth_headers):
     response = client.get(f"/quotes/{quote_id}/pdf", headers=auth_headers)
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
+
+
+def _send_invoice(client, auth_headers, *, currency=None):
+    body = {"business_name": "Client Co", "email": "a@b.test", "address": "1 Main St"}
+    account_id = client.post("/accounts", json=body, headers=auth_headers).json()["id"]
+    quote_body = {"account_id": account_id, **({"currency": currency} if currency else {})}
+    quote_id = client.post("/quotes", json=quote_body, headers=auth_headers).json()["id"]
+    client.post(
+        f"/quotes/{quote_id}/line-items",
+        json={"description": "Work", "quantity": "1", "unit_price": "100.00"},
+        headers=auth_headers,
+    )
+    client.post(f"/quotes/{quote_id}/send", headers=auth_headers)
+    invoice_id = client.post(f"/quotes/{quote_id}/convert", headers=auth_headers).json()["id"]
+    return client.post(f"/invoices/{invoice_id}/send", headers=auth_headers).json()
+
+
+def test_pay_invoice_marks_it_paid(client, auth_headers):
+    invoice = _send_invoice(client, auth_headers)
+    response = client.post(f"/invoices/{invoice['id']}/pay", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json()["status"] == "paid"
+
+
+def test_cannot_pay_a_draft_invoice(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Client Co", "email": "a@b.test", "address": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+    client.post(
+        f"/quotes/{quote_id}/line-items",
+        json={"description": "Work", "quantity": "1", "unit_price": "100.00"},
+        headers=auth_headers,
+    )
+    client.post(f"/quotes/{quote_id}/send", headers=auth_headers)
+    invoice_id = client.post(f"/quotes/{quote_id}/convert", headers=auth_headers).json()["id"]
+
+    response = client.post(f"/invoices/{invoice_id}/pay", headers=auth_headers)
+    assert response.status_code == 409
+
+
+def test_monthly_totals_requires_auth(client):
+    response = client.get("/invoices/monthly-totals")
+    assert response.status_code == 401
+
+
+def test_monthly_totals_reports_the_profile_currency_and_twelve_months(client, auth_headers):
+    client.put(
+        "/settings/business-profile",
+        json={
+            "first_name": "Ada",
+            "last_name": "Lovelace",
+            "business_name": "Acme Consulting",
+            "payment_terms_days": 30,
+            "currency": "USD",
+        },
+        headers=auth_headers,
+    )
+    invoice = _send_invoice(client, auth_headers, currency="USD")
+    client.post(f"/invoices/{invoice['id']}/pay", headers=auth_headers)
+
+    response = client.get("/invoices/monthly-totals", headers=auth_headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["currency"] == "USD"
+    assert len(body["months"]) == 12
+
+    current_month = invoice["issue_date"][:7]
+    entry = next(m for m in body["months"] if m["month"] == current_month)
+    assert entry["paid_total"] == "100.00"
+    assert entry["unpaid_total"] == "0"
+
+
+def test_monthly_totals_excludes_invoices_in_a_different_currency(client, auth_headers):
+    # Profile defaults to GBP; this invoice is USD, so it shouldn't count.
+    invoice = _send_invoice(client, auth_headers, currency="USD")
+
+    response = client.get("/invoices/monthly-totals", headers=auth_headers)
+    current_month = invoice["issue_date"][:7]
+    entry = next(m for m in response.json()["months"] if m["month"] == current_month)
+    assert entry["paid_total"] == "0"
+    assert entry["unpaid_total"] == "0"

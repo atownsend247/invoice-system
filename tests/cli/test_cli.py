@@ -99,6 +99,7 @@ def test_settings_show_defaults_then_set_and_show_again(tmp_path):
     result = runner.invoke(cli, ["--db", str(db_path), "settings", "show", "--user-id", "1"])
     assert result.exit_code == 0, result.output
     assert "Payment terms (days): 30" in result.output
+    assert "Currency: GBP" in result.output
     assert "Business name: -" in result.output
 
     result = runner.invoke(
@@ -118,6 +119,8 @@ def test_settings_show_defaults_then_set_and_show_again(tmp_path):
             "Acme Consulting",
             "--payment-terms-days",
             "5",
+            "--currency",
+            "usd",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -129,6 +132,7 @@ def test_settings_show_defaults_then_set_and_show_again(tmp_path):
     assert "Business name: Acme Consulting" in result.output
     assert "Address line 1: -" in result.output
     assert "Payment terms (days): 5" in result.output
+    assert "Currency: USD" in result.output
 
 
 def test_settings_set_requires_first_name(tmp_path):
@@ -218,6 +222,127 @@ def test_invoice_send_with_user_id_uses_the_profiles_payment_terms(tmp_path):
     assert result.exit_code == 0, result.output
     expected_due = date.today() + timedelta(days=5)
     assert f"due {expected_due.isoformat()}" in result.output
+
+
+def test_invoice_pay(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, ["--db", str(db_path), "init-db"])
+    runner.invoke(
+        cli,
+        [
+            "--db",
+            str(db_path),
+            "account",
+            "create",
+            "--business-name",
+            "Client Co",
+            "--email",
+            "a@b.test",
+            "--address",
+            "1 Main St",
+        ],
+    )
+    runner.invoke(cli, ["--db", str(db_path), "quote", "create", "--account-id", "1"])
+    runner.invoke(
+        cli,
+        [
+            "--db",
+            str(db_path),
+            "quote",
+            "add-item",
+            "1",
+            "--description",
+            "Work",
+            "--quantity",
+            "1",
+            "--unit-price",
+            "100.00",
+        ],
+    )
+    runner.invoke(cli, ["--db", str(db_path), "quote", "send", "1"])
+    runner.invoke(cli, ["--db", str(db_path), "quote", "convert", "1"])
+    runner.invoke(cli, ["--db", str(db_path), "invoice", "send", "1"])
+
+    result = runner.invoke(cli, ["--db", str(db_path), "invoice", "pay", "1"])
+    assert result.exit_code == 0, result.output
+    assert "Invoice 1 marked paid" in result.output
+
+    result = runner.invoke(cli, ["--db", str(db_path), "invoice", "list"])
+    assert "paid" in result.output
+
+
+def test_invoice_pay_a_draft_invoice_returns_nonzero_exit(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, ["--db", str(db_path), "init-db"])
+    runner.invoke(
+        cli,
+        [
+            "--db",
+            str(db_path),
+            "account",
+            "create",
+            "--business-name",
+            "Client Co",
+            "--email",
+            "a@b.test",
+            "--address",
+            "1 Main St",
+        ],
+    )
+    runner.invoke(cli, ["--db", str(db_path), "quote", "create", "--account-id", "1"])
+    runner.invoke(
+        cli,
+        [
+            "--db",
+            str(db_path),
+            "quote",
+            "add-item",
+            "1",
+            "--description",
+            "Work",
+            "--quantity",
+            "1",
+            "--unit-price",
+            "100.00",
+        ],
+    )
+    runner.invoke(cli, ["--db", str(db_path), "quote", "send", "1"])
+    runner.invoke(cli, ["--db", str(db_path), "quote", "convert", "1"])
+
+    result = runner.invoke(cli, ["--db", str(db_path), "invoice", "pay", "1"])
+    assert result.exit_code != 0
+
+
+def test_invoice_monthly_totals(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, ["--db", str(db_path), "init-db"])
+    runner.invoke(
+        cli,
+        [
+            "--db",
+            str(db_path),
+            "settings",
+            "set",
+            "--user-id",
+            "1",
+            "--first-name",
+            "Ada",
+            "--last-name",
+            "Lovelace",
+            "--business-name",
+            "Acme Consulting",
+            "--currency",
+            "GBP",
+        ],
+    )
+
+    result = runner.invoke(cli, ["--db", str(db_path), "invoice", "monthly-totals", "--user-id", "1"])
+    assert result.exit_code == 0, result.output
+    assert result.output.count("\n") == 12
+    assert "GBP" in result.output
 
 
 def test_quote_and_invoice_pdf_accept_a_user_id(tmp_path):

@@ -1,4 +1,4 @@
-import type { Account, BusinessProfile, Invoice, LoginResult, Quote, User } from './types'
+import type { Account, BusinessProfile, Invoice, LoginResult, MonthlyTotalsReport, Quote, User } from './types'
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://127.0.0.1:8000'
 
@@ -155,6 +155,14 @@ export function voidInvoice(id: number): Promise<Invoice> {
   return request(`/invoices/${id}/void`, { method: 'POST' })
 }
 
+export function payInvoice(id: number): Promise<Invoice> {
+  return request(`/invoices/${id}/pay`, { method: 'POST' })
+}
+
+export function getMonthlyInvoiceTotals(): Promise<MonthlyTotalsReport> {
+  return request('/invoices/monthly-totals')
+}
+
 export function downloadInvoicePdf(invoice: Invoice): Promise<void> {
   return downloadPdf(`/invoices/${invoice.id}/pdf`, `${invoice.number ?? `invoice-${invoice.id}`}.pdf`)
 }
@@ -170,6 +178,7 @@ export interface SaveBusinessProfileInput {
   last_name: string
   business_name: string
   payment_terms_days: number
+  currency: string
   title?: string
   address_line1?: string
   address_line2?: string

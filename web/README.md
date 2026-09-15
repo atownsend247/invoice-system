@@ -1,9 +1,10 @@
 # Invoice System — web
 
 React + TypeScript + Vite SPA for the backend in `../src/invoice_system/`.
-A home dashboard (overdue/outstanding invoices), accounts, quotes (draft →
-sent → convert to invoice), invoices (send/void), PDF download, and a
-settings page for your own business profile, behind login.
+A home dashboard (overdue/outstanding invoices, a monthly paid-vs-outstanding
+totals chart), accounts, quotes (draft → sent → convert to invoice),
+invoices (send/void/mark as paid), PDF download, and a settings page for
+your own business profile, behind login.
 
 ## Develop
 
@@ -20,7 +21,7 @@ repo root; there is no signup screen.
 ## Test / build
 
 ```
-npm test          # vitest - unit tests: api.ts, HomePage's overdue/outstanding logic, a login/routing integration test
+npm test          # vitest - unit tests: api.ts, HomePage's overdue/outstanding logic, MonthlyTotalsChart, a login/routing integration test
 npm run test:e2e  # playwright - login/home/accounts/quotes/invoices/settings, one spec each
 npm run build     # tsc -b && vite build
 ```
@@ -54,31 +55,55 @@ failure; a failed run's trace/screenshot land in `test-results/` (gitignored).
   the component) specifically so `HomePage.test.ts` can unit-test the
   date logic against fixed dates, without a fake clock reaching the e2e
   layer (see the note below on why e2e can't produce a genuinely overdue
-  invoice).
+  invoice). It also renders `MonthlyTotalsChart`.
+- `src/components/MonthlyTotalsChart.tsx` — the home dashboard's paid-vs-
+  outstanding bar chart. Plain CSS bars (`<div>`s with a `height: N%`
+  inline style), not a charting library — 12 months, two series, doesn't
+  need one. `Number()`-parses the decimal-string totals purely to compute
+  that percentage; the exact string stays on each bar's `title` attribute
+  and is never sent anywhere (see `CLAUDE.md`'s money convention — that
+  rule is about not doing stored/round-tripped arithmetic on money, not
+  about never computing a display proportion). Unit-tested
+  (`MonthlyTotalsChart.test.tsx`) for the scaling math and rendered output.
 - `e2e/` — Playwright, one spec file per feature area (`login`, `home`,
   `accounts`, `quotes`, `invoices`, `settings.spec.ts`) rather than one long
   combined flow, so each
   can be read/run/extended on its own as the app grows. `fixtures.ts` is
   what makes that possible: each fixture (`testAccount`, `draftQuote`,
-  `sentQuote`, `draftInvoice`, `sentInvoice`) sets up its slice of backend
-  state directly through the API, not the UI, so `quotes.spec.ts` isn't the
-  thing that has to create an account first, `invoices.spec.ts` isn't the
-  thing that has to drive a quote through send-and-convert first, and no
-  spec depends on another one having run — safe to run in parallel (21
-  tests, 6 workers, under 7s) or in any order. `home.spec.ts` only checks
-  that a freshly-sent invoice shows up under "Outstanding" — nothing in the
-  app can backdate a `due_date` (always computed server-side as today plus
-  a positive `payment_terms_days`, see `CLAUDE.md`), so a genuinely overdue
-  invoice can't be produced through the API/CLI/UI at all; that half of the
+  `sentQuote`, `draftInvoice`, `sentInvoice`, `reportingCurrency`) sets up
+  its slice of backend state directly through the API, not the UI, so
+  `quotes.spec.ts` isn't the thing that has to create an account first,
+  `invoices.spec.ts` isn't the thing that has to drive a quote through
+  send-and-convert first, and no spec depends on another one having run —
+  safe to run in parallel (24 tests, 6 workers, under 6s) or in any order.
+  `home.spec.ts` only checks that a freshly-sent invoice shows up under
+  "Outstanding" (not Overdue) — nothing in the app can backdate a
+  `due_date` (always computed server-side as today plus a positive
+  `payment_terms_days`, see `CLAUDE.md`), so a genuinely overdue invoice
+  can't be produced through the API/CLI/UI at all; that half of the
   derivation logic is covered at the unit level instead
-  (`src/pages/HomePage.test.ts`). The one exception to the "safe to run in
-  parallel" claim above is `settings.spec.ts`: a
-  `BusinessProfile` is a singleton per user (see `CLAUDE.md`), not a
-  created-per-test record like an account, so its tests share state with
-  each other by nature — each still sets its own known values up front
-  rather than asserting anything about "untouched" state (found the hard
-  way, by stress-testing with `--repeat-each` before trusting it — see the
-  comment at the top of that file). `constants.ts` is where the seeded test user's
+  (`src/pages/HomePage.test.ts`). Its monthly-totals-chart test is
+  similarly deliberate about what it does and doesn't assert: the chart
+  sums invoices **system-wide**, not per-account, so concurrent tests all
+  contribute to the same buckets — it checks structure (12 months, a
+  currency-shaped group name) and that paying an invoice removes it from
+  Outstanding, not exact totals (see `CLAUDE.md`'s "Deliberately not
+  exact" gotcha for the specific cross-file currency race this avoids).
+  `apiFetch` is exported from `fixtures.ts` for tests that need a one-off
+  API call beyond the fixture set (`home.spec.ts` uses it to build an
+  invoice in the profile's actual reporting currency).
+  Two exceptions to the "safe to run in parallel" claim above, both
+  because `BusinessProfile` is a singleton per user (see `CLAUDE.md`), not
+  a created-per-test record like an account: `settings.spec.ts` itself —
+  its tests share state with each other by nature, each still sets its own
+  known values up front rather than asserting anything about "untouched"
+  state (found the hard way, by stress-testing with `--repeat-each` before
+  trusting it — see the comment at the top of that file) — and
+  `home.spec.ts`'s chart test, which reads the *current* reporting
+  currency via `reportingCurrency` (a read-only `GET`, never a write, so it
+  can't itself race with `settings.spec.ts`) rather than assuming one, and
+  only asserts the chart's group name is *some* currency, not a specific
+  value. `constants.ts` is where the seeded test user's
   credentials and the two throwaway ports live, imported by both
   `playwright.config.ts` and `fixtures.ts` so there's one source of truth.
   `start-backend.sh` is the throwaway-backend script `playwright.config.ts`

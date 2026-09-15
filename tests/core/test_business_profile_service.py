@@ -16,6 +16,7 @@ def test_get_profile_returns_defaults_when_none_saved(application):
     assert profile.county is None
     assert profile.postcode is None
     assert profile.payment_terms_days == 30
+    assert profile.currency == "GBP"
     assert profile.utr is None
     assert profile.vat_number is None
 
@@ -33,6 +34,7 @@ def test_save_and_refetch_profile(application):
         county="Greater London",
         postcode="SW1A 1AA",
         payment_terms_days=14,
+        currency="usd",
         utr="1234567890",
         vat_number="GB123456789",
     )
@@ -42,6 +44,7 @@ def test_save_and_refetch_profile(application):
     assert saved.last_name == "Lovelace"
     assert saved.business_name == "Acme Consulting"
     assert saved.payment_terms_days == 14
+    assert saved.currency == "USD"  # normalised to uppercase
 
     fetched = application.business_profiles.get_profile(user_id=1)
     assert fetched.id == saved.id
@@ -50,6 +53,7 @@ def test_save_and_refetch_profile(application):
     assert fetched.town_or_city == "London"
     assert fetched.county == "Greater London"
     assert fetched.postcode == "SW1A 1AA"
+    assert fetched.currency == "USD"
     assert fetched.utr == "1234567890"
     assert fetched.vat_number == "GB123456789"
 
@@ -141,6 +145,25 @@ def test_save_profile_requires_positive_payment_terms(application):
             last_name="Lovelace",
             business_name="Acme",
             payment_terms_days=0,
+        )
+
+
+def test_save_profile_defaults_currency_to_gbp_when_not_given(application):
+    profile = application.business_profiles.save_profile(
+        user_id=1, first_name="Ada", last_name="Lovelace", business_name="Acme", payment_terms_days=30
+    )
+    assert profile.currency == "GBP"
+
+
+def test_save_profile_requires_non_blank_currency(application):
+    with pytest.raises(ValidationFailed):
+        application.business_profiles.save_profile(
+            user_id=1,
+            first_name="Ada",
+            last_name="Lovelace",
+            business_name="Acme",
+            payment_terms_days=30,
+            currency="   ",
         )
 
 

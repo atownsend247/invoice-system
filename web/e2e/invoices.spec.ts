@@ -44,3 +44,20 @@ test('voiding an invoice updates its status and removes further actions', async 
   await expect(page.getByRole('button', { name: 'Send' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Void' })).toHaveCount(0)
 })
+
+test('marking a sent invoice as paid updates its status and removes further actions', async ({
+  authenticatedPage: page,
+  sentInvoice,
+}) => {
+  await page.goto(`/invoices/${sentInvoice.id}`)
+  await page.getByRole('button', { name: 'Mark as paid' }).click()
+
+  await expect(page.getByText('paid', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Mark as paid' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Void' })).toHaveCount(0)
+})
+
+test('a draft invoice cannot be marked as paid', async ({ authenticatedPage: page, draftInvoice }) => {
+  await page.goto(`/invoices/${draftInvoice.id}`)
+  await expect(page.getByRole('button', { name: 'Mark as paid' })).toHaveCount(0)
+})

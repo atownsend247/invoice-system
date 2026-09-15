@@ -33,6 +33,7 @@ function BusinessProfileForm({ profile }: { profile: BusinessProfile }) {
   const [county, setCounty] = useState(profile.county ?? '')
   const [postcode, setPostcode] = useState(profile.postcode ?? '')
   const [paymentTermsDays, setPaymentTermsDays] = useState(String(profile.payment_terms_days))
+  const [currency, setCurrency] = useState(profile.currency)
   const [utr, setUtr] = useState(profile.utr ?? '')
   const [vatNumber, setVatNumber] = useState(profile.vat_number ?? '')
   const [error, setError] = useState<string | null>(null)
@@ -56,6 +57,7 @@ function BusinessProfileForm({ profile }: { profile: BusinessProfile }) {
         county: county || undefined,
         postcode: postcode || undefined,
         payment_terms_days: Number(paymentTermsDays),
+        currency,
         utr: utr || undefined,
         vat_number: vatNumber || undefined,
       })
@@ -71,6 +73,7 @@ function BusinessProfileForm({ profile }: { profile: BusinessProfile }) {
       setCounty(updated.county ?? '')
       setPostcode(updated.postcode ?? '')
       setPaymentTermsDays(String(updated.payment_terms_days))
+      setCurrency(updated.currency)
       setUtr(updated.utr ?? '')
       setVatNumber(updated.vat_number ?? '')
       setSaved(true)
@@ -142,6 +145,15 @@ function BusinessProfileForm({ profile }: { profile: BusinessProfile }) {
               step={1}
               value={paymentTermsDays}
               onChange={(event) => setPaymentTermsDays(event.target.value)}
+              required
+            />
+          </label>
+          <label>
+            Currency
+            <input
+              value={currency}
+              onChange={(event) => setCurrency(event.target.value.toUpperCase())}
+              maxLength={3}
               required
             />
           </label>

@@ -126,4 +126,12 @@ MIGRATIONS: list[str] = [
 
     ALTER TABLE business_profiles DROP COLUMN business_address;
     """,
+    """
+    -- Adds a reporting currency to business_profiles (see CLAUDE.md and
+    -- data-model.md: this is the currency the home dashboard's monthly
+    -- totals are summed in, independent of the currency chosen per
+    -- quote/invoice). A constant-default ADD COLUMN is a plain ALTER TABLE
+    -- SQLite supports directly, like migration 4 - no rebuild needed.
+    ALTER TABLE business_profiles ADD COLUMN currency TEXT NOT NULL DEFAULT 'GBP';
+    """,
 ]

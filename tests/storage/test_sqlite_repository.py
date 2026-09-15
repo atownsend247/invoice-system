@@ -67,6 +67,7 @@ def test_upsert_business_profile_round_trip_and_update(repo):
         county="Greater London",
         postcode="SW1A 1AA",
         payment_terms_days=30,
+        currency="USD",
         utr="1234567890",
         vat_number=None,
         created_at=created_at,
@@ -85,6 +86,7 @@ def test_upsert_business_profile_round_trip_and_update(repo):
     assert fetched.town_or_city == "London"
     assert fetched.county == "Greater London"
     assert fetched.postcode == "SW1A 1AA"
+    assert fetched.currency == "USD"
     assert fetched.utr == "1234567890"
     assert fetched.vat_number is None
 
@@ -102,6 +104,7 @@ def test_upsert_business_profile_round_trip_and_update(repo):
         county=None,
         postcode=None,
         payment_terms_days=14,
+        currency="EUR",
         utr=None,
         vat_number="GB123456789",
         created_at=created_at,
@@ -115,6 +118,7 @@ def test_upsert_business_profile_round_trip_and_update(repo):
     assert updated.business_name == "Acme Ltd"
     assert updated.address_line1 is None
     assert updated.payment_terms_days == 14
+    assert updated.currency == "EUR"
     assert updated.utr is None
     assert updated.vat_number == "GB123456789"
 
@@ -150,6 +154,7 @@ def test_migrating_from_the_original_business_profiles_shape_preserves_rows(tmp_
     assert profile.first_name == ""
     assert profile.last_name == ""
     assert profile.title is None
+    assert profile.currency == "GBP"  # migration 5's default, never set explicitly by this row
     repo.close()
 
 
@@ -204,4 +209,31 @@ def test_migration_4_leaves_address_line1_unset_when_there_was_no_old_address(tm
 
     profile = repo.get_business_profile(user_id=1)
     assert profile.address_line1 is None
+    repo.close()
+
+
+def test_migration_5_defaults_currency_to_gbp_for_existing_rows(tmp_path):
+    # Simulate a database frozen right after migration 4 (no currency column
+    # yet) - migration 5's ADD COLUMN ... DEFAULT 'GBP' must backfill it for
+    # rows that already existed, not just new ones.
+    db_path = tmp_path / "pre-migration-5.db"
+    conn = sqlite3.connect(str(db_path))
+    for script in MIGRATIONS[:4]:
+        conn.executescript(script)
+    conn.execute("PRAGMA user_version = 4")
+    conn.execute(
+        "INSERT INTO business_profiles "
+        "(user_id, title, first_name, last_name, business_name, "
+        "payment_terms_days, utr, vat_number, created_at, updated_at) "
+        "VALUES (1, NULL, 'Ada', 'Lovelace', 'Acme', 30, NULL, NULL, ?, ?)",
+        ("2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00"),
+    )
+    conn.commit()
+    conn.close()
+
+    repo = SqliteRepository(db_path)
+    repo.migrate()
+
+    profile = repo.get_business_profile(user_id=1)
+    assert profile.currency == "GBP"
     repo.close()

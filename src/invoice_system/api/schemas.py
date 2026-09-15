@@ -144,6 +144,7 @@ class BusinessProfileIn(BaseModel):
     county: str | None = None
     postcode: str | None = None
     payment_terms_days: int = 30
+    currency: str = "GBP"
     utr: str | None = None
     vat_number: str | None = None
 
@@ -159,6 +160,7 @@ class BusinessProfileOut(BaseModel):
     county: str | None
     postcode: str | None
     payment_terms_days: int
+    currency: str
     utr: str | None
     vat_number: str | None
     updated_at: datetime
@@ -176,7 +178,27 @@ class BusinessProfileOut(BaseModel):
             county=profile.county,
             postcode=profile.postcode,
             payment_terms_days=profile.payment_terms_days,
+            currency=profile.currency,
             utr=profile.utr,
             vat_number=profile.vat_number,
             updated_at=profile.updated_at,
         )
+
+
+class MonthlyInvoiceTotalOut(BaseModel):
+    month: str
+    paid_total: str
+    unpaid_total: str
+
+    @classmethod
+    def from_model(cls, entry) -> "MonthlyInvoiceTotalOut":
+        return cls(month=entry.month, paid_total=str(entry.paid_total), unpaid_total=str(entry.unpaid_total))
+
+
+class MonthlyTotalsReportOut(BaseModel):
+    currency: str
+    months: list[MonthlyInvoiceTotalOut]
+
+    @classmethod
+    def from_models(cls, currency: str, entries) -> "MonthlyTotalsReportOut":
+        return cls(currency=currency, months=[MonthlyInvoiceTotalOut.from_model(e) for e in entries])

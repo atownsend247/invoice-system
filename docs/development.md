@@ -45,6 +45,7 @@ uv run invoice-system-cli quote send 1
 uv run invoice-system-cli quote pdf 1 -o quote.pdf
 uv run invoice-system-cli quote convert 1
 uv run invoice-system-cli invoice send 1
+uv run invoice-system-cli invoice pay 1
 uv run invoice-system-cli invoice pdf 1 -o invoice.pdf
 ```
 
@@ -63,8 +64,19 @@ uv run invoice-system-cli settings set --user-id 1 \
     --first-name Ada --last-name Lovelace \
     --business-name "Acme Consulting" --address-line1 "1 Main St" \
     --town-or-city London --postcode "SW1A 1AA" \
-    --payment-terms-days 14 --utr 1234567890 --vat-number GB123456789
+    --payment-terms-days 14 --currency GBP \
+    --utr 1234567890 --vat-number GB123456789
 uv run invoice-system-cli settings show --user-id 1
+```
+
+`currency` (default `GBP`) is the *reporting* currency the home dashboard's
+monthly-totals chart sums in — independent of the `--currency` you pass to
+`quote create` for an individual quote/invoice. `invoice monthly-totals`
+resolves it from the profile the same way `invoice send`/`quote pdf` resolve
+payment terms/the "From" party:
+
+```
+uv run invoice-system-cli invoice monthly-totals --user-id 1
 ```
 
 `--user-id` is also optional on `invoice send`, `quote pdf`, and `invoice

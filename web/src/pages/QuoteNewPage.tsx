@@ -7,8 +7,13 @@ export function QuoteNewPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { data: accounts, loading } = useAsync(() => api.listAccounts(), [])
+  const { data: profile } = useAsync(() => api.getBusinessProfile(), [])
   const [accountId, setAccountId] = useState(searchParams.get('accountId') ?? '')
-  const [currency, setCurrency] = useState('USD')
+  // null until the user actually edits it, so the field can default to the
+  // profile's reporting currency once that loads (falling back to USD
+  // before it has) without clobbering an in-progress edit.
+  const [currency, setCurrency] = useState<string | null>(null)
+  const currencyValue = currency ?? profile?.currency ?? 'USD'
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -18,7 +23,7 @@ export function QuoteNewPage() {
     setError(null)
     setSubmitting(true)
     try {
-      const quote = await api.createQuote(Number(accountId), currency)
+      const quote = await api.createQuote(Number(accountId), currencyValue)
       navigate(`/quotes/${quote.id}`, { replace: true })
     } catch (err) {
       setError(errorMessage(err))
@@ -50,7 +55,7 @@ export function QuoteNewPage() {
           <label>
             Currency
             <input
-              value={currency}
+              value={currencyValue}
               onChange={(event) => setCurrency(event.target.value.toUpperCase())}
               maxLength={3}
               required

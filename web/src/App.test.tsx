@@ -8,7 +8,15 @@ import { AuthProvider } from './auth/AuthContext'
 
 vi.mock('./api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./api')>()
-  return { ...actual, login: vi.fn(), me: vi.fn(), logout: vi.fn(), listAccounts: vi.fn(), listInvoices: vi.fn() }
+  return {
+    ...actual,
+    login: vi.fn(),
+    me: vi.fn(),
+    logout: vi.fn(),
+    listAccounts: vi.fn(),
+    listInvoices: vi.fn(),
+    getMonthlyInvoiceTotals: vi.fn(),
+  }
 })
 
 const mockedApi = vi.mocked(api)
@@ -50,6 +58,7 @@ describe('App', () => {
     })
     mockedApi.listAccounts.mockResolvedValue([])
     mockedApi.listInvoices.mockResolvedValue([])
+    mockedApi.getMonthlyInvoiceTotals.mockResolvedValue({ currency: 'GBP', months: [] })
 
     renderApp('/login')
     const user = userEvent.setup()

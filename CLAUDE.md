@@ -4,10 +4,11 @@ Invoice System: a freelancer/small-business billing tool. Domain shape is
 Account (the business you provide a service to — business name, contact,
 address) → Quote → Invoice, where a Quote converts into an Invoice rather
 than the two being independently created. Quotes and Invoices are each
-independently viewable/exportable as PDFs. A `BusinessProfile` holds the
-logged-in user's *own* business details (name/address/payment terms/UTR/VAT)
-— see below for why that's a third, deliberately separate thing from both
-`Account` and sessionkit's `User`.
+independently viewable/exportable as PDFs, and a sent invoice can be marked
+`paid` (a single status flag, not a payment ledger). A `BusinessProfile`
+holds the logged-in user's *own* business details (name/address/payment
+terms/reporting currency/UTR/VAT) — see below for why that's a third,
+deliberately separate thing from both `Account` and sessionkit's `User`.
 
 ## Where things are
 
@@ -54,7 +55,10 @@ Three separate things are easy to conflate here — don't:
   (`business_name`, and a UK GOV.UK Design System-style address —
   `address_line1`/`address_line2`/`town_or_city`/`county`/`postcode`, each
   independently optional, no "all or nothing" rule); **payment and tax
-  settings** (`payment_terms_days`, `utr`/`vat_number` optional). One per
+  settings** (`payment_terms_days`, `currency` - the *reporting* currency
+  the home dashboard's monthly-totals chart sums in, defaults `"GBP"`,
+  independent of the currency chosen per quote/invoice - `utr`/`vat_number`
+  optional). One per
   user, keyed by `user_id` = sessionkit's `User.id`. That's a **plain
   integer column, not an enforced foreign key** — `business_profiles` lives
   in `invoice_system.db`, `users` lives in the separate `auth.db`, and
@@ -190,12 +194,37 @@ Three separate things are easy to conflate here — don't:
   `isOutstanding`, exported from that file so they're unit-testable
   (`HomePage.test.ts`) against fixed dates without a fake clock. This is
   **presentation only**: `Invoice.status` is never written as `overdue`
-  anywhere (that's Phase 2's unimplemented `sent → overdue` transition —
-  see `docs/roadmap.md`); a `due_date` also can't be backdated through the
-  API/CLI (`send()` always computes `clock().date() +
+  anywhere (`sent → overdue` is not a real transition, only `sent → paid`
+  is — see the next bullet); a `due_date` also can't be backdated through
+  the API/CLI (`send()` always computes `clock().date() +
   payment_terms_days`, and `payment_terms_days` must be positive), so
   there's no way to produce a genuinely overdue invoice for e2e coverage —
   `web/e2e/home.spec.ts` only exercises the reachable "Outstanding" case.
+  The same page also renders a monthly-totals bar chart (below the two
+  sections, `web/src/components/MonthlyTotalsChart.tsx`) - see the next
+  bullet for what it sums and the "Deliberately not exact" note under
+  Gotchas for why its e2e coverage only checks structure, not totals.
+- `InvoiceService.pay(invoice_id)` is the *only* way `Invoice.status`
+  becomes `paid` - a single-click action (mirrors `void()`), restricted to
+  `sent` only (stricter than `void()`, which also allows `draft` -
+  deliberate: paying an invoice nobody has been sent makes no sense).
+  There is no partial-payment ledger and no `Payment` model - "mark
+  payments as paid" was implemented as a status flag, not amount tracking;
+  don't add one without being asked, since the monthly-totals chart below
+  only ever needs a binary paid/not-paid split, not partial amounts.
+  `InvoiceService.monthly_totals(currency, months=12)` is the aggregation
+  behind that chart: it buckets every non-draft, non-void invoice
+  **system-wide** (not per-account) by the calendar month of its
+  `issue_date` (when it was *created*, not `due_date` or `created_at`'s
+  time-of-day), summing `paid` separately from everything else (`sent` -
+  there is no stored `overdue`, see above), and **only for invoices whose
+  `currency` matches the `currency` argument** - an invoice in a different
+  currency is silently excluded rather than naively summed in with it (see
+  `BusinessProfile.currency` above). The API/CLI resolve which currency to
+  pass from the caller's own business profile
+  (`GET /invoices/monthly-totals`, CLI `invoice monthly-totals --user-id`);
+  `InvoiceService` itself takes a plain `currency: str` and has no idea
+  whose profile it came from, same pattern as `payment_terms_days`.
 - The settings page (`web/src/pages/SettingsPage.tsx`) groups
   `BusinessProfile` fields into three `<fieldset>`/`<legend>` sections
   matching the model's own three groups (user settings, business settings,
@@ -233,6 +262,10 @@ Three separate things are easy to conflate here — don't:
     address can't be parsed into structured fields automatically, so the
     migration moves the old value into `address_line1` wholesale rather
     than silently discarding it or guessing at a split.
+  - Migration 5 (adding `business_profiles.currency`): the simplest case —
+    `ADD COLUMN ... NOT NULL DEFAULT 'GBP'` in one statement, no rebuild
+    and no data-carrying logic needed, since a constant default backfills
+    every existing row automatically.
 - Storage is a single shared SQLite connection/file — **serialise every
   access on a lock** inside the repository implementation rather than
   assuming the caller will.
@@ -284,3 +317,14 @@ Three separate things are easy to conflate here — don't:
   with `--repeat-each`, not a real bug: `npm run test:e2e` only ever runs
   each test once. Stress-test this file specifically with `--repeat-each
   --workers=1` instead of the bare flag.
+- **Deliberately not exact**: `web/e2e/home.spec.ts`'s monthly-totals-chart
+  test reads `reportingCurrency` (a fixture that `GET`s the current
+  business profile's `currency`) once at the start, then asserts the chart
+  group's accessible name against `/^Invoice totals by month, in \w+$/` —
+  any currency, not that specific one. A concurrent `settings.spec.ts` run
+  on another worker can change the shared profile's `currency` between
+  that read and the assertion (the same shared-singleton-profile race as
+  the bullet above, caught the same way: it passed alone, then failed
+  under `--repeat-each` across the full suite). Don't "fix" this by
+  asserting the captured currency value directly - either re-read it right
+  before the assertion, or don't assert the specific value at all.

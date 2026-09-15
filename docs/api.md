@@ -45,9 +45,11 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | GET | `/invoices/{id}` | required | Fetch one invoice with its line items and total. |
 | POST | `/invoices/{id}/send` | required | Assign an invoice number and due date (issue date + the current user's `payment_terms_days`, default 30), transition `draft → sent`. 422 if no line items. |
 | POST | `/invoices/{id}/void` | required | Transition to `void`. 409 if already `paid`. |
+| POST | `/invoices/{id}/pay` | required | Transition `sent → paid`. 409 if not currently `sent` (covers `draft`, `void`, and already-`paid`). |
+| GET | `/invoices/monthly-totals` | required | Registered *before* `/invoices/{id}` (see `CLAUDE.md`'s architecture rules on route ordering). `{currency, months: [{month, paid_total, unpaid_total}]}` for the trailing 12 months, in the current user's business profile `currency`. An invoice in any other currency isn't counted. |
 | GET | `/invoices/{id}/pdf` | required | Render the invoice as a PDF (`application/pdf`), with a "From" section for the current user's business name/address if set. |
-| GET | `/settings/business-profile` | required | The current user's own profile. Never 404s — returns sensible defaults (`payment_terms_days: 30`, everything else blank/`null`) if nothing's been saved yet. |
-| PUT | `/settings/business-profile` | required | Upsert it (`first_name`, `last_name`, `business_name`, `payment_terms_days` required; `title`, `address_line1`, `address_line2`, `town_or_city`, `county`, `postcode`, `utr`, `vat_number` optional — each address line independently optional). 422 on a blank required field or `payment_terms_days <= 0`. |
+| GET | `/settings/business-profile` | required | The current user's own profile. Never 404s — returns sensible defaults (`payment_terms_days: 30`, `currency: "GBP"`, everything else blank/`null`) if nothing's been saved yet. |
+| PUT | `/settings/business-profile` | required | Upsert it (`first_name`, `last_name`, `business_name`, `payment_terms_days` required; `currency` defaults `"GBP"`; `title`, `address_line1`, `address_line2`, `town_or_city`, `county`, `postcode`, `utr`, `vat_number` optional — each address line independently optional). 422 on a blank required field, `payment_terms_days <= 0`, or a blank `currency`. |
 
 The CLI (`invoice-system-cli`) mirrors the account/quote/invoice routes
 one-for-one over the same storage, but is **not** behind login — it's a
@@ -55,8 +57,12 @@ local, trusted tool (see `CLAUDE.md`). Where these routes resolve "which
 user" from the Bearer token, the CLI takes an explicit `--user-id` instead:
 `settings show`/`settings set` (no API equivalent by path, but the same
 `BusinessProfileService` underneath), `invoice send --user-id`, `quote
-pdf`/`invoice pdf --user-id`. Omit `--user-id` and those commands behave
-exactly as if no profile existed (fixed 30-day due date, no "From" section).
+pdf`/`invoice pdf --user-id`, `invoice monthly-totals --user-id` (mirrors
+`GET /invoices/monthly-totals`). Omit `--user-id` and those commands behave
+exactly as if no profile existed (fixed 30-day due date, no "From" section);
+`invoice monthly-totals` requires it, since there's no other way to resolve
+a currency to filter by. `invoice pay <id>` (mirrors `POST
+/invoices/{id}/pay`) needs no `--user-id` — it's just a status transition.
 
 ## Conventions
 
@@ -77,5 +83,7 @@ exactly as if no profile existed (fixed 30-day due date, no "From" section).
 
 ## Not yet implemented
 
-Payments, marking an invoice `paid`/`overdue`, and TOTP/2FA endpoints
-(sessionkit supports it; no routes expose it yet) — see `docs/roadmap.md`.
+Partial-payment tracking (a `Payment` model/ledger), a real `sent → overdue`
+status transition, and TOTP/2FA endpoints (sessionkit supports it; no routes
+expose it yet) — see `docs/roadmap.md`. Marking an invoice fully `paid` (`POST
+/invoices/{id}/pay`) is implemented.

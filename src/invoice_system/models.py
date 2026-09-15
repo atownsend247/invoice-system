@@ -52,7 +52,15 @@ class BusinessProfile:
 
     Address fields follow the UK GOV.UK Design System's standard address
     pattern (address_line1/2, town_or_city, county, postcode) rather than a
-    single free-text field - see CLAUDE.md and data-model.md."""
+    single free-text field - see CLAUDE.md and data-model.md.
+
+    currency is this user's *reporting* currency - the one the home
+    dashboard's monthly totals are summed in (see
+    InvoiceService.monthly_totals). It's independent of the currency chosen
+    per quote/invoice (Quote.currency/Invoice.currency default to "USD" but
+    are freely chosen at creation) - an invoice in a different currency than
+    this setting is simply excluded from that report rather than
+    naively summed into it. Defaults to "GBP"."""
 
     id: int | None
     user_id: int
@@ -66,6 +74,7 @@ class BusinessProfile:
     county: str | None
     postcode: str | None
     payment_terms_days: int
+    currency: str
     utr: str | None
     vat_number: str | None
     created_at: datetime
@@ -118,3 +127,13 @@ class Invoice:
     @property
     def total(self) -> Decimal:
         return sum((item.total for item in self.line_items), Decimal("0"))
+
+
+@dataclass
+class MonthlyInvoiceTotals:
+    """One month's worth of invoice totals, split by paid vs not - see
+    InvoiceService.monthly_totals. `month` is "YYYY-MM"."""
+
+    month: str
+    paid_total: Decimal
+    unpaid_total: Decimal

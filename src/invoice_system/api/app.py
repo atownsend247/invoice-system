@@ -31,6 +31,7 @@ from .schemas import (
     BusinessProfileOut,
     InvoiceOut,
     LineItemIn,
+    MonthlyTotalsReportOut,
     QuoteCreateIn,
     QuoteOut,
 )
@@ -196,6 +197,18 @@ def list_invoices(
     return [InvoiceOut.from_model(i) for i in application.invoices.list_invoices(account_id=account_id)]
 
 
+@domain_router.get("/invoices/monthly-totals", response_model=MonthlyTotalsReportOut)
+def invoice_monthly_totals(
+    application: Application = Depends(get_application),
+    user: SessionUser = Depends(get_current_user),
+) -> MonthlyTotalsReportOut:
+    # Registered before /invoices/{invoice_id} - a fixed path segment would
+    # otherwise be swallowed by that route's int path param and 422.
+    profile = application.business_profiles.get_profile(user.id)
+    totals = application.invoices.monthly_totals(profile.currency)
+    return MonthlyTotalsReportOut.from_models(profile.currency, totals)
+
+
 @domain_router.get("/invoices/{invoice_id}", response_model=InvoiceOut)
 def get_invoice(invoice_id: int, application: Application = Depends(get_application)) -> InvoiceOut:
     return InvoiceOut.from_model(application.invoices.get_invoice(invoice_id))
@@ -215,6 +228,11 @@ def send_invoice(
 @domain_router.post("/invoices/{invoice_id}/void", response_model=InvoiceOut)
 def void_invoice(invoice_id: int, application: Application = Depends(get_application)) -> InvoiceOut:
     return InvoiceOut.from_model(application.invoices.void(invoice_id))
+
+
+@domain_router.post("/invoices/{invoice_id}/pay", response_model=InvoiceOut)
+def pay_invoice(invoice_id: int, application: Application = Depends(get_application)) -> InvoiceOut:
+    return InvoiceOut.from_model(application.invoices.pay(invoice_id))
 
 
 @domain_router.get("/invoices/{invoice_id}/pdf")
@@ -255,6 +273,7 @@ def save_business_profile(
         county=body.county,
         postcode=body.postcode,
         payment_terms_days=body.payment_terms_days,
+        currency=body.currency,
         utr=body.utr,
         vat_number=body.vat_number,
     )

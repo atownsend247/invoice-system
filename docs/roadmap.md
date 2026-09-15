@@ -23,11 +23,22 @@
 - [x] PDF export for quotes and invoices, independently (`pdf.py`, viewable
       via both the CLI and the API).
 
-## Phase 2 — Payments and status
+## Phase 2 — Payments and status (partially done)
 
-- [ ] `Payment` model + recording partial/full payments against an invoice.
-- [ ] Status derivation (`sent → paid` once payments cover the total;
-      `sent → overdue` once past `due_date`).
+- [x] Marking an invoice fully paid: `InvoiceService.pay()`, `sent → paid`
+      only (409 otherwise), mirroring `void()`. A single status flag, not a
+      ledger — implemented instead of a `Payment` model because nothing so
+      far has needed partial-payment amounts or dates, only "is this paid
+      or not" (see the home dashboard's chart, Phase 7). `POST
+      /invoices/{id}/pay`, CLI `invoice pay`, and a "Mark as paid" button
+      on `web/src/pages/InvoiceDetailPage.tsx`.
+- [ ] `Payment` model + recording partial/full payments against an invoice
+      (amounts, dates) — not needed yet; add only when something actually
+      requires it (e.g. partial payments, a payment history/audit trail).
+- [ ] `sent → overdue` as a real, persisted status transition once past
+      `due_date`. Still only derived for display (`HomePage.tsx`'s
+      `isOverdue`, see Phase 7) — `Invoice.status` is never written as
+      `overdue` anywhere in the codebase.
 
 ## Phase 3 — Login/sessions and web client
 
@@ -39,9 +50,10 @@
       `api/auth.py` yet).
 - [x] React/Vite SPA in `web/`: login screen, account list/create, quote
       list/detail (create, add line items, send, convert to invoice),
-      invoice list/detail (send, void), PDF download. `web/src/api.ts`
-      attaches `Authorization: Bearer <token>` to every call except login.
-      Payment recording waits on Phase 2's `Payment` model.
+      invoice list/detail (send, void, mark as paid), PDF download.
+      `web/src/api.ts` attaches `Authorization: Bearer <token>` to every
+      call except login. Partial-payment recording (amounts/dates) still
+      waits on Phase 2's `Payment` model.
 - [x] CORS enabled on the API (`CORSMiddleware` in `api/app.py`, see
       `CLAUDE.md`) so the SPA (a different origin/port in dev) can call it.
 
@@ -61,7 +73,8 @@
 - [x] `BusinessProfile` (title/first/last name, business name, a
       UK-standard structured address — `address_line1`/`address_line2`/
       `town_or_city`/`county`/`postcode`, each independently optional —
-      payment terms, UTR/VAT), one per user, stored in `invoice_system.db`
+      payment terms, reporting currency (defaults `GBP`, see Phase 7),
+      UTR/VAT), one per user, stored in `invoice_system.db`
       keyed by sessionkit's `User.id` (a plain column, not an enforced FK —
       see `CLAUDE.md`). Backend (`BusinessProfileService`, `GET`/`PUT
       /settings/business-profile`) and a `web/` settings page — three
@@ -96,6 +109,31 @@
       `web/e2e/home.spec.ts` (only the reachable "Outstanding" case — no
       code path can backdate a `due_date` to produce a genuinely overdue
       invoice through the API/CLI/UI, see `web/README.md`).
+
+## Phase 7 — Monthly totals chart (done)
+
+- [x] `BusinessProfile.currency` (migration 5, plain `ADD COLUMN ... NOT
+      NULL DEFAULT 'GBP'`) — the *reporting* currency the chart below sums
+      in, independent of any quote/invoice's own `currency`. Surfaced in
+      the "Payment and tax settings" section of `web/`'s settings page and
+      pre-fills the "New quote" form's currency field (previously a
+      hardcoded `'USD'` default).
+- [x] `InvoiceService.monthly_totals(currency, months=12)`: every non-draft,
+      non-void invoice system-wide, bucketed by `issue_date`'s month, split
+      into `paid_total`/`unpaid_total`, filtered to invoices in `currency`
+      only (a different-currency invoice is excluded, never naively summed
+      in — see `CLAUDE.md`). `GET /invoices/monthly-totals` and CLI
+      `invoice monthly-totals --user-id` resolve `currency` from the
+      caller's own business profile.
+- [x] A bar chart on the home dashboard (`web/src/components/
+      MonthlyTotalsChart.tsx`, plain CSS bars, no charting library) showing
+      12 months of paid (green) vs outstanding (blue) totals, below the
+      Overdue/Outstanding sections. Unit-tested (`MonthlyTotalsChart.test.tsx`)
+      for the height/scaling math; e2e coverage (`web/e2e/home.spec.ts`)
+      only checks structure and that paying an invoice removes it from
+      Outstanding — not exact chart totals, since the chart sums
+      system-wide across whatever else is running concurrently in e2e (see
+      `web/README.md` and the CLAUDE.md gotcha on this).
 
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

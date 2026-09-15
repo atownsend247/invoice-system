@@ -30,6 +30,7 @@ test('shows the three settings sections and loads the current profile on visit',
   // form populated, not stuck empty/loading - found by stress-testing this
   // spec with --repeat-each before trusting it (same lesson as accounts.spec.ts).
   await expect(page.getByLabel('Payment terms (days)')).not.toHaveValue('')
+  await expect(page.getByLabel('Currency')).not.toHaveValue('')
 })
 
 test('saving all fields persists them across a reload', async ({ authenticatedPage: page }) => {
@@ -45,6 +46,7 @@ test('saving all fields persists them across a reload', async ({ authenticatedPa
   await page.getByLabel('County (optional)').fill('Greater London')
   await page.getByLabel('Postcode (optional)').fill('SW1A 1AA')
   await page.getByLabel('Payment terms (days)').fill('14')
+  await page.getByLabel('Currency').fill('usd')
   await page.getByLabel('UTR (optional)').fill('1234567890')
   await page.getByLabel('VAT number (optional)').fill('GB123456789')
   await page.getByRole('button', { name: 'Save settings' }).click()
@@ -62,6 +64,7 @@ test('saving all fields persists them across a reload', async ({ authenticatedPa
   await expect(page.getByLabel('County (optional)')).toHaveValue('Greater London')
   await expect(page.getByLabel('Postcode (optional)')).toHaveValue('SW1A 1AA')
   await expect(page.getByLabel('Payment terms (days)')).toHaveValue('14')
+  await expect(page.getByLabel('Currency')).toHaveValue('USD') // normalised to uppercase
   await expect(page.getByLabel('UTR (optional)')).toHaveValue('1234567890')
   await expect(page.getByLabel('VAT number (optional)')).toHaveValue('GB123456789')
 })

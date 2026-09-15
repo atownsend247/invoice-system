@@ -75,7 +75,22 @@ export interface BusinessProfile {
   county: string | null
   postcode: string | null
   payment_terms_days: number
+  currency: string
   utr: string | null
   vat_number: string | null
   updated_at: string
+}
+
+// One entry per month for the home dashboard's monthly totals chart - see
+// InvoiceService.monthly_totals. amounts are decimal strings, like every
+// other money value on the wire (see CLAUDE.md conventions).
+export interface MonthlyInvoiceTotal {
+  month: string // "YYYY-MM"
+  paid_total: string
+  unpaid_total: string
+}
+
+export interface MonthlyTotalsReport {
+  currency: string
+  months: MonthlyInvoiceTotal[]
 }
