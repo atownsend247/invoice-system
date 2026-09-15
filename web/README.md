@@ -59,7 +59,7 @@ failure; a failed run's trace/screenshot land in `test-results/` (gitignored).
   through the API, not the UI, so `quotes.spec.ts` isn't the thing that has
   to create an account first, `invoices.spec.ts` isn't the thing that has to
   drive a quote through send-and-convert first, and no spec depends on
-  another one having run — safe to run in parallel (18 tests, 5 workers,
+  another one having run — safe to run in parallel (19 tests, 5 workers,
   under 6s) or in any order. The one exception is `settings.spec.ts`: a
   `BusinessProfile` is a singleton per user (see `CLAUDE.md`), not a
   created-per-test record like an account, so its tests share state with

@@ -127,7 +127,7 @@ def test_settings_show_defaults_then_set_and_show_again(tmp_path):
     assert result.exit_code == 0, result.output
     assert "Name: Ada Lovelace" in result.output
     assert "Business name: Acme Consulting" in result.output
-    assert "Business address: -" in result.output
+    assert "Address line 1: -" in result.output
     assert "Payment terms (days): 5" in result.output
 
 
@@ -239,8 +239,12 @@ def test_quote_and_invoice_pdf_accept_a_user_id(tmp_path):
             "Lovelace",
             "--business-name",
             "Acme Consulting",
-            "--business-address",
+            "--address-line1",
             "1 Market St",
+            "--town-or-city",
+            "London",
+            "--postcode",
+            "SW1A 1AA",
         ],
     )
     runner.invoke(

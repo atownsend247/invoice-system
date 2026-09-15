@@ -44,9 +44,15 @@ class BusinessProfile:
     title/first_name/last_name are the account holder's own name (title is
     the only optional one of the three, e.g. "Mr"/"Dr" - a form nicety, not
     something anyone should be blocked from saving without). business_name
-    is still required; business_address is not (a sole trader may legally
-    trade under their home address and not want it on every document, or
-    simply not have filled it in yet)."""
+    is still required; the address fields are not (a sole trader may
+    legally trade under their home address and not want it on every
+    document, or simply not have filled it in yet) - each line is
+    independently optional, not "all or nothing", to avoid inventing a
+    cross-field validation rule nobody asked for.
+
+    Address fields follow the UK GOV.UK Design System's standard address
+    pattern (address_line1/2, town_or_city, county, postcode) rather than a
+    single free-text field - see CLAUDE.md and data-model.md."""
 
     id: int | None
     user_id: int
@@ -54,7 +60,11 @@ class BusinessProfile:
     first_name: str
     last_name: str
     business_name: str
-    business_address: str | None
+    address_line1: str | None
+    address_line2: str | None
+    town_or_city: str | None
+    county: str | None
+    postcode: str | None
     payment_terms_days: int
     utr: str | None
     vat_number: str | None

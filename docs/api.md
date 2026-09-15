@@ -47,7 +47,7 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | POST | `/invoices/{id}/void` | required | Transition to `void`. 409 if already `paid`. |
 | GET | `/invoices/{id}/pdf` | required | Render the invoice as a PDF (`application/pdf`), with a "From" section for the current user's business name/address if set. |
 | GET | `/settings/business-profile` | required | The current user's own profile. Never 404s — returns sensible defaults (`payment_terms_days: 30`, everything else blank/`null`) if nothing's been saved yet. |
-| PUT | `/settings/business-profile` | required | Upsert it (`first_name`, `last_name`, `business_name`, `payment_terms_days` required; `title`, `business_address`, `utr`, `vat_number` optional). 422 on a blank required field or `payment_terms_days <= 0`. |
+| PUT | `/settings/business-profile` | required | Upsert it (`first_name`, `last_name`, `business_name`, `payment_terms_days` required; `title`, `address_line1`, `address_line2`, `town_or_city`, `county`, `postcode`, `utr`, `vat_number` optional — each address line independently optional). 422 on a blank required field or `payment_terms_days <= 0`. |
 
 The CLI (`invoice-system-cli`) mirrors the account/quote/invoice routes
 one-for-one over the same storage, but is **not** behind login — it's a

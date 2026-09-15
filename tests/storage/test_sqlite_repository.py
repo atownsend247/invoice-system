@@ -61,7 +61,11 @@ def test_upsert_business_profile_round_trip_and_update(repo):
         first_name="Ada",
         last_name="Lovelace",
         business_name="Acme",
-        business_address="1 Main St",
+        address_line1="1 Main St",
+        address_line2="Suite 4",
+        town_or_city="London",
+        county="Greater London",
+        postcode="SW1A 1AA",
         payment_terms_days=30,
         utr="1234567890",
         vat_number=None,
@@ -76,6 +80,11 @@ def test_upsert_business_profile_round_trip_and_update(repo):
     assert fetched.first_name == "Ada"
     assert fetched.last_name == "Lovelace"
     assert fetched.business_name == "Acme"
+    assert fetched.address_line1 == "1 Main St"
+    assert fetched.address_line2 == "Suite 4"
+    assert fetched.town_or_city == "London"
+    assert fetched.county == "Greater London"
+    assert fetched.postcode == "SW1A 1AA"
     assert fetched.utr == "1234567890"
     assert fetched.vat_number is None
 
@@ -87,7 +96,11 @@ def test_upsert_business_profile_round_trip_and_update(repo):
         first_name="Grace",
         last_name="Hopper",
         business_name="Acme Ltd",
-        business_address=None,
+        address_line1=None,
+        address_line2=None,
+        town_or_city=None,
+        county=None,
+        postcode=None,
         payment_terms_days=14,
         utr=None,
         vat_number="GB123456789",
@@ -100,18 +113,19 @@ def test_upsert_business_profile_round_trip_and_update(repo):
     assert updated.title is None
     assert updated.first_name == "Grace"
     assert updated.business_name == "Acme Ltd"
-    assert updated.business_address is None
+    assert updated.address_line1 is None
     assert updated.payment_terms_days == 14
     assert updated.utr is None
     assert updated.vat_number == "GB123456789"
 
 
-def test_migration_3_preserves_rows_from_the_old_business_profiles_shape(tmp_path):
+def test_migrating_from_the_original_business_profiles_shape_preserves_rows(tmp_path):
     # Simulate a database that only ever saw migrations 1-2 (business_name,
-    # business_address NOT NULL DEFAULT '', no title/first_name/last_name) -
-    # exactly the shape migration 3's rebuild-and-swap has to carry forward
-    # without losing data. See the "Schema changes are forward-only
-    # migrations" gotcha in CLAUDE.md.
+    # business_address NOT NULL DEFAULT '', no title/first_name/last_name,
+    # no structured address) - exactly the shape migrations 3 and 4 have to
+    # carry forward without losing data, run back to back by a single
+    # migrate() call. See the "Schema changes are forward-only migrations"
+    # gotcha in CLAUDE.md.
     db_path = tmp_path / "old.db"
     conn = sqlite3.connect(str(db_path))
     conn.executescript(MIGRATIONS[0])
@@ -120,7 +134,7 @@ def test_migration_3_preserves_rows_from_the_old_business_profiles_shape(tmp_pat
     conn.execute(
         "INSERT INTO business_profiles "
         "(user_id, business_name, business_address, payment_terms_days, utr, vat_number, "
-        "created_at, updated_at) VALUES (1, 'Acme', '', 30, NULL, NULL, ?, ?)",
+        "created_at, updated_at) VALUES (1, 'Acme', '1 Main St', 30, NULL, NULL, ?, ?)",
         ("2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00"),
     )
     conn.commit()
@@ -131,8 +145,63 @@ def test_migration_3_preserves_rows_from_the_old_business_profiles_shape(tmp_pat
 
     profile = repo.get_business_profile(user_id=1)
     assert profile.business_name == "Acme"
-    assert profile.business_address is None  # '' from the old schema, not lost
+    assert profile.address_line1 == "1 Main St"  # the old business_address, carried forward
+    assert profile.address_line2 is None
     assert profile.first_name == ""
     assert profile.last_name == ""
     assert profile.title is None
+    repo.close()
+
+
+def test_migration_4_splits_an_existing_business_address_into_address_line1(tmp_path):
+    # Simulate a database frozen right after migration 3 (business_address
+    # nullable, but still the single free-text column migration 4 replaces).
+    db_path = tmp_path / "pre-migration-4.db"
+    conn = sqlite3.connect(str(db_path))
+    for script in MIGRATIONS[:3]:
+        conn.executescript(script)
+    conn.execute("PRAGMA user_version = 3")
+    conn.execute(
+        "INSERT INTO business_profiles "
+        "(user_id, title, first_name, last_name, business_name, business_address, "
+        "payment_terms_days, utr, vat_number, created_at, updated_at) "
+        "VALUES (1, NULL, 'Ada', 'Lovelace', 'Acme', '221B Baker Street, London', "
+        "30, NULL, NULL, ?, ?)",
+        ("2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00"),
+    )
+    conn.commit()
+    conn.close()
+
+    repo = SqliteRepository(db_path)
+    repo.migrate()
+
+    profile = repo.get_business_profile(user_id=1)
+    assert profile.address_line1 == "221B Baker Street, London"  # not parsed, just carried across
+    assert profile.address_line2 is None
+    assert profile.town_or_city is None
+    assert profile.first_name == "Ada"  # untouched by migration 4
+    repo.close()
+
+
+def test_migration_4_leaves_address_line1_unset_when_there_was_no_old_address(tmp_path):
+    db_path = tmp_path / "pre-migration-4-no-address.db"
+    conn = sqlite3.connect(str(db_path))
+    for script in MIGRATIONS[:3]:
+        conn.executescript(script)
+    conn.execute("PRAGMA user_version = 3")
+    conn.execute(
+        "INSERT INTO business_profiles "
+        "(user_id, title, first_name, last_name, business_name, business_address, "
+        "payment_terms_days, utr, vat_number, created_at, updated_at) "
+        "VALUES (1, NULL, 'Ada', 'Lovelace', 'Acme', NULL, 30, NULL, NULL, ?, ?)",
+        ("2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00"),
+    )
+    conn.commit()
+    conn.close()
+
+    repo = SqliteRepository(db_path)
+    repo.migrate()
+
+    profile = repo.get_business_profile(user_id=1)
+    assert profile.address_line1 is None
     repo.close()

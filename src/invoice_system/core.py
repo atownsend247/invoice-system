@@ -52,10 +52,14 @@ class AccountService:
         return self._repository.list_accounts()
 
 
+def _blank_to_none(value: str | None) -> str | None:
+    return value.strip() if value and value.strip() else None
+
+
 class BusinessProfileService:
-    """The logged-in user's own business details (name/address/payment terms/
-    UTR/VAT), one per user - see CLAUDE.md for why this is deliberately not
-    an `Account` (that's the client being billed) and not part of sessionkit."""
+    """The logged-in user's own details (name/address/payment terms/UTR/VAT),
+    one per user - see CLAUDE.md for why this is deliberately not an
+    `Account` (that's the client being billed) and not part of sessionkit."""
 
     def __init__(self, repository: Repository, clock: Clock = system_clock) -> None:
         self._repository = repository
@@ -73,7 +77,11 @@ class BusinessProfileService:
             first_name="",
             last_name="",
             business_name="",
-            business_address=None,
+            address_line1=None,
+            address_line2=None,
+            town_or_city=None,
+            county=None,
+            postcode=None,
             payment_terms_days=DEFAULT_PAYMENT_TERMS_DAYS,
             utr=None,
             vat_number=None,
@@ -90,7 +98,11 @@ class BusinessProfileService:
         business_name: str,
         payment_terms_days: int,
         title: str | None = None,
-        business_address: str | None = None,
+        address_line1: str | None = None,
+        address_line2: str | None = None,
+        town_or_city: str | None = None,
+        county: str | None = None,
+        postcode: str | None = None,
         utr: str | None = None,
         vat_number: str | None = None,
     ) -> BusinessProfile:
@@ -108,16 +120,18 @@ class BusinessProfileService:
         profile = BusinessProfile(
             id=existing.id if existing is not None else None,
             user_id=user_id,
-            title=title.strip() if title and title.strip() else None,
+            title=_blank_to_none(title),
             first_name=first_name,
             last_name=last_name,
             business_name=business_name,
-            business_address=business_address.strip()
-            if business_address and business_address.strip()
-            else None,
+            address_line1=_blank_to_none(address_line1),
+            address_line2=_blank_to_none(address_line2),
+            town_or_city=_blank_to_none(town_or_city),
+            county=_blank_to_none(county),
+            postcode=_blank_to_none(postcode),
             payment_terms_days=payment_terms_days,
-            utr=utr.strip() if utr and utr.strip() else None,
-            vat_number=vat_number.strip() if vat_number and vat_number.strip() else None,
+            utr=_blank_to_none(utr),
+            vat_number=_blank_to_none(vat_number),
             created_at=created_at,
             updated_at=self._clock(),
         )

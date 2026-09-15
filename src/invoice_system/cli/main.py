@@ -196,7 +196,11 @@ def settings_show(application: Application, user_id: int) -> None:
     click.echo(f"Title: {profile.title or '-'}")
     click.echo(f"Name: {(profile.first_name + ' ' + profile.last_name).strip() or '-'}")
     click.echo(f"Business name: {profile.business_name or '-'}")
-    click.echo(f"Business address: {profile.business_address or '-'}")
+    click.echo(f"Address line 1: {profile.address_line1 or '-'}")
+    click.echo(f"Address line 2: {profile.address_line2 or '-'}")
+    click.echo(f"Town or city: {profile.town_or_city or '-'}")
+    click.echo(f"County: {profile.county or '-'}")
+    click.echo(f"Postcode: {profile.postcode or '-'}")
     click.echo(f"Payment terms (days): {profile.payment_terms_days}")
     click.echo(f"UTR: {profile.utr or '-'}")
     click.echo(f"VAT number: {profile.vat_number or '-'}")
@@ -208,7 +212,11 @@ def settings_show(application: Application, user_id: int) -> None:
 @click.option("--last-name", required=True)
 @click.option("--business-name", required=True)
 @click.option("--title", default=None, help="Optional, e.g. Mr/Mrs/Dr.")
-@click.option("--business-address", default=None)
+@click.option("--address-line1", default=None)
+@click.option("--address-line2", default=None)
+@click.option("--town-or-city", default=None)
+@click.option("--county", default=None)
+@click.option("--postcode", default=None)
 @click.option("--payment-terms-days", type=int, default=30, show_default=True)
 @click.option("--utr", default=None)
 @click.option("--vat-number", default=None)
@@ -220,7 +228,11 @@ def settings_set(
     last_name: str,
     business_name: str,
     title: str | None,
-    business_address: str | None,
+    address_line1: str | None,
+    address_line2: str | None,
+    town_or_city: str | None,
+    county: str | None,
+    postcode: str | None,
     payment_terms_days: int,
     utr: str | None,
     vat_number: str | None,
@@ -231,7 +243,11 @@ def settings_set(
         first_name=first_name,
         last_name=last_name,
         business_name=business_name,
-        business_address=business_address,
+        address_line1=address_line1,
+        address_line2=address_line2,
+        town_or_city=town_or_city,
+        county=county,
+        postcode=postcode,
         payment_terms_days=payment_terms_days,
         utr=utr,
         vat_number=vat_number,

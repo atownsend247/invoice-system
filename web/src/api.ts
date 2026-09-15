@@ -171,7 +171,11 @@ export interface SaveBusinessProfileInput {
   business_name: string
   payment_terms_days: number
   title?: string
-  business_address?: string
+  address_line1?: string
+  address_line2?: string
+  town_or_city?: string
+  county?: string
+  postcode?: string
   utr?: string
   vat_number?: string
 }

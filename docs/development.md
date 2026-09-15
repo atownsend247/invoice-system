@@ -61,7 +61,8 @@ it from:
 ```
 uv run invoice-system-cli settings set --user-id 1 \
     --first-name Ada --last-name Lovelace \
-    --business-name "Acme Consulting" --business-address "1 Main St" \
+    --business-name "Acme Consulting" --address-line1 "1 Main St" \
+    --town-or-city London --postcode "SW1A 1AA" \
     --payment-terms-days 14 --utr 1234567890 --vat-number GB123456789
 uv run invoice-system-cli settings show --user-id 1
 ```

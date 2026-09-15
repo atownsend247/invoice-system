@@ -10,7 +10,11 @@ def test_get_profile_returns_defaults_when_none_saved(application):
     assert profile.first_name == ""
     assert profile.last_name == ""
     assert profile.business_name == ""
-    assert profile.business_address is None
+    assert profile.address_line1 is None
+    assert profile.address_line2 is None
+    assert profile.town_or_city is None
+    assert profile.county is None
+    assert profile.postcode is None
     assert profile.payment_terms_days == 30
     assert profile.utr is None
     assert profile.vat_number is None
@@ -23,7 +27,11 @@ def test_save_and_refetch_profile(application):
         first_name="Ada",
         last_name="Lovelace",
         business_name="Acme Consulting",
-        business_address="1 Main St",
+        address_line1="1 Main St",
+        address_line2="Suite 4",
+        town_or_city="London",
+        county="Greater London",
+        postcode="SW1A 1AA",
         payment_terms_days=14,
         utr="1234567890",
         vat_number="GB123456789",
@@ -37,6 +45,11 @@ def test_save_and_refetch_profile(application):
 
     fetched = application.business_profiles.get_profile(user_id=1)
     assert fetched.id == saved.id
+    assert fetched.address_line1 == "1 Main St"
+    assert fetched.address_line2 == "Suite 4"
+    assert fetched.town_or_city == "London"
+    assert fetched.county == "Greater London"
+    assert fetched.postcode == "SW1A 1AA"
     assert fetched.utr == "1234567890"
     assert fetched.vat_number == "GB123456789"
 
@@ -54,14 +67,36 @@ def test_saving_again_updates_the_same_row_not_a_new_one(application):
     assert second.payment_terms_days == 45
 
 
-def test_title_business_address_utr_and_vat_number_are_optional(application):
+def test_title_address_fields_utr_and_vat_number_are_optional(application):
     profile = application.business_profiles.save_profile(
         user_id=1, first_name="Ada", last_name="Lovelace", business_name="Acme", payment_terms_days=30
     )
     assert profile.title is None
-    assert profile.business_address is None
+    assert profile.address_line1 is None
+    assert profile.address_line2 is None
+    assert profile.town_or_city is None
+    assert profile.county is None
+    assert profile.postcode is None
     assert profile.utr is None
     assert profile.vat_number is None
+
+
+def test_address_lines_are_each_independently_optional(application):
+    # No "all or nothing" cross-field rule - a line1-and-postcode-only
+    # address is just as valid as a full one (see CLAUDE.md).
+    profile = application.business_profiles.save_profile(
+        user_id=1,
+        first_name="Ada",
+        last_name="Lovelace",
+        business_name="Acme",
+        payment_terms_days=30,
+        address_line1="1 Main St",
+        postcode="SW1A 1AA",
+    )
+    assert profile.address_line1 == "1 Main St"
+    assert profile.address_line2 is None
+    assert profile.town_or_city is None
+    assert profile.postcode == "SW1A 1AA"
 
 
 def test_blank_optional_fields_are_stored_as_none(application):
@@ -72,12 +107,20 @@ def test_blank_optional_fields_are_stored_as_none(application):
         business_name="Acme",
         payment_terms_days=30,
         title="   ",
-        business_address="   ",
+        address_line1="   ",
+        address_line2="   ",
+        town_or_city="   ",
+        county="   ",
+        postcode="   ",
         utr="   ",
         vat_number="   ",
     )
     assert profile.title is None
-    assert profile.business_address is None
+    assert profile.address_line1 is None
+    assert profile.address_line2 is None
+    assert profile.town_or_city is None
+    assert profile.county is None
+    assert profile.postcode is None
     assert profile.utr is None
     assert profile.vat_number is None
 

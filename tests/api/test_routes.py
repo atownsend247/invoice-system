@@ -164,7 +164,11 @@ def test_business_profile_defaults_before_first_save(client, auth_headers):
     assert body["first_name"] == ""
     assert body["last_name"] == ""
     assert body["business_name"] == ""
-    assert body["business_address"] is None
+    assert body["address_line1"] is None
+    assert body["address_line2"] is None
+    assert body["town_or_city"] is None
+    assert body["county"] is None
+    assert body["postcode"] is None
     assert body["payment_terms_days"] == 30
     assert body["utr"] is None
     assert body["vat_number"] is None
@@ -178,7 +182,11 @@ def test_saving_business_profile_persists_and_is_returned_on_refetch(client, aut
             "first_name": "Ada",
             "last_name": "Lovelace",
             "business_name": "Acme Consulting",
-            "business_address": "1 Main St",
+            "address_line1": "1 Main St",
+            "address_line2": "Suite 4",
+            "town_or_city": "London",
+            "county": "Greater London",
+            "postcode": "SW1A 1AA",
             "payment_terms_days": 14,
             "utr": "1234567890",
             "vat_number": "GB123456789",
@@ -192,11 +200,14 @@ def test_saving_business_profile_persists_and_is_returned_on_refetch(client, aut
     response = client.get("/settings/business-profile", headers=auth_headers)
     assert response.json()["title"] == "Dr"
     assert response.json()["first_name"] == "Ada"
+    assert response.json()["address_line1"] == "1 Main St"
+    assert response.json()["town_or_city"] == "London"
+    assert response.json()["postcode"] == "SW1A 1AA"
     assert response.json()["utr"] == "1234567890"
     assert response.json()["vat_number"] == "GB123456789"
 
 
-def test_business_address_is_optional(client, auth_headers):
+def test_address_fields_are_optional(client, auth_headers):
     response = client.put(
         "/settings/business-profile",
         json={
@@ -208,7 +219,8 @@ def test_business_address_is_optional(client, auth_headers):
         headers=auth_headers,
     )
     assert response.status_code == 200
-    assert response.json()["business_address"] is None
+    assert response.json()["address_line1"] is None
+    assert response.json()["postcode"] is None
 
 
 def test_saving_business_profile_without_a_name_returns_422(client, auth_headers):

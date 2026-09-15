@@ -47,14 +47,18 @@ Three separate things are easy to conflate here — don't:
 - **sessionkit's `User`** (`auth.db`) — a *login* identity. Has no business
   details at all beyond email/name.
 - **`BusinessProfile`** (this app's own domain table, `business_profiles`) —
-  the logged-in user's *own* details: `title` (optional), `first_name`,
-  `last_name` (the account holder's personal name - **never shown on a
-  PDF**, see Conventions), `business_name`, `business_address` (optional),
-  `payment_terms_days`, `utr`/`vat_number` (optional). One per user, keyed
-  by `user_id` = sessionkit's `User.id`. That's a **plain integer column,
-  not an enforced foreign key** — `business_profiles` lives in
-  `invoice_system.db`, `users` lives in the separate `auth.db`, and SQLite
-  can't enforce a cross-database constraint. Deleting a user via
+  the logged-in user's *own* details, in three groups (also how the
+  settings page presents them - see Conventions): **user settings**
+  (`title` optional, `first_name`, `last_name` — the account holder's
+  personal name, **never shown on a PDF**); **business settings**
+  (`business_name`, and a UK GOV.UK Design System-style address —
+  `address_line1`/`address_line2`/`town_or_city`/`county`/`postcode`, each
+  independently optional, no "all or nothing" rule); **payment and tax
+  settings** (`payment_terms_days`, `utr`/`vat_number` optional). One per
+  user, keyed by `user_id` = sessionkit's `User.id`. That's a **plain
+  integer column, not an enforced foreign key** — `business_profiles` lives
+  in `invoice_system.db`, `users` lives in the separate `auth.db`, and
+  SQLite can't enforce a cross-database constraint. Deleting a user via
   `sessionkit delete` leaves its `business_profiles` row orphaned; nothing
   cleans it up automatically (there's no hook for sessionkit to call into
   the domain db, and it shouldn't gain one — see
@@ -168,16 +172,25 @@ Three separate things are easy to conflate here — don't:
 - `BusinessProfile.payment_terms_days` drives `InvoiceService.send()`'s
   due-date calc: `send(invoice_id, payment_terms_days=...)` — pass `None`
   (both API and CLI do, when there's no profile/`--user-id`) to fall back to
-  the fixed `DEFAULT_INVOICE_DUE_DAYS`. `business_name`/`business_address`
-  appear as a "From" section on generated PDFs (`pdf.py`'s
-  `business_profile_lines()`), **above** "Bill to", only when
-  `business_name` is actually set — never empty/blank. Neither `pdf.py` nor
+  the fixed `DEFAULT_INVOICE_DUE_DAYS`. `business_name` + whichever address
+  lines are set appear as a "From" section on generated PDFs (`pdf.py`'s
+  `business_profile_lines()`), **above** "Bill to", in the standard UK
+  order (`address_line1`, `address_line2`, `town_or_city`, `county`,
+  `postcode`) — only when `business_name` is actually set, never
+  empty/blank. Neither `pdf.py` nor
   `InvoiceService` import `BusinessProfileService` or know what a "user" is
   — the API/CLI layers resolve the profile and pass plain values in
   (`payment_terms_days: int | None`, `from_profile: BusinessProfile | None`),
   keeping the "whose profile" question entirely at the entry-point layer.
   **Deliberately not shown on a PDF**: `title`/`first_name`/`last_name` —
-  only `business_name`/`business_address` were asked for.
+  only `business_name` and the address were asked for.
+- The settings page (`web/src/pages/SettingsPage.tsx`) groups
+  `BusinessProfile` fields into three `<fieldset>`/`<legend>` sections
+  matching the model's own three groups (user settings, business settings,
+  payment and tax settings) — a real semantic/accessible grouping (Playwright's
+  `getByRole('group', { name: ... })` finds them via the `<legend>`), not
+  just a visual one. Add a new field to whichever group it actually belongs
+  to, not wherever's convenient.
 - Two separate exception hierarchies get mapped to HTTP status in `api/app.py`,
   each in its own handler: this app's `AppError` (`handle_app_error`) and
   sessionkit's `AuthError` (`handle_auth_error`). Don't merge them into one
@@ -190,17 +203,24 @@ Three separate things are easy to conflate here — don't:
   baseline schema. Append a numbered entry to a `MIGRATIONS` list; a
   migration runner applies whatever's pending and tracks progress via
   `PRAGMA user_version`. Existing data must survive every migration — write
-  it as if a production database will run it unattended. SQLite can't
-  `ALTER COLUMN` to relax a `NOT NULL` constraint in place — migration 3
-  (making `business_address` optional) is the reference example of the
-  fix: create a new table with the target shape, `INSERT ... SELECT` the
-  old data across (using `NULLIF(col, '')` where an old required-with-
-  default-`''` column becomes a genuinely nullable one), `DROP` the old
-  table, `RENAME` the new one into its place. `tests/storage/
-  test_sqlite_repository.py::test_migration_3_preserves_rows_...` builds a
-  database that only ever saw migrations 1-2 and asserts the rebuild
-  doesn't lose data — write that same style of test for any migration that
-  reshapes an existing table, not just ones that add a new one.
+  it as if a production database will run it unattended. Two reference
+  examples, both in `tests/storage/test_sqlite_repository.py`, each
+  building a database frozen at an earlier migration and asserting the next
+  one doesn't lose data — write that same style of test for any migration
+  that reshapes an existing table, not just ones that add a new one:
+  - Migration 3 (making `business_address` optional): SQLite can't `ALTER
+    COLUMN` to relax a `NOT NULL` constraint in place, so this is a
+    rebuild-and-swap — new table with the target shape, `INSERT ...
+    SELECT` the old data across (`NULLIF(col, '')` where an old
+    required-with-default-`''` column becomes genuinely nullable), `DROP`
+    the old table, `RENAME` the new one into its place.
+  - Migration 4 (splitting `business_address` into `address_line1`/
+    `address_line2`/`town_or_city`/`county`/`postcode`): adding nullable
+    columns and dropping a nullable one are both plain `ALTER TABLE`
+    SQLite supports directly (no rebuild needed) — but a single free-text
+    address can't be parsed into structured fields automatically, so the
+    migration moves the old value into `address_line1` wholesale rather
+    than silently discarding it or guessing at a split.
 - Storage is a single shared SQLite connection/file — **serialise every
   access on a lock** inside the repository implementation rather than
   assuming the caller will.
@@ -241,3 +261,14 @@ Three separate things are easy to conflate here — don't:
   fine with bot commits landing on your default branch; verify-and-fail is
   the lower-surprise default, especially for a single maintainer who pushes
   straight to the trunk branch.
+- `web/e2e/settings.spec.ts`'s `test.describe.configure({ mode: 'serial' })`
+  stops its tests racing each other within one run (a `BusinessProfile` is
+  a singleton per user, unlike an account/quote/invoice — see CLAUDE.md
+  above and `docs/testing-and-ci.md`). It does **not** stop `--repeat-each`
+  from scheduling separate repeats of the whole file across different
+  workers, which still raced in stress-testing — `fullyParallel: false` and
+  `serial` mode both scope to "one run of this file," not "every repeat
+  everywhere." That's a limitation of stress-testing this particular file
+  with `--repeat-each`, not a real bug: `npm run test:e2e` only ever runs
+  each test once. Stress-test this file specifically with `--repeat-each
+  --workers=1` instead of the bare flag.

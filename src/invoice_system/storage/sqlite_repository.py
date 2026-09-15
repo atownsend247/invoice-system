@@ -82,14 +82,19 @@ class SqliteRepository:
         with self._lock:
             self._conn.execute(
                 "INSERT INTO business_profiles (user_id, title, first_name, last_name, "
-                "business_name, business_address, payment_terms_days, utr, vat_number, "
-                "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "business_name, address_line1, address_line2, town_or_city, county, postcode, "
+                "payment_terms_days, utr, vat_number, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(user_id) DO UPDATE SET "
                 "title = excluded.title, "
                 "first_name = excluded.first_name, "
                 "last_name = excluded.last_name, "
                 "business_name = excluded.business_name, "
-                "business_address = excluded.business_address, "
+                "address_line1 = excluded.address_line1, "
+                "address_line2 = excluded.address_line2, "
+                "town_or_city = excluded.town_or_city, "
+                "county = excluded.county, "
+                "postcode = excluded.postcode, "
                 "payment_terms_days = excluded.payment_terms_days, "
                 "utr = excluded.utr, "
                 "vat_number = excluded.vat_number, "
@@ -100,7 +105,11 @@ class SqliteRepository:
                     profile.first_name,
                     profile.last_name,
                     profile.business_name,
-                    profile.business_address,
+                    profile.address_line1,
+                    profile.address_line2,
+                    profile.town_or_city,
+                    profile.county,
+                    profile.postcode,
                     profile.payment_terms_days,
                     profile.utr,
                     profile.vat_number,
@@ -123,7 +132,11 @@ class SqliteRepository:
             first_name=row["first_name"],
             last_name=row["last_name"],
             business_name=row["business_name"],
-            business_address=row["business_address"],
+            address_line1=row["address_line1"],
+            address_line2=row["address_line2"],
+            town_or_city=row["town_or_city"],
+            county=row["county"],
+            postcode=row["postcode"],
             payment_terms_days=row["payment_terms_days"],
             utr=row["utr"],
             vat_number=row["vat_number"],

@@ -138,7 +138,11 @@ class BusinessProfileIn(BaseModel):
     last_name: str
     business_name: str
     title: str | None = None
-    business_address: str | None = None
+    address_line1: str | None = None
+    address_line2: str | None = None
+    town_or_city: str | None = None
+    county: str | None = None
+    postcode: str | None = None
     payment_terms_days: int = 30
     utr: str | None = None
     vat_number: str | None = None
@@ -149,7 +153,11 @@ class BusinessProfileOut(BaseModel):
     first_name: str
     last_name: str
     business_name: str
-    business_address: str | None
+    address_line1: str | None
+    address_line2: str | None
+    town_or_city: str | None
+    county: str | None
+    postcode: str | None
     payment_terms_days: int
     utr: str | None
     vat_number: str | None
@@ -162,7 +170,11 @@ class BusinessProfileOut(BaseModel):
             first_name=profile.first_name,
             last_name=profile.last_name,
             business_name=profile.business_name,
-            business_address=profile.business_address,
+            address_line1=profile.address_line1,
+            address_line2=profile.address_line2,
+            town_or_city=profile.town_or_city,
+            county=profile.county,
+            postcode=profile.postcode,
             payment_terms_days=profile.payment_terms_days,
             utr=profile.utr,
             vat_number=profile.vat_number,

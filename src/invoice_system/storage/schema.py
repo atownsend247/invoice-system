@@ -106,4 +106,24 @@ MIGRATIONS: list[str] = [
     DROP TABLE business_profiles;
     ALTER TABLE business_profiles_new RENAME TO business_profiles;
     """,
+    """
+    -- Splits the single business_address into UK GOV.UK Design System-style
+    -- address fields (address_line1/2, town_or_city, county, postcode) -
+    -- see CLAUDE.md and data-model.md. Unlike migration 3, this doesn't need
+    -- a rebuild-and-swap: adding nullable columns and dropping a nullable
+    -- one are both plain ALTER TABLE operations SQLite supports directly.
+    -- The old free-text address can't be parsed into structured fields
+    -- automatically, so existing data moves into address_line1 rather than
+    -- being silently dropped - a person can re-split it themselves next
+    -- time they visit Settings.
+    ALTER TABLE business_profiles ADD COLUMN address_line1 TEXT;
+    ALTER TABLE business_profiles ADD COLUMN address_line2 TEXT;
+    ALTER TABLE business_profiles ADD COLUMN town_or_city TEXT;
+    ALTER TABLE business_profiles ADD COLUMN county TEXT;
+    ALTER TABLE business_profiles ADD COLUMN postcode TEXT;
+
+    UPDATE business_profiles SET address_line1 = business_address WHERE business_address IS NOT NULL;
+
+    ALTER TABLE business_profiles DROP COLUMN business_address;
+    """,
 ]

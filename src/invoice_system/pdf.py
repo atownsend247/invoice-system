@@ -45,16 +45,23 @@ def render_invoice_pdf(
 
 def business_profile_lines(profile: BusinessProfile | None) -> list[str]:
     """What the "From" section shows: business name and address, if set -
-    never the account holder's personal name (see CLAUDE.md). Pulled out as
-    a pure function so the decision (what shows, in what order, when there's
-    nothing to show at all) is unit-testable without parsing rendered PDF
-    bytes - reportlab has no matching "read a PDF back" half to assert with."""
+    never the account holder's personal name (see CLAUDE.md). Address lines
+    are each independently optional (see BusinessProfile), so this just
+    prints whichever ones are actually set, in the standard UK order.
+    Pulled out as a pure function so the decision (what shows, in what
+    order, when there's nothing to show at all) is unit-testable without
+    parsing rendered PDF bytes - reportlab has no matching "read a PDF back"
+    half to assert with."""
     if profile is None or not profile.business_name.strip():
         return []
-    lines = [profile.business_name]
-    if profile.business_address and profile.business_address.strip():
-        lines.append(profile.business_address)
-    return lines
+    address_fields = (
+        profile.address_line1,
+        profile.address_line2,
+        profile.town_or_city,
+        profile.county,
+        profile.postcode,
+    )
+    return [profile.business_name, *(field for field in address_fields if field and field.strip())]
 
 
 def _render(

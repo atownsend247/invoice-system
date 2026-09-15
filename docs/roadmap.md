@@ -58,18 +58,23 @@
 
 ## Phase 5 — User settings (business profile) (done)
 
-- [x] `BusinessProfile` (title/first/last name, business name/address,
+- [x] `BusinessProfile` (title/first/last name, business name, a
+      UK-standard structured address — `address_line1`/`address_line2`/
+      `town_or_city`/`county`/`postcode`, each independently optional —
       payment terms, UTR/VAT), one per user, stored in `invoice_system.db`
       keyed by sessionkit's `User.id` (a plain column, not an enforced FK —
       see `CLAUDE.md`). Backend (`BusinessProfileService`, `GET`/`PUT
-      /settings/business-profile`) and a `web/` settings page + nav link,
-      with its own e2e spec (`web/e2e/settings.spec.ts`).
+      /settings/business-profile`) and a `web/` settings page — three
+      `<fieldset>`/`<legend>` sections ("User settings" / "Business
+      settings" / "Payment and tax settings") + nav link, with its own e2e
+      spec (`web/e2e/settings.spec.ts`).
 - [x] `payment_terms_days` drives `InvoiceService.send()`'s due-date calc
       (`send(invoice_id, payment_terms_days=...)`, falling back to the
       fixed `DEFAULT_INVOICE_DUE_DAYS` when `None`).
-- [x] `business_name`/`business_address` appear as a "From" section on
-      generated PDFs (`pdf.py`'s `business_profile_lines()`), above "Bill
-      to", when `business_name` is set.
+- [x] `business_name` and the structured address lines (in UK order) appear
+      as a "From" section on generated PDFs (`pdf.py`'s
+      `business_profile_lines()`), above "Bill to", when `business_name` is
+      set.
 - [x] CLI: `settings show`/`settings set --user-id`, and `--user-id` on
       `invoice send`/`quote pdf`/`invoice pdf` — the answer to "the CLI has
       no current user" was an explicit flag, not a guess (see `docs/api.md`).

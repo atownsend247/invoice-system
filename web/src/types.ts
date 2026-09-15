@@ -69,7 +69,11 @@ export interface BusinessProfile {
   first_name: string
   last_name: string
   business_name: string
-  business_address: string | null
+  address_line1: string | null
+  address_line2: string | null
+  town_or_city: string | null
+  county: string | null
+  postcode: string | null
   payment_terms_days: number
   utr: string | null
   vat_number: string | null
