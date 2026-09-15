@@ -56,5 +56,20 @@
       `testing-and-ci.md`) — not done; currently only the raw job logs +
       the coverage summary.
 
+## Phase 5 — User settings (business profile)
+
+- [x] `BusinessProfile` (name/address/payment terms/UTR/VAT), one per user,
+      stored in `invoice_system.db` keyed by sessionkit's `User.id` (a
+      plain column, not an enforced FK — see `CLAUDE.md`). Backend
+      (`BusinessProfileService`, `GET`/`PUT /settings/business-profile`)
+      and a `web/` settings page + nav link, with its own e2e spec
+      (`web/e2e/settings.spec.ts`).
+- [ ] Wire `payment_terms_days` into `InvoiceService.send()`'s due-date
+      calculation, replacing the fixed `DEFAULT_INVOICE_DUE_DAYS`.
+- [ ] Wire `business_name`/`business_address` into `pdf.py` as a "from"
+      party — quote/invoice PDFs currently only show "bill to". Both of
+      these need an answer for the CLI first, since it has no "current
+      user" concept to look a profile up by (see `docs/api.md`).
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

@@ -273,6 +273,15 @@ button.secondary {
   margin: 0;
 }
 
+.form-success {
+  color: #17703a;
+  background: #d9f2df;
+  border-radius: 6px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
 .loading {
   color: var(--text-muted);
   padding: 2rem;

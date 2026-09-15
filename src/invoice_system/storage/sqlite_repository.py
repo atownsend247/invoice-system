@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
-from ..models import Account, Invoice, InvoiceStatus, LineItem, Quote, QuoteStatus
+from ..models import Account, BusinessProfile, Invoice, InvoiceStatus, LineItem, Quote, QuoteStatus
 from .schema import MIGRATIONS
 
 
@@ -67,6 +67,59 @@ class SqliteRepository:
             phone=row["phone"],
             address=row["address"],
             created_at=datetime.fromisoformat(row["created_at"]),
+        )
+
+    # -- Business profiles -----------------------------------------------------
+
+    def get_business_profile(self, user_id: int) -> BusinessProfile | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM business_profiles WHERE user_id = ?", (user_id,)
+            ).fetchone()
+        return self._row_to_business_profile(row) if row else None
+
+    def upsert_business_profile(self, profile: BusinessProfile) -> BusinessProfile:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO business_profiles (user_id, business_name, business_address, "
+                "payment_terms_days, utr, vat_number, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(user_id) DO UPDATE SET "
+                "business_name = excluded.business_name, "
+                "business_address = excluded.business_address, "
+                "payment_terms_days = excluded.payment_terms_days, "
+                "utr = excluded.utr, "
+                "vat_number = excluded.vat_number, "
+                "updated_at = excluded.updated_at",
+                (
+                    profile.user_id,
+                    profile.business_name,
+                    profile.business_address,
+                    profile.payment_terms_days,
+                    profile.utr,
+                    profile.vat_number,
+                    profile.created_at.isoformat(),
+                    profile.updated_at.isoformat(),
+                ),
+            )
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT * FROM business_profiles WHERE user_id = ?", (profile.user_id,)
+            ).fetchone()
+        return self._row_to_business_profile(row)
+
+    @staticmethod
+    def _row_to_business_profile(row: sqlite3.Row) -> BusinessProfile:
+        return BusinessProfile(
+            id=row["id"],
+            user_id=row["user_id"],
+            business_name=row["business_name"],
+            business_address=row["business_address"],
+            payment_terms_days=row["payment_terms_days"],
+            utr=row["utr"],
+            vat_number=row["vat_number"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
         )
 
     # -- Quotes --------------------------------------------------------------

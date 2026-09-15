@@ -14,6 +14,7 @@ export function Layout() {
           <NavLink to="/invoices">Invoices</NavLink>
         </nav>
         <div className="user-menu">
+          <NavLink to="/settings">Settings</NavLink>
           <span>{user?.email}</span>
           <button type="button" onClick={logout}>
             Log out

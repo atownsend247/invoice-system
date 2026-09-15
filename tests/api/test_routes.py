@@ -147,3 +147,48 @@ def test_sending_quote_with_no_line_items_returns_422(client, auth_headers):
 
     response = client.post(f"/quotes/{quote_id}/send", headers=auth_headers)
     assert response.status_code == 422
+
+
+def test_business_profile_requires_auth(client):
+    response = client.get("/settings/business-profile")
+    assert response.status_code == 401
+
+
+def test_business_profile_defaults_before_first_save(client, auth_headers):
+    response = client.get("/settings/business-profile", headers=auth_headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["business_name"] == ""
+    assert body["payment_terms_days"] == 30
+    assert body["utr"] is None
+    assert body["vat_number"] is None
+
+
+def test_saving_business_profile_persists_and_is_returned_on_refetch(client, auth_headers):
+    response = client.put(
+        "/settings/business-profile",
+        json={
+            "business_name": "Acme Consulting",
+            "business_address": "1 Main St",
+            "payment_terms_days": 14,
+            "utr": "1234567890",
+            "vat_number": "GB123456789",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["business_name"] == "Acme Consulting"
+    assert response.json()["payment_terms_days"] == 14
+
+    response = client.get("/settings/business-profile", headers=auth_headers)
+    assert response.json()["utr"] == "1234567890"
+    assert response.json()["vat_number"] == "GB123456789"
+
+
+def test_saving_business_profile_without_a_name_returns_422(client, auth_headers):
+    response = client.put(
+        "/settings/business-profile",
+        json={"business_name": "", "business_address": "1 Main St", "payment_terms_days": 30},
+        headers=auth_headers,
+    )
+    assert response.status_code == 422

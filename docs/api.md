@@ -46,10 +46,15 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | POST | `/invoices/{id}/send` | required | Assign an invoice number and due date (issue date + 30 days), transition `draft → sent`. 422 if no line items. |
 | POST | `/invoices/{id}/void` | required | Transition to `void`. 409 if already `paid`. |
 | GET | `/invoices/{id}/pdf` | required | Render the invoice as a PDF (`application/pdf`). |
+| GET | `/settings/business-profile` | required | The current user's own business profile. Never 404s — returns sensible defaults (`payment_terms_days: 30`, everything else blank/`null`) if nothing's been saved yet. |
+| PUT | `/settings/business-profile` | required | Upsert it (`business_name`, `business_address`, `payment_terms_days` required; `utr`, `vat_number` optional). 422 on a blank name/address or `payment_terms_days <= 0`. |
 
 The CLI (`invoice-system-cli`) mirrors the account/quote/invoice routes
 one-for-one over the same storage, but is **not** behind login — it's a
-local, trusted tool (see `CLAUDE.md`).
+local, trusted tool (see `CLAUDE.md`). It does **not** cover
+`/settings/business-profile` — that's inherently a per-user resource
+(`user_id` = sessionkit's `User.id`), and the CLI has no concept of "the
+current user" at all.
 
 ## Conventions
 
@@ -72,3 +77,7 @@ local, trusted tool (see `CLAUDE.md`).
 
 Payments, marking an invoice `paid`/`overdue`, and TOTP/2FA endpoints
 (sessionkit supports it; no routes expose it yet) — see `docs/roadmap.md`.
+`BusinessProfile` is also not yet *consumed* anywhere: `payment_terms_days`
+doesn't affect `POST /invoices/{id}/send`'s due-date calc, and
+`business_name`/`business_address` don't appear on the PDF endpoints — see
+`CLAUDE.md` conventions.

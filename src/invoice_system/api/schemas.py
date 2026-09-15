@@ -131,3 +131,31 @@ class InvoiceOut(BaseModel):
             line_items=[LineItemOut.from_model(item) for item in invoice.line_items],
             total=str(invoice.total),
         )
+
+
+class BusinessProfileIn(BaseModel):
+    business_name: str
+    business_address: str
+    payment_terms_days: int = 30
+    utr: str | None = None
+    vat_number: str | None = None
+
+
+class BusinessProfileOut(BaseModel):
+    business_name: str
+    business_address: str
+    payment_terms_days: int
+    utr: str | None
+    vat_number: str | None
+    updated_at: datetime
+
+    @classmethod
+    def from_model(cls, profile) -> "BusinessProfileOut":
+        return cls(
+            business_name=profile.business_name,
+            business_address=profile.business_address,
+            payment_terms_days=profile.payment_terms_days,
+            utr=profile.utr,
+            vat_number=profile.vat_number,
+            updated_at=profile.updated_at,
+        )

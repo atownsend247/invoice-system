@@ -35,6 +35,24 @@ class Account:
 
 
 @dataclass
+class BusinessProfile:
+    """The logged-in user's own business details - not a domain "Account"
+    (that's the client being billed) and not sessionkit's User (that's the
+    login identity). One per user, keyed by sessionkit's user id - see
+    CLAUDE.md for why that's a plain column, not an enforced foreign key."""
+
+    id: int | None
+    user_id: int
+    business_name: str
+    business_address: str
+    payment_terms_days: int
+    utr: str | None
+    vat_number: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass
 class LineItem:
     id: int | None
     description: str

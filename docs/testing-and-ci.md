@@ -31,15 +31,19 @@ integration test that mocks `api.ts`. See `web/README.md` for commands; it's
 excluded from the Python coverage numbers below entirely (separate
 toolchain, separate CI job — see CI shape).
 
-One spec file per feature area (`login`, `accounts`, `quotes`,
-`invoices.spec.ts`), each independent — no spec relies on another having
+One spec file per feature area (`login`, `accounts`, `quotes`, `invoices`,
+`settings.spec.ts`), each independent — no spec relies on another having
 run, or on execution order, because `web/e2e/fixtures.ts` seeds each one's
 starting state directly through the API rather than by reusing UI-created
 state from elsewhere. That's what makes running them in parallel (or
 picking just one file while iterating on a feature) safe rather than
 flaky. Apply the same pattern - a new API-backed fixture in `fixtures.ts`,
 not a `beforeEach` that clicks through another feature's UI - when a new
-spec needs its own starting state.
+spec needs its own starting state. The one exception is a genuinely
+singleton, per-user resource (`settings.spec.ts`'s `BusinessProfile`) - its
+tests can't be isolated the same way an account/quote/invoice can, so each
+one sets its own known values up front rather than asserting anything about
+"untouched" state.
 
 ## Coverage
 

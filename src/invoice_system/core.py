@@ -4,10 +4,11 @@ from decimal import Decimal
 
 from .clock import Clock, system_clock
 from .errors import InvalidTransition, NotFound, ValidationFailed
-from .models import Account, Invoice, InvoiceStatus, LineItem, Quote, QuoteStatus
+from .models import Account, BusinessProfile, Invoice, InvoiceStatus, LineItem, Quote, QuoteStatus
 from .repository import Repository
 
 DEFAULT_INVOICE_DUE_DAYS = 30
+DEFAULT_PAYMENT_TERMS_DAYS = 30
 
 
 class AccountService:
@@ -49,6 +50,65 @@ class AccountService:
 
     def list_accounts(self) -> list[Account]:
         return self._repository.list_accounts()
+
+
+class BusinessProfileService:
+    """The logged-in user's own business details (name/address/payment terms/
+    UTR/VAT), one per user - see CLAUDE.md for why this is deliberately not
+    an `Account` (that's the client being billed) and not part of sessionkit."""
+
+    def __init__(self, repository: Repository, clock: Clock = system_clock) -> None:
+        self._repository = repository
+        self._clock = clock
+
+    def get_profile(self, user_id: int) -> BusinessProfile:
+        existing = self._repository.get_business_profile(user_id)
+        if existing is not None:
+            return existing
+        now = self._clock()
+        return BusinessProfile(
+            id=None,
+            user_id=user_id,
+            business_name="",
+            business_address="",
+            payment_terms_days=DEFAULT_PAYMENT_TERMS_DAYS,
+            utr=None,
+            vat_number=None,
+            created_at=now,
+            updated_at=now,
+        )
+
+    def save_profile(
+        self,
+        user_id: int,
+        *,
+        business_name: str,
+        business_address: str,
+        payment_terms_days: int,
+        utr: str | None = None,
+        vat_number: str | None = None,
+    ) -> BusinessProfile:
+        if not business_name.strip():
+            raise ValidationFailed("business_name is required")
+        if not business_address.strip():
+            raise ValidationFailed("business_address is required")
+        if payment_terms_days <= 0:
+            raise ValidationFailed("payment_terms_days must be a positive number of days")
+
+        existing = self._repository.get_business_profile(user_id)
+        created_at = existing.created_at if existing is not None else self._clock()
+        profile = BusinessProfile(
+            id=existing.id if existing is not None else None,
+            user_id=user_id,
+            business_name=business_name,
+            business_address=business_address,
+            payment_terms_days=payment_terms_days,
+            utr=utr.strip() if utr and utr.strip() else None,
+            vat_number=vat_number.strip() if vat_number and vat_number.strip() else None,
+            created_at=created_at,
+            updated_at=self._clock(),
+        )
+        return self._repository.upsert_business_profile(profile)
 
 
 class QuoteService:

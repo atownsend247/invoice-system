@@ -2,7 +2,8 @@
 
 React + TypeScript + Vite SPA for the backend in `../src/invoice_system/`.
 Accounts, quotes (draft → sent → convert to invoice), invoices (send/void),
-and PDF download, behind login.
+PDF download, and a settings page for your own business profile, behind
+login.
 
 ## Develop
 
@@ -50,15 +51,22 @@ failure; a failed run's trace/screenshot land in `test-results/` (gitignored).
   passed, since invoices don't expose that route — see `../docs/api.md`).
 - `src/pages/` — one file per route (`App.tsx` wires them up).
 - `e2e/` — Playwright, one spec file per feature area (`login`, `accounts`,
-  `quotes`, `invoices.spec.ts`) rather than one long combined flow, so each
+  `quotes`, `invoices`, `settings.spec.ts`) rather than one long combined
+  flow, so each
   can be read/run/extended on its own as the app grows. `fixtures.ts` is
   what makes that possible: each fixture (`testAccount`, `draftQuote`,
   `sentQuote`, `draftInvoice`) sets up its slice of backend state directly
   through the API, not the UI, so `quotes.spec.ts` isn't the thing that has
   to create an account first, `invoices.spec.ts` isn't the thing that has to
   drive a quote through send-and-convert first, and no spec depends on
-  another one having run — safe to run in parallel (13 tests, 4 workers,
-  under 4s) or in any order. `constants.ts` is where the seeded test user's
+  another one having run — safe to run in parallel (17 tests, 5 workers,
+  under 5s) or in any order. The one exception is `settings.spec.ts`: a
+  `BusinessProfile` is a singleton per user (see `CLAUDE.md`), not a
+  created-per-test record like an account, so its tests share state with
+  each other by nature — each still sets its own known values up front
+  rather than asserting anything about "untouched" state (found the hard
+  way, by stress-testing with `--repeat-each` before trusting it — see the
+  comment at the top of that file). `constants.ts` is where the seeded test user's
   credentials and the two throwaway ports live, imported by both
   `playwright.config.ts` and `fixtures.ts` so there's one source of truth.
   `start-backend.sh` is the throwaway-backend script `playwright.config.ts`

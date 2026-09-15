@@ -60,3 +60,15 @@ export interface Invoice {
   line_items: LineItem[]
   total: string
 }
+
+// The logged-in user's own business details - not an Account (that's the
+// client being billed). One per user; there's no id, since GET/PUT always
+// mean "my own profile" via the auth token, not an id in the URL.
+export interface BusinessProfile {
+  business_name: string
+  business_address: string
+  payment_terms_days: number
+  utr: string | null
+  vat_number: string | null
+  updated_at: string
+}

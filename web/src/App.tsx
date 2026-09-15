@@ -8,6 +8,7 @@ import { LoginPage } from './pages/LoginPage'
 import { QuoteDetailPage } from './pages/QuoteDetailPage'
 import { QuoteNewPage } from './pages/QuoteNewPage'
 import { QuotesPage } from './pages/QuotesPage'
+import { SettingsPage } from './pages/SettingsPage'
 
 export function App() {
   return (
@@ -22,6 +23,7 @@ export function App() {
           <Route path="/quotes/:id" element={<QuoteDetailPage />} />
           <Route path="/invoices" element={<InvoicesPage />} />
           <Route path="/invoices/:id" element={<InvoiceDetailPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Route>
     </Routes>

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sessionkit import AuthenticationError, AuthError, DuplicateUser
+from sessionkit import User as SessionUser
 from sessionkit import UserNotFound as AuthUserNotFound
 from sessionkit import ValidationError as AuthValidationError
 
@@ -23,7 +24,16 @@ from .auth import (
 from .auth import (
     public_router as auth_public_router,
 )
-from .schemas import AccountIn, AccountOut, InvoiceOut, LineItemIn, QuoteCreateIn, QuoteOut
+from .schemas import (
+    AccountIn,
+    AccountOut,
+    BusinessProfileIn,
+    BusinessProfileOut,
+    InvoiceOut,
+    LineItemIn,
+    QuoteCreateIn,
+    QuoteOut,
+)
 
 _STATUS_BY_ERROR: list[tuple[type[AppError], int]] = [
     (NotFound, 404),
@@ -201,6 +211,31 @@ def get_invoice_pdf(invoice_id: int, application: Application = Depends(get_appl
     invoice = application.invoices.get_invoice(invoice_id)
     account = application.accounts.get_account(invoice.account_id)
     return Response(content=render_invoice_pdf(account, invoice), media_type="application/pdf")
+
+
+@domain_router.get("/settings/business-profile", response_model=BusinessProfileOut)
+def get_business_profile(
+    application: Application = Depends(get_application),
+    user: SessionUser = Depends(get_current_user),
+) -> BusinessProfileOut:
+    return BusinessProfileOut.from_model(application.business_profiles.get_profile(user.id))
+
+
+@domain_router.put("/settings/business-profile", response_model=BusinessProfileOut)
+def save_business_profile(
+    body: BusinessProfileIn,
+    application: Application = Depends(get_application),
+    user: SessionUser = Depends(get_current_user),
+) -> BusinessProfileOut:
+    profile = application.business_profiles.save_profile(
+        user.id,
+        business_name=body.business_name,
+        business_address=body.business_address,
+        payment_terms_days=body.payment_terms_days,
+        utr=body.utr,
+        vat_number=body.vat_number,
+    )
+    return BusinessProfileOut.from_model(profile)
 
 
 app.include_router(domain_router)

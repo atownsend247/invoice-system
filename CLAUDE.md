@@ -4,7 +4,10 @@ Invoice System: a freelancer/small-business billing tool. Domain shape is
 Account (the business you provide a service to — business name, contact,
 address) → Quote → Invoice, where a Quote converts into an Invoice rather
 than the two being independently created. Quotes and Invoices are each
-independently viewable/exportable as PDFs.
+independently viewable/exportable as PDFs. A `BusinessProfile` holds the
+logged-in user's *own* business details (name/address/payment terms/UTR/VAT)
+— see below for why that's a third, deliberately separate thing from both
+`Account` and sessionkit's `User`.
 
 ## Where things are
 
@@ -15,15 +18,15 @@ independently viewable/exportable as PDFs.
   agent reads it as ground truth.
 - `src/invoice_system/` — flat top level holds the load-bearing modules
   (`core.py` all domain logic — `AccountService`, `QuoteService`,
-  `InvoiceService`; `models.py`, `errors.py`, `clock.py`, `repository.py` the
-  storage Protocol, `factory.py` wiring, `pdf.py` PDF rendering used by both
-  entry points, `auth.py` wiring for the login/session cross-cutting concern
-  — see below). Subpackages: `storage/` (schema + migrations, the concrete
-  `SqliteRepository`), `api/` (thin FastAPI layer — `app.py` the domain
-  routes, `auth.py` the login/session routes and the `get_current_user`
-  dependency), `cli/` (thin Click layer). `tests/` mirrors the package 1:1
-  (`tests/{core,api,cli,storage}/`) + a root `conftest.py` with shared
-  fixtures.
+  `InvoiceService`, `BusinessProfileService`; `models.py`, `errors.py`,
+  `clock.py`, `repository.py` the storage Protocol, `factory.py` wiring,
+  `pdf.py` PDF rendering used by both entry points, `auth.py` wiring for the
+  login/session cross-cutting concern — see below). Subpackages: `storage/`
+  (schema + migrations, the concrete `SqliteRepository`), `api/` (thin
+  FastAPI layer — `app.py` the domain routes, `auth.py` the login/session
+  routes and the `get_current_user` dependency), `cli/` (thin Click layer).
+  `tests/` mirrors the package 1:1 (`tests/{core,api,cli,storage}/`) + a
+  root `conftest.py` with shared fixtures.
 - `web/` — React 19 + TypeScript + Vite SPA, a sibling of `src/`, its own
   test runner (Vitest) and build, its own README (`web/README.md`). Pins its
   own Node version in `web/.node-version` (nodenv-style) — see gotchas.
@@ -37,6 +40,23 @@ do not confuse it with this app's own `Account` (a client business being
 billed). `core.py` never imports `sessionkit` — see architecture rules.
 Manage users with the bundled `sessionkit` CLI (`uv run sessionkit add ...`),
 not through this app; there is no public signup route.
+
+Three separate things are easy to conflate here — don't:
+- **`Account`** (this app's own domain table) — a *client* business being
+  billed via quotes/invoices.
+- **sessionkit's `User`** (`auth.db`) — a *login* identity. Has no business
+  details at all beyond email/name.
+- **`BusinessProfile`** (this app's own domain table, `business_profiles`) —
+  the logged-in user's *own* business details (name/address/payment terms/
+  UTR/VAT), shown on the quotes/invoices they send. One per user, keyed by
+  `user_id` = sessionkit's `User.id`. That's a **plain integer column, not
+  an enforced foreign key** — `business_profiles` lives in `invoice_system.db`,
+  `users` lives in the separate `auth.db`, and SQLite can't enforce a
+  cross-database constraint. Deleting a user via `sessionkit delete` leaves
+  its `business_profiles` row orphaned; nothing cleans it up automatically
+  (there's no hook for sessionkit to call into the domain db, and it
+  shouldn't gain one — see `docs/extracting-reusable-packages.md` on why a
+  vendored concern stays ignorant of the host app).
 
 ## Commands
 
@@ -138,6 +158,16 @@ not through this app; there is no public signup route.
   persisted to `localStorage`) to every request except login, and calls one
   registered "unauthorized" handler on any 401 so `AuthContext` can clear the
   session in one place, not per-call.
+- `BusinessProfile` fields are **stored but not yet consumed anywhere else**:
+  `payment_terms_days` doesn't drive `InvoiceService.send()`'s due-date calc
+  (still the fixed `DEFAULT_INVOICE_DUE_DAYS`), and `business_name`/
+  `business_address` don't appear on generated PDFs (`pdf.py` still has no
+  "from" party, only "bill to"). Wiring either in is a real, separate change
+  — `InvoiceService`/`pdf.py` would need a `payment_terms_days`/profile
+  parameter threaded through from the API layer (which knows the current
+  user), and the CLI would need an answer for "whose profile" since it has
+  no user concept at all. Don't assume either integration exists just
+  because the setting does.
 - Two separate exception hierarchies get mapped to HTTP status in `api/app.py`,
   each in its own handler: this app's `AppError` (`handle_app_error`) and
   sessionkit's `AuthError` (`handle_auth_error`). Don't merge them into one

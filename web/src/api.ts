@@ -1,4 +1,4 @@
-import type { Account, Invoice, LoginResult, Quote, User } from './types'
+import type { Account, BusinessProfile, Invoice, LoginResult, Quote, User } from './types'
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://127.0.0.1:8000'
 
@@ -157,4 +157,22 @@ export function voidInvoice(id: number): Promise<Invoice> {
 
 export function downloadInvoicePdf(invoice: Invoice): Promise<void> {
   return downloadPdf(`/invoices/${invoice.id}/pdf`, `${invoice.number ?? `invoice-${invoice.id}`}.pdf`)
+}
+
+// -- settings ----------------------------------------------------------------
+
+export function getBusinessProfile(): Promise<BusinessProfile> {
+  return request('/settings/business-profile')
+}
+
+export interface SaveBusinessProfileInput {
+  business_name: string
+  business_address: string
+  payment_terms_days: number
+  utr?: string
+  vat_number?: string
+}
+
+export function saveBusinessProfile(input: SaveBusinessProfileInput): Promise<BusinessProfile> {
+  return request('/settings/business-profile', { method: 'PUT', body: JSON.stringify(input) })
 }

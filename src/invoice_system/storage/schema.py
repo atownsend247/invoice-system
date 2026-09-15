@@ -58,4 +58,20 @@ MIGRATIONS: list[str] = [
         value INTEGER NOT NULL
     );
     """,
+    """
+    -- user_id is sessionkit's User.id - a plain column, not an enforced
+    -- foreign key, since it lives in a separate SQLite file/database. See
+    -- CLAUDE.md and data-model.md for why, and the orphaning consequence.
+    CREATE TABLE IF NOT EXISTS business_profiles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL UNIQUE,
+        business_name TEXT NOT NULL DEFAULT '',
+        business_address TEXT NOT NULL DEFAULT '',
+        payment_terms_days INTEGER NOT NULL DEFAULT 30,
+        utr TEXT,
+        vat_number TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    """,
 ]
