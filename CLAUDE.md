@@ -140,14 +140,17 @@ not through this app; there is no public signup route.
 - Pin the language/runtime version everywhere it's declared (lockfile, CI,
   a `.python-version` file) and don't quietly widen it to "support" an
   older version nobody asked for.
-- `sessionkit` is pinned by git tag (`@v0.1.0` in `pyproject.toml`), not a
+- `sessionkit` is pinned by git tag (`@v0.1.2` in `pyproject.toml`), not a
   PyPI version — bump the tag deliberately, re-run `uv lock`, and check its
   own CHANGELOG/README for breaking changes; there's no semver guarantee
-  from a tag alone. Its `SqliteAuthStore` doesn't currently expose a
-  `close()` (as of v0.1.0) — its `sqlite3.Connection` is closed by the OS at
-  process exit, not by us; harmless in practice but shows up as a
-  `ResourceWarning` in the test suite. Don't reach into its private `_conn`
-  to work around it — file it upstream instead.
+  from a tag alone. `SqliteAuthStore` never closes itself — `AuthService`
+  doesn't own it, so `auth.py`'s `Auth` wrapper holds the store alongside
+  the service specifically so `Auth.close()` has something to call; don't
+  build a bare `AuthService(SqliteAuthStore.open(...))` and drop the store
+  reference, or nothing can close it later. (v0.1.0 had no `close()` at all
+  and defaulted `check_same_thread=True`, which broke under the API's
+  worker-thread pool — fixed in v0.1.1/v0.1.2; don't reintroduce either by
+  pinning back to v0.1.0/v0.1.1.)
 - A generated, committed artifact (an OpenAPI schema dump, a changelog, a
   lockfile) needs **one** regeneration command and a CI check that fails if
   the committed copy is stale — see `docs/testing-and-ci.md`. Don't have CI

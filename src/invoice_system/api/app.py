@@ -9,7 +9,7 @@ from sessionkit import AuthenticationError, AuthError, DuplicateUser
 from sessionkit import UserNotFound as AuthUserNotFound
 from sessionkit import ValidationError as AuthValidationError
 
-from ..auth import build_auth_service
+from ..auth import build_auth
 from ..errors import AppError, Duplicate, InvalidTransition, NotFound, ValidationFailed
 from ..factory import Application, build_application
 from ..pdf import render_invoice_pdf, render_quote_pdf
@@ -36,9 +36,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     db_path = os.environ.get("INVOICE_SYSTEM_DB", "invoice_system.db")
     auth_db_path = os.environ.get("INVOICE_SYSTEM_AUTH_DB", "auth.db")
     app.state.application = build_application(db_path)
-    app.state.auth = build_auth_service(auth_db_path)
+    app.state.auth = build_auth(auth_db_path)
     yield
     app.state.application.close()
+    app.state.auth.close()
 
 
 app = FastAPI(title="Invoice System API", lifespan=lifespan)

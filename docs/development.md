@@ -61,10 +61,7 @@ uv run pytest --cov=src/invoice_system --cov-report=term-missing
 
 Run the full suite before calling a change finished, not just the file(s)
 touched — see `testing-and-ci.md` for layout and fixtures. Coverage floor is
-90% (`pyproject.toml`). Expect a handful of `ResourceWarning: unclosed
-database` lines from sessionkit's `SqliteAuthStore` in the output — that's a
-known gap in sessionkit v0.1.0 (no `close()`), not a bug in this repo; see
-the Gotchas in `CLAUDE.md`.
+90% (`pyproject.toml`).
 
 No `web/` yet — see `docs/roadmap.md`.
 

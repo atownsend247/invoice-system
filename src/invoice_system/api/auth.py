@@ -6,7 +6,7 @@ from sessionkit import AuthService, OtpInvalid, User
 
 
 def get_auth_service(request: Request) -> AuthService:
-    return request.app.state.auth
+    return request.app.state.auth.service
 
 
 def get_current_user(

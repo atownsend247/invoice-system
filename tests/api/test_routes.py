@@ -1,30 +1,31 @@
 import pytest
 from fastapi.testclient import TestClient
-from sessionkit import AuthService, SqliteAuthStore
 
 from invoice_system.api.app import app, get_application
 from invoice_system.api.auth import get_auth_service
+from invoice_system.auth import build_auth
 from invoice_system.factory import build_application
 
 
 @pytest.fixture
-def auth_service(tmp_path):
-    service = AuthService(SqliteAuthStore.open(str(tmp_path / "auth.db"), check_same_thread=False))
-    service.create_user("owner@acme.test", "correct horse battery staple")
-    return service
+def auth(tmp_path):
+    ctx = build_auth(tmp_path / "auth.db")
+    ctx.service.create_user("owner@acme.test", "correct horse battery staple")
+    yield ctx
+    ctx.close()
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch, auth_service):
-    # The lifespan builds its own Application/AuthService from env vars even
-    # though the dependency overrides below replace them for route handlers -
-    # point both at throwaway paths so it doesn't touch the real default files.
+def client(tmp_path, monkeypatch, auth):
+    # The lifespan builds its own Application/Auth from env vars even though
+    # the dependency overrides below replace them for route handlers - point
+    # both at throwaway paths so it doesn't touch the real default files.
     monkeypatch.setenv("INVOICE_SYSTEM_DB", str(tmp_path / "lifespan.db"))
     monkeypatch.setenv("INVOICE_SYSTEM_AUTH_DB", str(tmp_path / "lifespan-auth.db"))
 
     application = build_application(tmp_path / "test.db")
     app.dependency_overrides[get_application] = lambda: application
-    app.dependency_overrides[get_auth_service] = lambda: auth_service
+    app.dependency_overrides[get_auth_service] = lambda: auth.service
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
