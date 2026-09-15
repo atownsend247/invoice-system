@@ -1,35 +1,45 @@
 # Data model
 
-**Status: planned, not yet implemented.** This is the model the first
-migration should create. Keep this table in sync with the actual schema
-once `storage/` exists — this doc is read as ground truth.
+**Status: implemented** (`src/invoice_system/models.py`,
+`storage/schema.py`). Keep this table in sync with the actual schema — this
+doc is read as ground truth.
 
 ## Entities
 
 | Entity | Key fields | Notes |
 |---|---|---|
-| `Account` | id, email, password_hash, created_at | Owns everything below. Cross-cutting (`accounts.py`), not domain. |
-| `Client` | id, account_id, name, email, billing_address | Belongs to one account. |
-| `Invoice` | id, account_id, client_id, number, status, currency, issue_date, due_date, created_at | `status`: `draft \| sent \| paid \| overdue \| void`. `number` is unique per account, generated not user-supplied. |
-| `LineItem` | id, invoice_id, description, quantity, unit_price, position | `unit_price` is `Decimal`; line total is derived (`quantity * unit_price`), never stored redundantly. |
-| `Payment` | id, invoice_id, amount, paid_at, method | An invoice can have multiple partial payments; `status` moves to `paid` once the sum of payments meets the invoice total. |
+| `Account` | id, business_name, contact_name, email, phone, address, created_at | A business you provide a service to and bill. Not a login identity — see `CLAUDE.md`. |
+| `Quote` | id, account_id, number, status, currency, issue_date, expiry_date, created_at | `status`: `draft \| sent \| accepted \| rejected \| expired \| converted`. `number` (`Q-0001`, ...) is assigned on `send`, not on creation. |
+| `Invoice` | id, account_id, quote_id, number, status, currency, issue_date, due_date, created_at | `status`: `draft \| sent \| paid \| overdue \| void`. `quote_id` is set when created via conversion, `NULL` otherwise. `number` (`INV-0001`, ...) and `due_date` are assigned on `send`. |
+| `LineItem` | id, description, quantity, unit_price, position | One shape, shared by quotes and invoices; associated via `quote_line_items`/`invoice_line_items` join tables (`quote_id`/`invoice_id` + the same columns). `total` (`quantity * unit_price`) is a derived property, never stored. |
+| counters (internal) | name, value | Backs `next_quote_number`/`next_invoice_number`; not a domain entity, not exposed via API/CLI. |
 
 ## Relationships
 
 ```
-Account 1──* Client
+Account 1──* Quote
 Account 1──* Invoice
-Client  1──* Invoice
-Invoice 1──* LineItem
-Invoice 1──* Payment
+Quote   1──* LineItem   (via quote_line_items)
+Quote   0/1──0/1 Invoice  (conversion; quote.status becomes "converted")
+Invoice 1──* LineItem   (via invoice_line_items)
 ```
 
 ## Invariants enforced in `core`, not in storage
 
-- `LineItem`s are immutable once their `Invoice.status` leaves `draft`
-  (issue a correction/credit note instead of editing history — see
-  `CLAUDE.md` conventions).
-- `Invoice.number` is assigned by the service on transition out of `draft`,
-  not on creation — a draft can be deleted without leaving a gap.
-- Money fields (`unit_price`, `Payment.amount`) are `Decimal` end-to-end;
-  the storage layer stores them as strings/fixed-point, never `REAL`/float.
+- `LineItem`s are only addable while the owning `Quote`/`Invoice` is
+  `draft`; `send()` freezes them (issue a new quote/invoice instead of
+  editing history — see `CLAUDE.md` conventions).
+- `Quote.number`/`Invoice.number` are assigned by the service on `send()`,
+  not on creation — a draft can exist indefinitely without consuming a
+  number.
+- A `Quote` converts to an `Invoice` at most once, and only from `sent` or
+  `accepted` — `QuoteService.convert_to_invoice` copies its line items and
+  flips the quote to `converted`.
+- Money fields (`unit_price`) are `Decimal` end-to-end; `SqliteRepository`
+  stores them as `TEXT`, never `REAL`.
+
+## Not yet modelled
+
+Payments/partial-payment tracking and an `overdue` status transition are
+future work — see `docs/roadmap.md`. There is currently no way to mark an
+`Invoice` `paid` other than direct storage access.

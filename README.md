@@ -1,11 +1,12 @@
 # Invoice System
 
-A small business/freelancer billing tool: Clients → Invoices → Line items,
-with invoices moving through `draft → sent → paid` (branching to `overdue`
-or `void`) as payments are recorded.
+A freelancer/small-business billing tool: Account (the business you invoice)
+→ Quote → Invoice, where a quote converts into an invoice rather than the
+two being created independently. Both are exportable as PDFs.
 
-**Status: pre-code.** This repo currently holds the project's `CLAUDE.md`
-and reference docs only — see `docs/roadmap.md` for what's next.
+**Status: backend done, no web client yet.** Python backend (SQLite storage,
+FastAPI + a mirrored CLI) is implemented and tested — see
+`docs/development.md` to run it and `docs/roadmap.md` for what's next.
 
 ## Docs
 
