@@ -17,30 +17,42 @@ independently viewable/exportable as PDFs.
   (`core.py` all domain logic — `AccountService`, `QuoteService`,
   `InvoiceService`; `models.py`, `errors.py`, `clock.py`, `repository.py` the
   storage Protocol, `factory.py` wiring, `pdf.py` PDF rendering used by both
-  entry points). Subpackages: `storage/` (schema + migrations, the concrete
-  `SqliteRepository`), `api/` (thin FastAPI layer), `cli/` (thin Click
-  layer). `tests/` mirrors the package 1:1 (`tests/{core,api,cli,storage}/`)
-  + a root `conftest.py` with shared fixtures.
+  entry points, `auth.py` wiring for the login/session cross-cutting concern
+  — see below). Subpackages: `storage/` (schema + migrations, the concrete
+  `SqliteRepository`), `api/` (thin FastAPI layer — `app.py` the domain
+  routes, `auth.py` the login/session routes and the `get_current_user`
+  dependency), `cli/` (thin Click layer). `tests/` mirrors the package 1:1
+  (`tests/{core,api,cli,storage}/`) + a root `conftest.py` with shared
+  fixtures.
 - `web/` — not created yet. When a web UI is added, keep it a sibling of
   `src/`, its own test runner and build, its own README.
 
-No accounts/sessions (login) module exists yet — every `Account` in this
-codebase means "a client business being billed," not a login identity. If/when
-authentication is added (see `docs/roadmap.md`), give it its own
-cross-cutting module rather than overloading `Account`.
+Login/sessions are [sessionkit](https://github.com/atownsend247/bb-py-sessionkit)
+(a separate PyPI-style dependency, pinned by git tag in `pyproject.toml`),
+wired in by `src/invoice_system/auth.py` + `api/auth.py` — **not** a
+hand-rolled module here. Its `User` is a login identity, stored in its own
+SQLite file (`auth.db` by default, `INVOICE_SYSTEM_AUTH_DB` to override) —
+do not confuse it with this app's own `Account` (a client business being
+billed). `core.py` never imports `sessionkit` — see architecture rules.
+Manage users with the bundled `sessionkit` CLI (`uv run sessionkit add ...`),
+not through this app; there is no public signup route.
 
 ## Commands
 
 - Tests: `uv run pytest --cov=src/invoice_system --cov-report=term-missing`
   (run the **full** suite before finishing a change; CI enforces a 90%
   coverage floor, see gotchas).
-- First-run / bootstrap: `uv sync && uv run invoice-system-cli init-db` —
-  creates the SQLite file and applies migrations; no seed data by default.
+- First-run / bootstrap: `uv sync && uv run invoice-system-cli init-db &&
+  uv run sessionkit add you@example.com` — creates the domain SQLite file
+  and applies migrations, then creates the first login account (prompts for
+  a password) in `auth.db`.
 - Serve: `uv run uvicorn invoice_system.api.app:app --reload` (API on
-  `:8000`; set `INVOICE_SYSTEM_DB` to override the default db path).
+  `:8000`; `INVOICE_SYSTEM_DB` / `INVOICE_SYSTEM_AUTH_DB` override the
+  default db paths).
 - CLI: `uv run invoice-system-cli --help` (or the installed
   `invoice-system-cli` entry point) — mirrors the API one-for-one over the
-  same storage.
+  same storage. **Not** behind login — it's a local, trusted tool; only the
+  HTTP API is gated (see architecture rules).
 - Build: no `web/` yet — nothing to build.
 
 ## Architecture rules (don't violate)
@@ -70,11 +82,14 @@ cross-cutting module rather than overloading `Account`.
   Never call the ambient version (`datetime.now()`, `random.random()`, ...)
   directly inside a service method.
 - Every write path that should be gated (auth, permissions, a feature flag)
-  is enforced at **one** boundary (a single dependency/middleware the web
-  layer applies to every route by default), not re-checked ad hoc per
-  handler. **No such boundary exists yet** — there is no auth of any kind
-  today, so every route in `api/app.py` is effectively public. Do not bolt
-  per-route checks on ad hoc when auth is added; wire the one boundary first.
+  is enforced at **one** boundary, not re-checked ad hoc per handler. Done
+  via two `APIRouter`s in `api/app.py`: `domain_router` carries
+  `dependencies=[Depends(get_current_user)]` and every account/quote/invoice
+  route is registered on it; nothing calls `get_current_user` a second time
+  per-handler. Deliberately exempt (registered directly on `app`, or on
+  `api/auth.py`'s `public_router`): `GET /healthz` and `POST /auth/login`.
+  Everything else, `GET /auth/me` and `POST /auth/logout` included, requires
+  a valid `Authorization: Bearer <token>` header.
 
 ## Conventions
 
@@ -98,7 +113,15 @@ cross-cutting module rather than overloading `Account`.
   backend (`web/src/api.ts`) — no `fetch`/`axios` calls scattered through
   components. A shared data-fetching hook wraps it. Money stays a string
   client-side too — parse to a decimal library only at the point of doing
-  arithmetic, never just to render it. (No `web/` exists yet.)
+  arithmetic, never just to render it. It must attach `Authorization: Bearer
+  <token>` (from `POST /auth/login`) to every request except the login call
+  itself, and treat a 401 as "drop the token, show the login screen" in one
+  place, not per-call. (No `web/` exists yet.)
+- Two separate exception hierarchies get mapped to HTTP status in `api/app.py`,
+  each in its own handler: this app's `AppError` (`handle_app_error`) and
+  sessionkit's `AuthError` (`handle_auth_error`). Don't merge them into one
+  handler or one `except` clause — see `docs/extracting-reusable-packages.md`
+  on why a vendored cross-cutting concern keeps its own error base.
 
 ## Gotchas
 
@@ -117,6 +140,14 @@ cross-cutting module rather than overloading `Account`.
 - Pin the language/runtime version everywhere it's declared (lockfile, CI,
   a `.python-version` file) and don't quietly widen it to "support" an
   older version nobody asked for.
+- `sessionkit` is pinned by git tag (`@v0.1.0` in `pyproject.toml`), not a
+  PyPI version — bump the tag deliberately, re-run `uv lock`, and check its
+  own CHANGELOG/README for breaking changes; there's no semver guarantee
+  from a tag alone. Its `SqliteAuthStore` doesn't currently expose a
+  `close()` (as of v0.1.0) — its `sqlite3.Connection` is closed by the OS at
+  process exit, not by us; harmless in practice but shows up as a
+  `ResourceWarning` in the test suite. Don't reach into its private `_conn`
+  to work around it — file it upstream instead.
 - A generated, committed artifact (an OpenAPI schema dump, a changelog, a
   lockfile) needs **one** regeneration command and a CI check that fails if
   the committed copy is stale — see `docs/testing-and-ci.md`. Don't have CI

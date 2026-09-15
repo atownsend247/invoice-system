@@ -28,13 +28,17 @@
 - [ ] Status derivation (`sent → paid` once payments cover the total;
       `sent → overdue` once past `due_date`).
 
-## Phase 3 — Accounts/sessions and web client
+## Phase 3 — Login/sessions and web client
 
-- [ ] Login/sessions cross-cutting module (distinct from the domain
-      `Account` — see `CLAUDE.md`) + an auth dependency applied by default
-      to every route except `/healthz` and login itself.
-- [ ] React/Vite SPA in `web/`: account list, quote/invoice list & detail,
-      PDF download, payment recording.
+- [x] Login/sessions via [sessionkit](https://github.com/atownsend247/bb-py-sessionkit)
+      (distinct from the domain `Account` — see `CLAUDE.md`), wired in
+      `auth.py` + `api/auth.py`; every route gated by
+      `Depends(get_current_user)` except `/healthz` and `POST /auth/login`.
+- [ ] TOTP/2FA endpoints (sessionkit already supports it; not exposed via
+      `api/auth.py` yet).
+- [ ] React/Vite SPA in `web/`: login screen, account list, quote/invoice
+      list & detail, PDF download, payment recording. `web/src/api.ts`
+      attaches `Authorization: Bearer <token>` to every call except login.
 
 ## Phase 4 — Delivery
 

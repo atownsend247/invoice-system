@@ -38,6 +38,15 @@ Invoice 1──* LineItem   (via invoice_line_items)
 - Money fields (`unit_price`) are `Decimal` end-to-end; `SqliteRepository`
   stores them as `TEXT`, never `REAL`.
 
+## Login accounts (not this schema)
+
+`sessionkit`'s `User` (email, name, password hash, TOTP state) and its
+`sessions`/`recovery_codes` tables live in a **separate** SQLite file
+(`auth.db` by default) with their own schema, owned and migrated by the
+`sessionkit` package itself — not listed here, not touched by
+`storage/schema.py`. See `CLAUDE.md` for why `User` and `Account` are
+deliberately different things.
+
 ## Not yet modelled
 
 Payments/partial-payment tracking and an `overdue` status transition are

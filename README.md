@@ -5,8 +5,9 @@ A freelancer/small-business billing tool: Account (the business you invoice)
 two being created independently. Both are exportable as PDFs.
 
 **Status: backend done, no web client yet.** Python backend (SQLite storage,
-FastAPI + a mirrored CLI) is implemented and tested — see
-`docs/development.md` to run it and `docs/roadmap.md` for what's next.
+FastAPI behind login via [sessionkit](https://github.com/atownsend247/bb-py-sessionkit),
+plus a mirrored CLI) is implemented and tested — see `docs/development.md`
+to run it and `docs/roadmap.md` for what's next.
 
 ## Docs
 

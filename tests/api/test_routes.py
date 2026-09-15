@@ -1,95 +1,148 @@
 import pytest
 from fastapi.testclient import TestClient
+from sessionkit import AuthService, SqliteAuthStore
 
 from invoice_system.api.app import app, get_application
+from invoice_system.api.auth import get_auth_service
 from invoice_system.factory import build_application
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    # The lifespan builds its own Application from INVOICE_SYSTEM_DB even though
-    # the dependency override below replaces it for route handlers - point it at
-    # a throwaway path so it doesn't touch the real default db file.
+def auth_service(tmp_path):
+    service = AuthService(SqliteAuthStore.open(str(tmp_path / "auth.db"), check_same_thread=False))
+    service.create_user("owner@acme.test", "correct horse battery staple")
+    return service
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch, auth_service):
+    # The lifespan builds its own Application/AuthService from env vars even
+    # though the dependency overrides below replace them for route handlers -
+    # point both at throwaway paths so it doesn't touch the real default files.
     monkeypatch.setenv("INVOICE_SYSTEM_DB", str(tmp_path / "lifespan.db"))
+    monkeypatch.setenv("INVOICE_SYSTEM_AUTH_DB", str(tmp_path / "lifespan-auth.db"))
 
     application = build_application(tmp_path / "test.db")
     app.dependency_overrides[get_application] = lambda: application
+    app.dependency_overrides[get_auth_service] = lambda: auth_service
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
     application.close()
 
 
-def test_healthz(client):
+@pytest.fixture
+def auth_headers(client):
+    response = client.post(
+        "/auth/login", json={"email": "owner@acme.test", "password": "correct horse battery staple"}
+    )
+    assert response.status_code == 200, response.text
+    token = response.json()["token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_healthz_is_public(client):
     response = client.get("/healthz")
     assert response.status_code == 200
 
 
-def test_account_quote_invoice_flow(client):
+def test_protected_route_without_token_is_rejected(client):
+    response = client.get("/accounts")
+    assert response.status_code == 401
+
+
+def test_login_with_wrong_password_is_rejected(client):
+    response = client.post("/auth/login", json={"email": "owner@acme.test", "password": "wrong"})
+    assert response.status_code == 401
+
+
+def test_login_then_me(client, auth_headers):
+    response = client.get("/auth/me", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json()["email"] == "owner@acme.test"
+
+
+def test_logout_revokes_token(client, auth_headers):
+    response = client.post("/auth/logout", headers=auth_headers)
+    assert response.status_code == 204
+
+    response = client.get("/auth/me", headers=auth_headers)
+    assert response.status_code == 401
+
+
+def test_account_quote_invoice_flow(client, auth_headers):
     response = client.post(
-        "/accounts", json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"}
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"},
+        headers=auth_headers,
     )
     assert response.status_code == 201
     account_id = response.json()["id"]
 
-    response = client.post("/quotes", json={"account_id": account_id})
+    response = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers)
     assert response.status_code == 201
     quote_id = response.json()["id"]
 
     response = client.post(
         f"/quotes/{quote_id}/line-items",
         json={"description": "Work", "quantity": "1", "unit_price": "100.00"},
+        headers=auth_headers,
     )
     assert response.status_code == 201
     assert response.json()["total"] == "100.00"
 
-    response = client.post(f"/quotes/{quote_id}/send")
+    response = client.post(f"/quotes/{quote_id}/send", headers=auth_headers)
     assert response.status_code == 200
     assert response.json()["number"] == "Q-0001"
 
-    response = client.get(f"/quotes/{quote_id}/pdf")
+    response = client.get(f"/quotes/{quote_id}/pdf", headers=auth_headers)
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
 
-    response = client.post(f"/quotes/{quote_id}/convert")
+    response = client.post(f"/quotes/{quote_id}/convert", headers=auth_headers)
     assert response.status_code == 201
     invoice_id = response.json()["id"]
     assert response.json()["quote_id"] == quote_id
 
-    response = client.get(f"/invoices/{invoice_id}/pdf")
+    response = client.get(f"/invoices/{invoice_id}/pdf", headers=auth_headers)
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
 
-    response = client.post(f"/invoices/{invoice_id}/send")
+    response = client.post(f"/invoices/{invoice_id}/send", headers=auth_headers)
     assert response.status_code == 200
     assert response.json()["number"] == "INV-0001"
 
 
-def test_get_missing_account_returns_404(client):
-    response = client.get("/accounts/999")
+def test_get_missing_account_returns_404(client, auth_headers):
+    response = client.get("/accounts/999", headers=auth_headers)
     assert response.status_code == 404
 
 
-def test_line_item_rejects_non_decimal_quantity(client):
+def test_line_item_rejects_non_decimal_quantity(client, auth_headers):
     response = client.post(
-        "/accounts", json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"}
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"},
+        headers=auth_headers,
     )
     account_id = response.json()["id"]
-    quote_id = client.post("/quotes", json={"account_id": account_id}).json()["id"]
+    quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
 
     response = client.post(
         f"/quotes/{quote_id}/line-items",
         json={"description": "Work", "quantity": "not-a-number", "unit_price": "1.00"},
+        headers=auth_headers,
     )
     assert response.status_code == 422
 
 
-def test_sending_quote_with_no_line_items_returns_422(client):
+def test_sending_quote_with_no_line_items_returns_422(client, auth_headers):
     response = client.post(
-        "/accounts", json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"}
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"},
+        headers=auth_headers,
     )
     account_id = response.json()["id"]
-    quote_id = client.post("/quotes", json={"account_id": account_id}).json()["id"]
+    quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
 
-    response = client.post(f"/quotes/{quote_id}/send")
+    response = client.post(f"/quotes/{quote_id}/send", headers=auth_headers)
     assert response.status_code == 422
