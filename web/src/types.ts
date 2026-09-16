@@ -123,6 +123,19 @@ export interface MonthlyTotalsReport {
   months: MonthlyInvoiceTotal[]
 }
 
+// One entry per month for the home dashboard's monthly totals chart - see
+// ExpenseService.monthly_totals. No paid/unpaid split, unlike invoices -
+// an Expense has no status (see CLAUDE.md).
+export interface MonthlyExpenseTotal {
+  month: string // "YYYY-MM"
+  total: string
+}
+
+export interface MonthlyExpenseTotalsReport {
+  currency: string
+  months: MonthlyExpenseTotal[]
+}
+
 // A supplementary file (e.g. a scanned receipt) uploaded against an
 // Expense - always a PDF (validated server-side in
 // ExpenseService.add_attachment). `size` is in bytes.

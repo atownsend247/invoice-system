@@ -400,6 +400,8 @@ def test_full_expense_cli_flow(tmp_path):
             "1",
             "--account-id",
             account_id,
+            "--currency",
+            "GBP",  # matches the (default) business profile's reporting currency below
         ],
     )
     assert result.exit_code == 0, result.output
@@ -448,6 +450,22 @@ def test_full_expense_cli_flow(tmp_path):
     )
     assert result.exit_code == 0, result.output
     assert "EXP-0001" in result.output
+
+    result = runner.invoke(
+        cli,
+        [
+            "--db",
+            str(db_path),
+            "--attachments-dir",
+            str(db_path.parent / "attachments"),
+            "expense",
+            "monthly-totals",
+            "--user-id",
+            "1",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "14.40" in result.output  # 12.00 net + 20% VAT, this month's row
 
     pdf_path = tmp_path / "expense.pdf"
     result = runner.invoke(

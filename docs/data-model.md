@@ -38,12 +38,15 @@ that list, not edits to any of these nine.
 | `BusinessProfile` | id, user_id, title, first_name, last_name, business_name, address_line1, address_line2, town_or_city, county, postcode, payment_terms_days, currency, utr, vat_number, bank_account_name, bank_sort_code, bank_account_number, document_header, document_footer, created_at, updated_at | The logged-in user's *own* details, in four groups (see `CLAUDE.md`): user settings (`title` optional, `first_name`/`last_name` required), business settings (`business_name` required; `address_line1`/`address_line2`/`town_or_city`/`county`/`postcode` — a UK GOV.UK Design System-style address, each line independently optional), payment and tax settings (`payment_terms_days`, `currency` — the home dashboard's *reporting* currency, defaults `"GBP"`, independent of any quote/invoice's own `currency` — `utr`/`vat_number`/`bank_account_name`/`bank_sort_code`/`bank_account_number` all optional and purely informational, not currently rendered on a PDF), document settings (`document_header`/`document_footer`, free text, each independently optional — inserted into every quote/invoice/expense PDF this user generates, see `pdf.py`'s `document_header_lines()`/`document_footer_lines()` and the invariants below). Not `Account` (the client being billed). One per `user_id` (`UNIQUE`), which is sessionkit's `User.id` — a plain column, not an enforced FK (see `CLAUDE.md`, "Login accounts" below). Deliberately still per-*user*, not per-`Organisation` — see "Multi-tenancy" below. Every optional field: blank input is normalised to `NULL`, never stored as `""`. |
 | counters (internal) | name, value | Backs `next_quote_number`/`next_invoice_number`/`next_expense_number`; not a domain entity, not exposed via API/CLI. `name` is `"<organisation_id>:quote"`/`"<organisation_id>:invoice"`/`"<organisation_id>:expense"`, not a bare `"quote"`/`"invoice"`/`"expense"` — each organisation gets its own independent sequence starting from one. |
 
-`MonthlyInvoiceTotals` (`month`, `paid_total`, `unpaid_total`) and `Stats`
-(`account_count`, `quote_count`, `invoice_count`, `quotes_sent_count`,
-`quotes_converted_count`, `total_paid`) are **not** stored tables — they're
-`InvoiceService.monthly_totals()`/`StatsService.get_stats()`'s return
-shapes, computed on read for the home dashboard. See the invariants below
-for exactly what the former includes/excludes.
+`MonthlyInvoiceTotals` (`month`, `paid_total`, `unpaid_total`),
+`MonthlyExpenseTotals` (`month`, `total` — no paid/unpaid split, an
+`Expense` has no status), and `Stats` (`account_count`, `quote_count`,
+`invoice_count`, `quotes_sent_count`, `quotes_converted_count`,
+`total_paid`) are **not** stored tables — they're
+`InvoiceService.monthly_totals()`/`ExpenseService.monthly_totals()`/
+`StatsService.get_stats()`'s return shapes, computed on read for the home
+dashboard. See the invariants below for exactly what the two `monthly_totals`
+methods include/exclude.
 
 ## Opaque ids
 
@@ -173,6 +176,12 @@ Expense 1──* ExpenseAttachment
   `paid` invoices go in `paid_total`; everything else left (`sent`) goes in
   `unpaid_total`. Months with no matching invoices still appear, with both
   totals `Decimal("0")`.
+- `ExpenseService.monthly_totals(organisation_id, currency, months=12)` is
+  the same aggregation, over `Expense.issue_date`/`.currency`, with no
+  status to split on - every expense in a matching month/currency sums
+  into that month's single `total`. Months with no matching expenses still
+  appear, with `total` `Decimal("0")` - same "always 12 rows" guarantee as
+  `InvoiceService.monthly_totals`.
 - Fetching another organisation's `Account`/`Quote`/`Invoice` by id raises
   `NotFound` (`AccountService.get_account`/`QuoteService.get_quote`/
   `InvoiceService.get_invoice` all filter by `organisation_id` at the

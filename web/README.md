@@ -111,10 +111,16 @@ failure; a failed run's trace/screenshot land in `test-results/` (gitignored).
   `request()`/`requestBlob()` - multipart, not JSON, so it can't reuse
   `request()`'s automatic `Content-Type: application/json` header (that
   would break the multipart boundary the browser needs to set itself).
-- `src/components/MonthlyTotalsChart.tsx` — the home dashboard's paid-vs-
-  outstanding bar chart. Plain CSS bars (`<div>`s with a `height: N%`
-  inline style), not a charting library — 12 months, two series, doesn't
-  need one. `Number()`-parses the decimal-string totals purely to compute
+- `src/components/MonthlyTotalsChart.tsx` — the home dashboard's paid/
+  outstanding/expense bar chart. Plain CSS bars (`<div>`s with a
+  `height: N%` inline style), not a charting library — 12 months, three
+  series, doesn't need one. Takes the invoice totals (`months`) and
+  expense totals (`expenseMonths`) as two separate props, from two
+  separate API calls (`GET /invoices/monthly-totals`, `GET
+  /expenses/monthly-totals`, each with its own `useAsync` in
+  `HomePage.tsx`) — matched up per month by the `"YYYY-MM"` key, not by
+  array position, since the two reports aren't guaranteed to align 1:1 by
+  index. `Number()`-parses the decimal-string totals purely to compute
   that percentage; the exact string stays on each bar's `title` attribute
   and is never sent anywhere (see `CLAUDE.md`'s money convention — that
   rule is about not doing stored/round-tripped arithmetic on money, not

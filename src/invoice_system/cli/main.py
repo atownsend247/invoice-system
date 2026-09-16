@@ -396,6 +396,21 @@ def expense_list(application: Application, user_id: str, account_id: str | None)
         click.echo(f"{exp.id}\t{exp.number}\t{exp.total} {exp.currency}")
 
 
+@expense.command("monthly-totals")
+@click.option(
+    "--user-id",
+    required=True,
+    help=_USER_ID_HELP + " Also resolves this user's reporting currency (see 'settings show') - only "
+    "expenses in that currency are counted.",
+)
+@click.pass_obj
+def expense_monthly_totals(application: Application, user_id: str) -> None:
+    organisation_id = _organisation_id(application, user_id)
+    profile = application.business_profiles.get_profile(user_id)
+    for entry in application.expenses.monthly_totals(organisation_id, profile.currency):
+        click.echo(f"{entry.month}\t{entry.total} {profile.currency}")
+
+
 @expense.command("add-item")
 @click.argument("expense_id")
 @click.option("--user-id", required=True, help=_USER_ID_HELP)

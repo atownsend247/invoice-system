@@ -55,6 +55,7 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | GET | `/expenses/{id}` | required | Fetch one expense with its line items, `subtotal`, `tax_total`, and (gross) `total`. |
 | POST | `/expenses/{id}/line-items` | required | Add a line item (`description`, `quantity`, `unit_price` required; `tax_rate` defaults `"0"`, must be within `[0, 1]`) - not gated behind any status check, unlike `POST /quotes/{id}/line-items` (there's no draft/sent distinction to gate on). 422 on an out-of-range `tax_rate`. |
 | GET | `/expenses/{id}/pdf` | required | Render the expense as a PDF (`application/pdf`), same "View PDF"/"Download PDF" pattern as quotes/invoices - but with no "Status:" line and no due/expiry date, since an expense has neither. |
+| GET | `/expenses/monthly-totals` | required | Registered *before* `/expenses/{id}` (same route-ordering reasoning as `/invoices/monthly-totals`). `{currency, months: [{month, total}]}` for the trailing 12 months, scoped to the current user's organisation, in the current user's business profile `currency`. Same aggregation as `/invoices/monthly-totals` but with no paid/unpaid split - an expense has no status. The web UI's home-dashboard chart renders this as a third (red) bar series alongside Paid/Outstanding. |
 | POST | `/expenses/{id}/attachments` | required | Upload a supplementary PDF (e.g. a scanned receipt) against an expense - `multipart/form-data`, one `file` field. Content-Type must be `application/pdf` or the filename must end `.pdf`; max 10MB (`core.py`'s `MAX_ATTACHMENT_SIZE`). 422 on anything else. Addable at any time - no status to gate on, same as line items. |
 | GET | `/expenses/{id}/attachments/{attachment_id}` | required | The uploaded bytes (`Content-Type` is whatever was uploaded, `Content-Disposition: inline` - the web UI's "View"/"Download" both hit this one route, same pattern as the generated PDF routes above). |
 | DELETE | `/expenses/{id}/attachments/{attachment_id}` | required | Delete it. `204`. |
@@ -78,7 +79,8 @@ session to resolve either from, so **every** `account`/`quote`/`invoice`/
 `expense`
 command takes a **required** `--user-id` (`account create/list/update`,
 `quote create/add-item/send/convert/pdf`, `invoice
-list/send/void/pay/monthly-totals/pdf`, `expense create/list/add-item/pdf`,
+list/send/void/pay/monthly-totals/pdf`, `expense
+create/list/add-item/monthly-totals/pdf`,
 `expense attachment add/list/download/delete`,
 `stats`) purely to resolve
 `organisation_id` (`OrganisationService.get_or_create_for_user`, same

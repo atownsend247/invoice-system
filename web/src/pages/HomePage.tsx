@@ -43,6 +43,10 @@ export function HomePage() {
     () => api.getMonthlyInvoiceTotals(),
     [],
   )
+  const { data: monthlyExpenseTotals, error: monthlyExpenseTotalsError } = useAsync(
+    () => api.getMonthlyExpenseTotals(),
+    [],
+  )
   const { data: stats, error: statsError } = useAsync(() => api.getStats(), [])
 
   return (
@@ -81,8 +85,17 @@ export function HomePage() {
             {monthlyTotalsError}
           </p>
         )}
-        {monthlyTotals && (
-          <MonthlyTotalsChart currency={monthlyTotals.currency} months={monthlyTotals.months} />
+        {monthlyExpenseTotalsError && (
+          <p className="form-error" role="alert">
+            {monthlyExpenseTotalsError}
+          </p>
+        )}
+        {monthlyTotals && monthlyExpenseTotals && (
+          <MonthlyTotalsChart
+            currency={monthlyTotals.currency}
+            months={monthlyTotals.months}
+            expenseMonths={monthlyExpenseTotals.months}
+          />
         )}
       </div>
 

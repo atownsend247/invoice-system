@@ -35,6 +35,7 @@ from .schemas import (
     ExpenseOut,
     InvoiceOut,
     LineItemIn,
+    MonthlyExpenseTotalsReportOut,
     MonthlyTotalsReportOut,
     QuoteCreateIn,
     QuoteOut,
@@ -390,6 +391,19 @@ def list_expenses(
         ExpenseOut.from_model(e)
         for e in application.expenses.list_expenses(organisation_id, account_id=account_id)
     ]
+
+
+@domain_router.get("/expenses/monthly-totals", response_model=MonthlyExpenseTotalsReportOut)
+def expense_monthly_totals(
+    application: Application = Depends(get_application),
+    user: SessionUser = Depends(get_current_user),
+    organisation_id: str = Depends(get_organisation_id),
+) -> MonthlyExpenseTotalsReportOut:
+    # Registered before /expenses/{expense_id} - same route-ordering
+    # reasoning as /invoices/monthly-totals above.
+    profile = application.business_profiles.get_profile(user.id)
+    totals = application.expenses.monthly_totals(organisation_id, profile.currency)
+    return MonthlyExpenseTotalsReportOut.from_models(profile.currency, totals)
 
 
 @domain_router.get("/expenses/{expense_id}", response_model=ExpenseOut)

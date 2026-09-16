@@ -300,6 +300,17 @@ class MonthlyInvoiceTotals:
 
 
 @dataclass
+class MonthlyExpenseTotals:
+    """One month's worth of expense totals - see
+    ExpenseService.monthly_totals. `month` is "YYYY-MM", same format as
+    MonthlyInvoiceTotals. No paid/unpaid split, unlike invoices - an
+    Expense has no status to split on (see models.Expense)."""
+
+    month: str
+    total: Decimal
+
+
+@dataclass
 class Stats:
     """All-time, organisation-scoped counters for the home dashboard's
     stats section - see StatsService.get_stats. Deliberately a small, flat

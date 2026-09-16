@@ -15,6 +15,7 @@ from .models import (
     Invoice,
     InvoiceStatus,
     LineItem,
+    MonthlyExpenseTotals,
     MonthlyInvoiceTotals,
     Organisation,
     Quote,
@@ -613,6 +614,35 @@ class ExpenseService:
         )
         self._repository.add_expense_line_item(expense_id, item)
         return self._get_expense(organisation_id, expense_id)
+
+    def monthly_totals(
+        self, organisation_id: str, currency: str, *, months: int = MONTHLY_TOTALS_MONTHS
+    ) -> list[MonthlyExpenseTotals]:
+        """Expense totals for the trailing `months` months (this one
+        included), for `organisation_id`'s expenses in `currency` only -
+        same currency-filtering convention as InvoiceService.monthly_totals,
+        an expense in a different currency is excluded rather than naively
+        summed in. Grouped by `issue_date`, same as invoices. No paid/unpaid
+        split - an Expense has no status (see models.Expense)."""
+        buckets: dict[str, MonthlyExpenseTotals] = {}
+        order: list[str] = []
+        cursor = _month_start(self._clock().date())
+        for _ in range(months):
+            key = _month_key(cursor)
+            order.append(key)
+            buckets[key] = MonthlyExpenseTotals(month=key, total=Decimal("0"))
+            cursor = _previous_month(cursor)
+        order.reverse()
+
+        for expense in self._repository.list_expenses(organisation_id):
+            if expense.currency != currency:
+                continue
+            bucket = buckets.get(_month_key(expense.issue_date))
+            if bucket is None:
+                continue
+            bucket.total += expense.total
+
+        return [buckets[key] for key in order]
 
     def add_attachment(
         self,

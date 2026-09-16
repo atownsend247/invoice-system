@@ -493,5 +493,28 @@ flow," not a restructuring, whenever it's actually needed.
       all passing against the new consolidated layout) suites updated;
       new `tests/test_paths.py` for `StoragePaths` itself.
 
+## Phase 21 — Expense totals on the home dashboard chart (done)
+
+- [x] `ExpenseService.monthly_totals(organisation_id, currency, months=12)`
+      - the same trailing-12-months, currency-filtered aggregation as
+      `InvoiceService.monthly_totals`, but summing every expense into one
+      `total` per month rather than splitting paid/unpaid (an `Expense`
+      has no status). New `MonthlyExpenseTotals` model.
+- [x] `GET /expenses/monthly-totals` (registered before
+      `/expenses/{expense_id}`, same route-ordering reasoning as
+      `/invoices/monthly-totals`), CLI `expense monthly-totals --user-id`.
+- [x] `web/`: `MonthlyTotalsChart.tsx` gained a third bar series -
+      expenses, in red (`--chart-expense`, aliased to the existing
+      `--danger` token rather than a new near-duplicate color). Takes the
+      invoice and expense monthly reports as two separate props
+      (`months`/`expenseMonths`) and matches them up per month by the
+      `"YYYY-MM"` key, not array position, since they come from two
+      independent API calls that aren't guaranteed to align 1:1 by index.
+      `HomePage.tsx` fetches both with their own `useAsync` and only
+      renders the chart once both have loaded.
+- [x] Full backend (243 tests, 98.14% coverage), frontend (38 unit tests),
+      and e2e (46 tests, new expense-chart spec in `home.spec.ts`) suites
+      updated and passing.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

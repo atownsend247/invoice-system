@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -260,3 +261,81 @@ def test_delete_missing_attachment_raises_not_found(application, organisation_id
     expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
     with pytest.raises(NotFound):
         application.expenses.delete_attachment(organisation_id, expense.id, "does-not-exist")
+
+
+class TestMonthlyTotals:
+    def _create_expense(
+        self, application, organisation_id, account, *, currency: str = "GBP", price: str = "100.00"
+    ):
+        expense = application.expenses.create_expense(
+            organisation_id=organisation_id, account_id=account.id, currency=currency
+        )
+        return application.expenses.add_line_item(
+            organisation_id,
+            expense.id,
+            description="Work",
+            quantity=Decimal("1"),
+            unit_price=Decimal(price),
+        )
+
+    def test_returns_twelve_months_ending_with_the_current_one_even_with_no_data(
+        self, application, organisation_id, fake_clock
+    ):
+        fake_clock.set(datetime(2026, 6, 15, tzinfo=UTC))
+        totals = application.expenses.monthly_totals(organisation_id, "GBP")
+        assert [t.month for t in totals] == [
+            "2025-07",
+            "2025-08",
+            "2025-09",
+            "2025-10",
+            "2025-11",
+            "2025-12",
+            "2026-01",
+            "2026-02",
+            "2026-03",
+            "2026-04",
+            "2026-05",
+            "2026-06",
+        ]
+        assert all(t.total == Decimal("0") for t in totals)
+
+    def test_buckets_by_issue_date_month_and_sums_gross_total(
+        self, application, organisation_id, account, fake_clock
+    ):
+        fake_clock.set(datetime(2026, 3, 10, tzinfo=UTC))
+        self._create_expense(application, organisation_id, account, price="100.00")
+
+        fake_clock.set(datetime(2026, 3, 20, tzinfo=UTC))
+        self._create_expense(application, organisation_id, account, price="50.00")
+
+        totals = {t.month: t for t in application.expenses.monthly_totals(organisation_id, "GBP")}
+        assert totals["2026-03"].total == Decimal("150.00")
+
+    def test_expenses_outside_the_window_are_excluded(
+        self, application, organisation_id, account, fake_clock
+    ):
+        fake_clock.set(datetime(2025, 1, 10, tzinfo=UTC))
+        self._create_expense(application, organisation_id, account, price="100.00")
+
+        fake_clock.set(datetime(2026, 6, 1, tzinfo=UTC))
+        totals = application.expenses.monthly_totals(organisation_id, "GBP")
+        assert all(t.total == Decimal("0") for t in totals)
+
+    def test_expenses_in_a_different_currency_are_excluded(
+        self, application, organisation_id, account, fake_clock
+    ):
+        fake_clock.set(datetime(2026, 3, 10, tzinfo=UTC))
+        self._create_expense(application, organisation_id, account, currency="USD", price="100.00")
+
+        totals = {t.month: t for t in application.expenses.monthly_totals(organisation_id, "GBP")}
+        assert totals["2026-03"].total == Decimal("0")
+
+    def test_expenses_from_another_organisation_are_excluded(
+        self, application, organisation_id, account, fake_clock
+    ):
+        fake_clock.set(datetime(2026, 3, 10, tzinfo=UTC))
+        self._create_expense(application, organisation_id, account, price="100.00")
+
+        other_organisation_id = application.organisations.get_or_create_for_user("user-2")
+        totals = {t.month: t for t in application.expenses.monthly_totals(other_organisation_id, "GBP")}
+        assert totals["2026-03"].total == Decimal("0")

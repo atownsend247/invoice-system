@@ -5,6 +5,7 @@ import type {
   ExpenseAttachment,
   Invoice,
   LoginResult,
+  MonthlyExpenseTotalsReport,
   MonthlyTotalsReport,
   Quote,
   Stats,
@@ -294,6 +295,10 @@ export function downloadExpenseAttachment(expenseId: string, attachment: Expense
 
 export function getExpenseAttachmentPdfUrl(expenseId: string, attachmentId: string): Promise<string> {
   return getPdfObjectUrl(`/expenses/${expenseId}/attachments/${attachmentId}`)
+}
+
+export function getMonthlyExpenseTotals(): Promise<MonthlyExpenseTotalsReport> {
+  return request('/expenses/monthly-totals')
 }
 
 // -- settings ----------------------------------------------------------------

@@ -11,6 +11,7 @@
   --danger-bg: #fdecea;
   --chart-paid: #2f9e56;
   --chart-unpaid: #3454d1;
+  --chart-expense: var(--danger);
 
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   line-height: 1.5;
@@ -85,6 +86,11 @@ h2 {
   margin-left: 0.8rem;
 }
 
+.monthly-chart-swatch.expense {
+  background: var(--chart-expense);
+  margin-left: 0.8rem;
+}
+
 .monthly-chart {
   display: flex;
   align-items: flex-end;
@@ -125,6 +131,10 @@ h2 {
 
 .monthly-chart-bar.unpaid {
   background: var(--chart-unpaid);
+}
+
+.monthly-chart-bar.expense {
+  background: var(--chart-expense);
 }
 
 .monthly-chart-label {

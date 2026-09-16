@@ -335,8 +335,9 @@ Four separate things are easy to conflate here — don't:
   there's no way to produce a genuinely overdue invoice for e2e coverage —
   `web/e2e/home.spec.ts` only exercises the reachable "Outstanding" case.
   The same page also renders a monthly-totals bar chart (below the two
-  sections, `web/src/components/MonthlyTotalsChart.tsx`) - see the next
-  bullet for what it sums and the "Deliberately not exact" note under
+  sections, `web/src/components/MonthlyTotalsChart.tsx` - paid/outstanding
+  invoice totals plus a third expense-totals series) - see the next two
+  bullets for what it sums and the "Deliberately not exact" note under
   Gotchas for why its e2e coverage only checks structure, not totals.
 - `InvoiceService.pay(invoice_id)` is the *only* way `Invoice.status`
   becomes `paid` - a single-click action (mirrors `void()`), restricted to
@@ -361,6 +362,21 @@ Four separate things are easy to conflate here — don't:
   monthly-totals --user-id`); `InvoiceService` itself takes a plain
   `currency: str` and has no idea whose profile it came from, same pattern
   as `payment_terms_days`.
+- `ExpenseService.monthly_totals(organisation_id, currency, months=12)` is
+  the same aggregation as `InvoiceService.monthly_totals` above - trailing
+  12 months ending with the current one, bucketed by `issue_date`, filtered
+  to `currency` - but with no paid/unpaid split (an `Expense` has no
+  status). `GET /expenses/monthly-totals` (registered before
+  `/expenses/{expense_id}`, same route-ordering reasoning as invoices' own
+  route), CLI `expense monthly-totals --user-id`. The home dashboard's
+  chart (`MonthlyTotalsChart.tsx`) renders this as a third bar series
+  (red - `--chart-expense`, aliased to the same `--danger` token used for
+  error text) alongside Paid/Outstanding, matched to each invoice month by
+  the `"YYYY-MM"` key (`HomePage.tsx` fetches both reports independently
+  and passes them to the chart as two separate props - `months`/
+  `expenseMonths` - rather than merging them server-side; the chart looks
+  each month's expense total up by key, not by array position, since the
+  two reports aren't guaranteed to line up 1:1 by index alone).
 - The settings page (`web/src/pages/SettingsPage.tsx`) groups
   `BusinessProfile` fields into four `<fieldset>`/`<legend>` sections
   matching the model's own four groups (user settings, business settings,
@@ -677,4 +693,8 @@ Four separate things are easy to conflate here — don't:
   the bullet above, caught the same way: it passed alone, then failed
   under `--repeat-each` across the full suite). Don't "fix" this by
   asserting the captured currency value directly - either re-read it right
-  before the assertion, or don't assert the specific value at all.
+  before the assertion, or don't assert the specific value at all. The
+  chart's expense-totals test (same file) follows the same reasoning -
+  `ExpenseService.monthly_totals` is system-wide too, so it only checks
+  that a `.monthly-chart-bar.expense` element exists per column (structure),
+  never an exact total.

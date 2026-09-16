@@ -78,6 +78,32 @@ test('paying an invoice removes it from Outstanding and the chart reports the re
   await expect(page.locator('.monthly-chart-column')).toHaveCount(12)
 })
 
+// Same "structure only, not exact totals" reasoning as the test above -
+// ExpenseService.monthly_totals sums system-wide too, so concurrent tests
+// contribute to the same buckets. Exact aggregation math is covered at the
+// unit level (tests/core/test_expense_service.py's TestMonthlyTotals).
+test('the monthly chart shows an Expenses series alongside Paid/Outstanding', async ({
+  authenticatedPage: page,
+  testAccount,
+  apiToken,
+  reportingCurrency,
+}) => {
+  const expense = await apiFetch<{ id: string }>('/expenses', apiToken, {
+    method: 'POST',
+    body: JSON.stringify({ account_id: testAccount.id, currency: reportingCurrency }),
+  })
+  await apiFetch(`/expenses/${expense.id}/line-items`, apiToken, {
+    method: 'POST',
+    body: JSON.stringify({ description: 'Domain renewal', quantity: '1', unit_price: '12.00' }),
+  })
+
+  await page.goto('/')
+  const chart = page.getByRole('group', { name: /^Invoice totals by month, in \w+$/ })
+  await expect(chart).toBeVisible()
+  await expect(page.getByText('Expenses', { exact: true })).toBeVisible()
+  await expect(page.locator('.monthly-chart-bar.expense')).toHaveCount(12)
+})
+
 // The account count is global (every account, not per-test), and other
 // specs create accounts concurrently - so this only checks the count went
 // up by *at least* one after creating an account, never an exact value

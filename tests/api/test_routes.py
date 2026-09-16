@@ -785,3 +785,56 @@ def test_monthly_totals_excludes_invoices_in_a_different_currency(client, auth_h
     entry = next(m for m in response.json()["months"] if m["month"] == current_month)
     assert entry["paid_total"] == "0"
     assert entry["unpaid_total"] == "0"
+
+
+def _create_expense(client, auth_headers, *, currency=None):
+    body = {"business_name": "Client Co", "email": "a@b.test", "address_line1": "1 Main St"}
+    account_id = client.post("/accounts", json=body, headers=auth_headers).json()["id"]
+    expense_body = {"account_id": account_id, **({"currency": currency} if currency else {})}
+    expense = client.post("/expenses", json=expense_body, headers=auth_headers).json()
+    client.post(
+        f"/expenses/{expense['id']}/line-items",
+        json={"description": "Domain renewal", "quantity": "1", "unit_price": "12.00"},
+        headers=auth_headers,
+    )
+    return client.get(f"/expenses/{expense['id']}", headers=auth_headers).json()
+
+
+def test_expense_monthly_totals_requires_auth(client):
+    response = client.get("/expenses/monthly-totals")
+    assert response.status_code == 401
+
+
+def test_expense_monthly_totals_reports_the_profile_currency_and_twelve_months(client, auth_headers):
+    client.put(
+        "/settings/business-profile",
+        json={
+            "first_name": "Ada",
+            "last_name": "Lovelace",
+            "business_name": "Acme Consulting",
+            "payment_terms_days": 30,
+            "currency": "USD",
+        },
+        headers=auth_headers,
+    )
+    expense = _create_expense(client, auth_headers, currency="USD")
+
+    response = client.get("/expenses/monthly-totals", headers=auth_headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["currency"] == "USD"
+    assert len(body["months"]) == 12
+
+    current_month = expense["issue_date"][:7]
+    entry = next(m for m in body["months"] if m["month"] == current_month)
+    assert entry["total"] == "12.00"
+
+
+def test_expense_monthly_totals_excludes_expenses_in_a_different_currency(client, auth_headers):
+    # Profile defaults to GBP; this expense is USD, so it shouldn't count.
+    expense = _create_expense(client, auth_headers, currency="USD")
+
+    response = client.get("/expenses/monthly-totals", headers=auth_headers)
+    current_month = expense["issue_date"][:7]
+    entry = next(m for m in response.json()["months"] if m["month"] == current_month)
+    assert entry["total"] == "0"

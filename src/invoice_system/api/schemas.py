@@ -300,6 +300,24 @@ class MonthlyTotalsReportOut(BaseModel):
         return cls(currency=currency, months=[MonthlyInvoiceTotalOut.from_model(e) for e in entries])
 
 
+class MonthlyExpenseTotalOut(BaseModel):
+    month: str
+    total: str
+
+    @classmethod
+    def from_model(cls, entry) -> "MonthlyExpenseTotalOut":
+        return cls(month=entry.month, total=str(entry.total))
+
+
+class MonthlyExpenseTotalsReportOut(BaseModel):
+    currency: str
+    months: list[MonthlyExpenseTotalOut]
+
+    @classmethod
+    def from_models(cls, currency: str, entries) -> "MonthlyExpenseTotalsReportOut":
+        return cls(currency=currency, months=[MonthlyExpenseTotalOut.from_model(e) for e in entries])
+
+
 class StatsOut(BaseModel):
     account_count: int
     quote_count: int

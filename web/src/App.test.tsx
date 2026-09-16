@@ -16,6 +16,7 @@ vi.mock('./api', async (importOriginal) => {
     listAccounts: vi.fn(),
     listInvoices: vi.fn(),
     getMonthlyInvoiceTotals: vi.fn(),
+    getMonthlyExpenseTotals: vi.fn(),
     getStats: vi.fn(),
   }
 })
@@ -60,6 +61,7 @@ describe('App', () => {
     mockedApi.listAccounts.mockResolvedValue([])
     mockedApi.listInvoices.mockResolvedValue([])
     mockedApi.getMonthlyInvoiceTotals.mockResolvedValue({ currency: 'GBP', months: [] })
+    mockedApi.getMonthlyExpenseTotals.mockResolvedValue({ currency: 'GBP', months: [] })
     mockedApi.getStats.mockResolvedValue({
       account_count: 0,
       quote_count: 0,
