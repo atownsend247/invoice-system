@@ -13,6 +13,7 @@ from invoice_system.factory import build_application
 def auth(tmp_path):
     ctx = build_auth(tmp_path / "auth.db")
     ctx.service.create_user("owner@acme.test", "correct horse battery staple")
+    ctx.service.create_user("other@acme.test", "correct horse battery staple")
     yield ctx
     ctx.close()
 
@@ -38,6 +39,16 @@ def client(tmp_path, monkeypatch, auth):
 def auth_headers(client):
     response = client.post(
         "/auth/login", json={"email": "owner@acme.test", "password": "correct horse battery staple"}
+    )
+    assert response.status_code == 200, response.text
+    token = response.json()["token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def other_auth_headers(client):
+    response = client.post(
+        "/auth/login", json={"email": "other@acme.test", "password": "correct horse battery staple"}
     )
     assert response.status_code == 200, response.text
     token = response.json()["token"]
@@ -114,6 +125,39 @@ def test_account_quote_invoice_flow(client, auth_headers):
     response = client.post(f"/invoices/{invoice_id}/send", headers=auth_headers)
     assert response.status_code == 200
     assert response.json()["number"] == "INV-0001"
+
+
+def test_accounts_are_isolated_between_login_users(client, auth_headers, other_auth_headers):
+    # Regression test: two different login users must not see each other's
+    # accounts/quotes/invoices - see CLAUDE.md and models.py's Organisation
+    # docstring. Each user gets their own auto-created Organisation on first
+    # use.
+    client.post(
+        "/accounts",
+        json={"business_name": "Owner's Client", "email": "a@b.test", "address": "1 Main St"},
+        headers=auth_headers,
+    )
+    client.post(
+        "/accounts",
+        json={"business_name": "Other's Client", "email": "b@b.test", "address": "2 High St"},
+        headers=other_auth_headers,
+    )
+
+    owner_names = {a["business_name"] for a in client.get("/accounts", headers=auth_headers).json()}
+    other_names = {a["business_name"] for a in client.get("/accounts", headers=other_auth_headers).json()}
+    assert owner_names == {"Owner's Client"}
+    assert other_names == {"Other's Client"}
+
+
+def test_account_from_another_login_user_returns_404(client, auth_headers, other_auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Owner's Client", "email": "a@b.test", "address": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+
+    response = client.get(f"/accounts/{account_id}", headers=other_auth_headers)
+    assert response.status_code == 404
 
 
 def test_get_missing_account_returns_404(client, auth_headers):

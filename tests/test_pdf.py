@@ -77,6 +77,7 @@ def test_rendering_a_quote_pdf_with_a_business_profile_set_does_not_error():
     now = datetime(2026, 1, 1, tzinfo=UTC)
     account = Account(
         id=1,
+        organisation_id=1,
         business_name="Client Co",
         contact_name=None,
         email="a@b.test",
@@ -86,6 +87,7 @@ def test_rendering_a_quote_pdf_with_a_business_profile_set_does_not_error():
     )
     quote = Quote(
         id=1,
+        organisation_id=1,
         account_id=1,
         number="Q-0001",
         status=QuoteStatus.SENT,
@@ -103,6 +105,7 @@ def test_rendering_a_quote_pdf_with_taxed_line_items_does_not_error():
     now = datetime(2026, 1, 1, tzinfo=UTC)
     account = Account(
         id=1,
+        organisation_id=1,
         business_name="Client Co",
         contact_name=None,
         email="a@b.test",
@@ -112,6 +115,7 @@ def test_rendering_a_quote_pdf_with_taxed_line_items_does_not_error():
     )
     quote = Quote(
         id=1,
+        organisation_id=1,
         account_id=1,
         number="Q-0001",
         status=QuoteStatus.SENT,

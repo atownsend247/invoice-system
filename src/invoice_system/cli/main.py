@@ -13,6 +13,16 @@ from ..pdf import render_invoice_pdf, render_quote_pdf
 
 DEFAULT_DB_PATH = "invoice_system.db"
 
+_USER_ID_HELP = (
+    "sessionkit's User.id (see 'sessionkit list') - resolves which organisation's data to use "
+    "(auto-created on first use per user, see CLAUDE.md); required since the CLI has no login "
+    "session to infer it from."
+)
+
+
+def _organisation_id(application: Application, user_id: int) -> int:
+    return application.organisations.get_or_create_for_user(user_id)
+
 
 @click.group()
 @click.option(
@@ -58,6 +68,7 @@ def account() -> None:
 
 
 @account.command("create")
+@click.option("--user-id", type=int, required=True, help=_USER_ID_HELP)
 @click.option("--business-name", required=True)
 @click.option("--email", required=True)
 @click.option("--address", required=True)
@@ -66,6 +77,7 @@ def account() -> None:
 @click.pass_obj
 def account_create(
     application: Application,
+    user_id: int,
     business_name: str,
     email: str,
     address: str,
@@ -73,20 +85,27 @@ def account_create(
     phone: str | None,
 ) -> None:
     created = application.accounts.create_account(
-        business_name=business_name, email=email, address=address, contact_name=contact_name, phone=phone
+        organisation_id=_organisation_id(application, user_id),
+        business_name=business_name,
+        email=email,
+        address=address,
+        contact_name=contact_name,
+        phone=phone,
     )
     click.echo(f"Created account {created.id}: {created.business_name}")
 
 
 @account.command("list")
+@click.option("--user-id", type=int, required=True, help=_USER_ID_HELP)
 @click.pass_obj
-def account_list(application: Application) -> None:
-    for acc in application.accounts.list_accounts():
+def account_list(application: Application, user_id: int) -> None:
+    for acc in application.accounts.list_accounts(_organisation_id(application, user_id)):
         click.echo(f"{acc.id}\t{acc.business_name}\t{acc.email}")
 
 
 @account.command("update")
 @click.argument("account_id", type=int)
+@click.option("--user-id", type=int, required=True, help=_USER_ID_HELP)
 @click.option("--business-name", required=True)
 @click.option("--email", required=True)
 @click.option("--address", required=True)
@@ -96,6 +115,7 @@ def account_list(application: Application) -> None:
 def account_update(
     application: Application,
     account_id: int,
+    user_id: int,
     business_name: str,
     email: str,
     address: str,
@@ -103,6 +123,7 @@ def account_update(
     phone: str | None,
 ) -> None:
     updated = application.accounts.update_account(
+        _organisation_id(application, user_id),
         account_id,
         business_name=business_name,
         email=email,
@@ -119,16 +140,20 @@ def quote() -> None:
 
 
 @quote.command("create")
+@click.option("--user-id", type=int, required=True, help=_USER_ID_HELP)
 @click.option("--account-id", type=int, required=True)
 @click.option("--currency", default="USD", show_default=True)
 @click.pass_obj
-def quote_create(application: Application, account_id: int, currency: str) -> None:
-    created = application.quotes.create_quote(account_id=account_id, currency=currency)
+def quote_create(application: Application, user_id: int, account_id: int, currency: str) -> None:
+    created = application.quotes.create_quote(
+        organisation_id=_organisation_id(application, user_id), account_id=account_id, currency=currency
+    )
     click.echo(f"Created quote {created.id} (draft)")
 
 
 @quote.command("add-item")
 @click.argument("quote_id", type=int)
+@click.option("--user-id", type=int, required=True, help=_USER_ID_HELP)
 @click.option("--description", required=True)
 @click.option("--quantity", required=True, type=Decimal)
 @click.option("--unit-price", required=True, type=Decimal)
@@ -143,30 +168,38 @@ def quote_create(application: Application, account_id: int, currency: str) -> No
 def quote_add_item(
     application: Application,
     quote_id: int,
+    user_id: int,
     description: str,
     quantity: Decimal,
     unit_price: Decimal,
     tax_rate: Decimal,
 ) -> None:
     application.quotes.add_line_item(
-        quote_id, description=description, quantity=quantity, unit_price=unit_price, tax_rate=tax_rate
+        _organisation_id(application, user_id),
+        quote_id,
+        description=description,
+        quantity=quantity,
+        unit_price=unit_price,
+        tax_rate=tax_rate,
     )
     click.echo("Added line item")
 
 
 @quote.command("send")
 @click.argument("quote_id", type=int)
+@click.option("--user-id", type=int, required=True, help=_USER_ID_HELP)
 @click.pass_obj
-def quote_send(application: Application, quote_id: int) -> None:
-    sent = application.quotes.send(quote_id)
+def quote_send(application: Application, quote_id: int, user_id: int) -> None:
+    sent = application.quotes.send(_organisation_id(application, user_id), quote_id)
     click.echo(f"Quote {quote_id} sent as {sent.number}")
 
 
 @quote.command("convert")
 @click.argument("quote_id", type=int)
+@click.option("--user-id", type=int, required=True, help=_USER_ID_HELP)
 @click.pass_obj
-def quote_convert(application: Application, quote_id: int) -> None:
-    invoice = application.quotes.convert_to_invoice(quote_id)
+def quote_convert(application: Application, quote_id: int, user_id: int) -> None:
+    invoice = application.quotes.convert_to_invoice(_organisation_id(application, user_id), quote_id)
     click.echo(f"Converted quote {quote_id} to invoice {invoice.id}")
 
 
@@ -176,15 +209,15 @@ def quote_convert(application: Application, quote_id: int) -> None:
 @click.option(
     "--user-id",
     type=int,
-    default=None,
-    help="Show this user's business profile as the 'From' party (see 'settings show'). "
-    "Omit to render without one, same as before.",
+    required=True,
+    help=_USER_ID_HELP + " Also shown on the PDF as the 'From' party (see 'settings show'), if set.",
 )
 @click.pass_obj
-def quote_pdf(application: Application, quote_id: int, output: str, user_id: int | None) -> None:
-    fetched = application.quotes.get_quote(quote_id)
-    account = application.accounts.get_account(fetched.account_id)
-    profile = application.business_profiles.get_profile(user_id) if user_id is not None else None
+def quote_pdf(application: Application, quote_id: int, output: str, user_id: int) -> None:
+    organisation_id = _organisation_id(application, user_id)
+    fetched = application.quotes.get_quote(organisation_id, quote_id)
+    account = application.accounts.get_account(organisation_id, fetched.account_id)
+    profile = application.business_profiles.get_profile(user_id)
     Path(output).write_bytes(render_quote_pdf(account, fetched, profile))
     click.echo(f"Wrote {output}")
 
@@ -195,10 +228,12 @@ def invoice() -> None:
 
 
 @invoice.command("list")
+@click.option("--user-id", type=int, required=True, help=_USER_ID_HELP)
 @click.option("--account-id", type=int, default=None)
 @click.pass_obj
-def invoice_list(application: Application, account_id: int | None) -> None:
-    for inv in application.invoices.list_invoices(account_id=account_id):
+def invoice_list(application: Application, user_id: int, account_id: int | None) -> None:
+    organisation_id = _organisation_id(application, user_id)
+    for inv in application.invoices.list_invoices(organisation_id, account_id=account_id):
         click.echo(f"{inv.id}\t{inv.number or 'draft'}\t{inv.status.value}")
 
 
@@ -207,32 +242,32 @@ def invoice_list(application: Application, account_id: int | None) -> None:
 @click.option(
     "--user-id",
     type=int,
-    default=None,
-    help="Use this user's payment terms (see 'settings show') for the due date. "
-    "Omit to use the fixed default, same as before.",
+    required=True,
+    help=_USER_ID_HELP + " Also uses this user's payment terms (see 'settings show') for the due date.",
 )
 @click.pass_obj
-def invoice_send(application: Application, invoice_id: int, user_id: int | None) -> None:
-    payment_terms_days = (
-        application.business_profiles.get_profile(user_id).payment_terms_days if user_id is not None else None
-    )
-    sent = application.invoices.send(invoice_id, payment_terms_days=payment_terms_days)
+def invoice_send(application: Application, invoice_id: int, user_id: int) -> None:
+    organisation_id = _organisation_id(application, user_id)
+    payment_terms_days = application.business_profiles.get_profile(user_id).payment_terms_days
+    sent = application.invoices.send(organisation_id, invoice_id, payment_terms_days=payment_terms_days)
     click.echo(f"Invoice {invoice_id} sent as {sent.number} (due {sent.due_date})")
 
 
 @invoice.command("void")
 @click.argument("invoice_id", type=int)
+@click.option("--user-id", type=int, required=True, help=_USER_ID_HELP)
 @click.pass_obj
-def invoice_void(application: Application, invoice_id: int) -> None:
-    application.invoices.void(invoice_id)
+def invoice_void(application: Application, invoice_id: int, user_id: int) -> None:
+    application.invoices.void(_organisation_id(application, user_id), invoice_id)
     click.echo(f"Invoice {invoice_id} voided")
 
 
 @invoice.command("pay")
 @click.argument("invoice_id", type=int)
+@click.option("--user-id", type=int, required=True, help=_USER_ID_HELP)
 @click.pass_obj
-def invoice_pay(application: Application, invoice_id: int) -> None:
-    application.invoices.pay(invoice_id)
+def invoice_pay(application: Application, invoice_id: int, user_id: int) -> None:
+    application.invoices.pay(_organisation_id(application, user_id), invoice_id)
     click.echo(f"Invoice {invoice_id} marked paid")
 
 
@@ -241,13 +276,14 @@ def invoice_pay(application: Application, invoice_id: int) -> None:
     "--user-id",
     type=int,
     required=True,
-    help="Resolve this user's reporting currency (see 'settings show') - only invoices in that "
-    "currency are counted.",
+    help=_USER_ID_HELP + " Also resolves this user's reporting currency (see 'settings show') - only "
+    "invoices in that currency are counted.",
 )
 @click.pass_obj
 def invoice_monthly_totals(application: Application, user_id: int) -> None:
+    organisation_id = _organisation_id(application, user_id)
     profile = application.business_profiles.get_profile(user_id)
-    for entry in application.invoices.monthly_totals(profile.currency):
+    for entry in application.invoices.monthly_totals(organisation_id, profile.currency):
         click.echo(
             f"{entry.month}\tpaid {entry.paid_total} {profile.currency}"
             f"\tunpaid {entry.unpaid_total} {profile.currency}"
@@ -260,15 +296,15 @@ def invoice_monthly_totals(application: Application, user_id: int) -> None:
 @click.option(
     "--user-id",
     type=int,
-    default=None,
-    help="Show this user's business profile as the 'From' party (see 'settings show'). "
-    "Omit to render without one, same as before.",
+    required=True,
+    help=_USER_ID_HELP + " Also shown on the PDF as the 'From' party (see 'settings show'), if set.",
 )
 @click.pass_obj
-def invoice_pdf(application: Application, invoice_id: int, output: str, user_id: int | None) -> None:
-    fetched = application.invoices.get_invoice(invoice_id)
-    account = application.accounts.get_account(fetched.account_id)
-    profile = application.business_profiles.get_profile(user_id) if user_id is not None else None
+def invoice_pdf(application: Application, invoice_id: int, output: str, user_id: int) -> None:
+    organisation_id = _organisation_id(application, user_id)
+    fetched = application.invoices.get_invoice(organisation_id, invoice_id)
+    account = application.accounts.get_account(organisation_id, fetched.account_id)
+    profile = application.business_profiles.get_profile(user_id)
     Path(output).write_bytes(render_invoice_pdf(account, fetched, profile))
     click.echo(f"Wrote {output}")
 
@@ -350,9 +386,10 @@ def settings_set(
 
 
 @cli.command("stats")
+@click.option("--user-id", type=int, required=True, help=_USER_ID_HELP)
 @click.pass_obj
-def stats(application: Application) -> None:
-    result = application.stats.get_stats()
+def stats(application: Application, user_id: int) -> None:
+    result = application.stats.get_stats(_organisation_id(application, user_id))
     click.echo(f"Accounts: {result.account_count}")
 
 

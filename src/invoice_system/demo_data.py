@@ -21,7 +21,7 @@ from decimal import Decimal
 from sessionkit import DuplicateUser
 
 from .auth import Auth
-from .core import AccountService, BusinessProfileService, InvoiceService, QuoteService
+from .core import AccountService, BusinessProfileService, InvoiceService, OrganisationService, QuoteService
 from .factory import Application
 
 DEMO_EMAIL = "demo@example.test"
@@ -111,11 +111,16 @@ def _months_ago(now: datetime, months: int) -> datetime:
     return now - timedelta(days=30 * months + 3)
 
 
-def _add_line_items(quotes: QuoteService, quote_id: int, *item_indices: int) -> None:
+def _add_line_items(quotes: QuoteService, organisation_id: int, quote_id: int, *item_indices: int) -> None:
     for i in item_indices:
         description, quantity, unit_price, tax_rate = _LINE_ITEM_POOL[i % len(_LINE_ITEM_POOL)]
         quotes.add_line_item(
-            quote_id, description=description, quantity=quantity, unit_price=unit_price, tax_rate=tax_rate
+            organisation_id,
+            quote_id,
+            description=description,
+            quantity=quantity,
+            unit_price=unit_price,
+            tax_rate=tax_rate,
         )
 
 
@@ -132,40 +137,45 @@ class _Seeder:
     `issue_date`/`created_at` land in the right month regardless of when
     `init-db` actually runs."""
 
-    def __init__(self, application: Application, account_id: int, when: datetime, item_index: int) -> None:
+    def __init__(
+        self, application: Application, organisation_id: int, account_id: int, when: datetime, item_index: int
+    ) -> None:
         clock = _FixedClock(when)
         self.repository = application.repository
         self.quotes = QuoteService(self.repository, clock=clock)
         self.invoices = InvoiceService(self.repository, clock=clock)
+        self.organisation_id = organisation_id
         self.account_id = account_id
         self.item_index = item_index
 
     def _new_quote(self) -> int:
-        quote = self.quotes.create_quote(account_id=self.account_id, currency=DEMO_CURRENCY)
-        _add_line_items(self.quotes, quote.id, self.item_index, self.item_index + 1)
+        quote = self.quotes.create_quote(
+            organisation_id=self.organisation_id, account_id=self.account_id, currency=DEMO_CURRENCY
+        )
+        _add_line_items(self.quotes, self.organisation_id, quote.id, self.item_index, self.item_index + 1)
         return quote.id
 
     def draft_quote(self) -> None:
         self._new_quote()
 
     def sent_quote(self) -> None:
-        self.quotes.send(self._new_quote())
+        self.quotes.send(self.organisation_id, self._new_quote())
 
     def rejected_quote(self) -> None:
         quote_id = self._new_quote()
-        self.quotes.send(quote_id)
-        self.quotes.mark_rejected(quote_id)
+        self.quotes.send(self.organisation_id, quote_id)
+        self.quotes.mark_rejected(self.organisation_id, quote_id)
 
     def expired_quote(self) -> None:
         quote_id = self._new_quote()
-        self.quotes.send(quote_id)
-        self.quotes.mark_expired(quote_id)
+        self.quotes.send(self.organisation_id, quote_id)
+        self.quotes.mark_expired(self.organisation_id, quote_id)
 
     def _accepted_and_converted(self) -> int:
         quote_id = self._new_quote()
-        self.quotes.send(quote_id)
-        self.quotes.mark_accepted(quote_id)
-        return self.quotes.convert_to_invoice(quote_id).id
+        self.quotes.send(self.organisation_id, quote_id)
+        self.quotes.mark_accepted(self.organisation_id, quote_id)
+        return self.quotes.convert_to_invoice(self.organisation_id, quote_id).id
 
     def draft_invoice(self) -> None:
         self._accepted_and_converted()
@@ -176,21 +186,21 @@ class _Seeder:
         # ever scheduled a few weeks back at most (see _SCENARIOS), and
         # needs to stay reliably not-yet-due regardless of which exact day
         # `init-db` runs on.
-        self.invoices.send(invoice_id, payment_terms_days=60)
+        self.invoices.send(self.organisation_id, invoice_id, payment_terms_days=60)
 
     def overdue_invoice(self) -> None:
         invoice_id = self._accepted_and_converted()
-        self.invoices.send(invoice_id, payment_terms_days=14)
+        self.invoices.send(self.organisation_id, invoice_id, payment_terms_days=14)
 
     def paid_invoice(self) -> None:
         invoice_id = self._accepted_and_converted()
-        self.invoices.send(invoice_id, payment_terms_days=14)
-        self.invoices.pay(invoice_id)
+        self.invoices.send(self.organisation_id, invoice_id, payment_terms_days=14)
+        self.invoices.pay(self.organisation_id, invoice_id)
 
     def void_invoice(self) -> None:
         invoice_id = self._accepted_and_converted()
-        self.invoices.send(invoice_id, payment_terms_days=14)
-        self.invoices.void(invoice_id)
+        self.invoices.send(self.organisation_id, invoice_id, payment_terms_days=14)
+        self.invoices.void(self.organisation_id, invoice_id)
 
 
 # Spread across the last 12 months (11 = a year ago, 0 = this month).
@@ -228,12 +238,17 @@ def seed_demo_data(application: Application, auth: Auth, *, now: datetime | None
         return False
 
     now = now or datetime.now(UTC)
+    business_name = "Blake Freelance Design"
+    organisation_id = OrganisationService(application.repository, clock=lambda: now).get_or_create_for_user(
+        user.id, default_name=business_name
+    )
+
     BusinessProfileService(application.repository, clock=lambda: now).save_profile(
         user.id,
         title="Ms",
         first_name="Jordan",
         last_name="Blake",
-        business_name="Blake Freelance Design",
+        business_name=business_name,
         address_line1="15 Riverside Walk",
         town_or_city="London",
         postcode="E1 6AN",
@@ -246,6 +261,7 @@ def seed_demo_data(application: Application, auth: Auth, *, now: datetime | None
     accounts = AccountService(application.repository, clock=lambda: now)
     account_ids = [
         accounts.create_account(
+            organisation_id=organisation_id,
             business_name=a.business_name,
             email=a.email,
             address=a.address,
@@ -258,6 +274,7 @@ def seed_demo_data(application: Application, auth: Auth, *, now: datetime | None
     for scenario in _SCENARIOS:
         seeder = _Seeder(
             application,
+            organisation_id=organisation_id,
             account_id=account_ids[scenario.account_index],
             when=_months_ago(now, scenario.months_ago),
             item_index=scenario.account_index,

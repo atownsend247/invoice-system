@@ -9,10 +9,13 @@ independently viewable/exportable as PDFs, and a sent invoice can be marked
 `paid` (a single status flag, not a payment ledger). A `BusinessProfile`
 holds the logged-in user's *own* business details (name/address/payment
 terms/reporting currency/UTR/VAT) — see below for why that's a third,
-deliberately separate thing from both `Account` and sessionkit's `User`. A
-fresh `invoice-system-cli init-db` seeds a year of demo data (accounts,
-quotes, invoices, a demo login) by default — see Commands and
-`demo_data.py`.
+deliberately separate thing from both `Account` and sessionkit's `User`.
+Every `Account`/`Quote`/`Invoice` also belongs to exactly one
+`Organisation` — the tenant boundary, auto-created per login user, so one
+user's data is never visible to another (see below and
+`docs/data-model.md`'s "Multi-tenancy"). A fresh `invoice-system-cli
+init-db` seeds a year of demo data (accounts, quotes, invoices, a demo
+login) by default — see Commands and `demo_data.py`.
 
 ## Where things are
 
@@ -55,11 +58,21 @@ billed). `core.py` never imports `sessionkit` — see architecture rules.
 Manage users with the bundled `sessionkit` CLI (`uv run sessionkit add ...`),
 not through this app; there is no public signup route.
 
-Three separate things are easy to conflate here — don't:
+Four separate things are easy to conflate here — don't:
 - **`Account`** (this app's own domain table) — a *client* business being
   billed via quotes/invoices.
 - **sessionkit's `User`** (`auth.db`) — a *login* identity. Has no business
   details at all beyond email/name.
+- **`Organisation`** (this app's own domain table) — the *tenant boundary*.
+  Every `Account`/`Quote`/`Invoice` belongs to exactly one; a login `User`
+  belongs to exactly one too (`organisation_members`, `UNIQUE` on
+  `user_id`), auto-created on that user's first domain request/CLI command
+  (`OrganisationService.get_or_create_for_user`). Not a business's own
+  details (that's `BusinessProfile`, below) — currently just an id/name/
+  timestamp, existing purely so `AccountService`/`QuoteService`/
+  `InvoiceService`/`StatsService` can scope every query to "this caller's
+  data only." See `docs/data-model.md`'s "Multi-tenancy" for the "multiple
+  users per organisation" future work this is already shaped for.
 - **`BusinessProfile`** (this app's own domain table, `business_profiles`) —
   the logged-in user's *own* details, in three groups (also how the
   settings page presents them - see Conventions): **user settings**
@@ -72,7 +85,13 @@ Three separate things are easy to conflate here — don't:
   the home dashboard's monthly-totals chart sums in, defaults `"GBP"`,
   independent of the currency chosen per quote/invoice - `utr`/`vat_number`
   optional). One per
-  user, keyed by `user_id` = sessionkit's `User.id`. That's a **plain
+  user, keyed by `user_id` = sessionkit's `User.id` — deliberately still
+  per-*user*, not per-`Organisation`, even after `Organisation` was
+  introduced (see `docs/data-model.md`'s "Multi-tenancy": today it's a
+  distinction without a difference since each user has exactly one
+  organisation, but it stops being one the day an organisation gains a
+  second member, and "whose business card is this" should stay an
+  individual's answer even then). That's a **plain
   integer column, not an enforced foreign key** — `business_profiles` lives
   in `invoice_system.db`, `users` lives in the separate `auth.db`, and
   SQLite can't enforce a cross-database constraint. Deleting a user via
@@ -105,10 +124,15 @@ Three separate things are easy to conflate here — don't:
   `invoice-system-cli` entry point) — mirrors the API one-for-one over the
   same storage. **Not** behind login — it's a local, trusted tool; only the
   HTTP API is gated (see architecture rules). Where the API resolves "which
-  user" from the Bearer token (settings, payment-terms-driven due dates,
-  the PDF "from" party), the CLI takes an explicit `--user-id` instead
-  (`settings show/set`, `invoice send`, `quote pdf`/`invoice pdf`) — omit it
-  and those commands behave exactly as if no profile existed.
+  user"/"which organisation" from the Bearer token, the CLI takes an
+  explicit `--user-id` instead — **required** on every account/quote/invoice
+  command (`account create/list/update`, `quote
+  create/add-item/send/convert/pdf`, `invoice
+  list/send/void/pay/monthly-totals/pdf`, `stats`), since there's no session
+  to resolve an organisation from otherwise (see "Four separate things"
+  above). `settings show/set`, `invoice send`, `quote pdf`/`invoice pdf`
+  additionally use that same `--user-id` for their pre-existing purpose
+  (payment-terms-driven due dates, the PDF "from" party).
 - Web: `cd web && npm install && npm run dev` (Vite on `:5173`, or whatever
   port it lands on if that one's taken — it logs the actual one; note it
   binds `localhost`, which may resolve to the IPv6 loopback only, so prefer
@@ -247,19 +271,21 @@ Three separate things are easy to conflate here — don't:
   payments as paid" was implemented as a status flag, not amount tracking;
   don't add one without being asked, since the monthly-totals chart below
   only ever needs a binary paid/not-paid split, not partial amounts.
-  `InvoiceService.monthly_totals(currency, months=12)` is the aggregation
-  behind that chart: it buckets every non-draft, non-void invoice
-  **system-wide** (not per-account) by the calendar month of its
-  `issue_date` (when it was *created*, not `due_date` or `created_at`'s
-  time-of-day), summing `paid` separately from everything else (`sent` -
-  there is no stored `overdue`, see above), and **only for invoices whose
-  `currency` matches the `currency` argument** - an invoice in a different
-  currency is silently excluded rather than naively summed in with it (see
-  `BusinessProfile.currency` above). The API/CLI resolve which currency to
-  pass from the caller's own business profile
-  (`GET /invoices/monthly-totals`, CLI `invoice monthly-totals --user-id`);
-  `InvoiceService` itself takes a plain `currency: str` and has no idea
-  whose profile it came from, same pattern as `payment_terms_days`.
+  `InvoiceService.monthly_totals(organisation_id, currency, months=12)` is
+  the aggregation behind that chart: it buckets every non-draft, non-void
+  invoice **belonging to that organisation** (not per-account) by the
+  calendar month of its `issue_date` (when it was *created*, not `due_date`
+  or `created_at`'s time-of-day), summing `paid` separately from everything
+  else (`sent` - there is no stored `overdue`, see above), and **only for
+  invoices whose `currency` matches the `currency` argument** - an invoice
+  in a different currency is silently excluded rather than naively summed
+  in with it (see `BusinessProfile.currency` above). The API/CLI resolve
+  both the organisation (from the Bearer token/`--user-id`, see "Four
+  separate things" above) and which currency to pass from the caller's own
+  business profile (`GET /invoices/monthly-totals`, CLI `invoice
+  monthly-totals --user-id`); `InvoiceService` itself takes a plain
+  `currency: str` and has no idea whose profile it came from, same pattern
+  as `payment_terms_days`.
 - The settings page (`web/src/pages/SettingsPage.tsx`) groups
   `BusinessProfile` fields into three `<fieldset>`/`<legend>` sections
   matching the model's own three groups (user settings, business settings,
@@ -278,12 +304,13 @@ Three separate things are easy to conflate here — don't:
   don't add one without being asked, the inline pattern was a deliberate
   match for how accounts are already listed (a flat table), not an
   oversight.
-- `StatsService.get_stats()` is the all-time, system-wide counters behind
-  the home dashboard's "All-time stats" section (`GET /stats`, CLI
-  `stats`) — currently just `account_count`. A separate service, not a
-  method on `AccountService`, because these stats are expected to grow
-  beyond accounts; add a field to `Stats` (models.py) and a line to
-  `get_stats()` when a new one is actually asked for, not speculatively.
+- `StatsService.get_stats(organisation_id)` is the all-time counters,
+  scoped to one organisation, behind the home dashboard's "All-time stats"
+  section (`GET /stats`, CLI `stats`) — currently just `account_count`. A
+  separate service, not a method on `AccountService`, because these stats
+  are expected to grow beyond accounts; add a field to `Stats` (models.py)
+  and a line to `get_stats()` when a new one is actually asked for, not
+  speculatively.
 - Two separate exception hierarchies get mapped to HTTP status in `api/app.py`,
   each in its own handler: this app's `AppError` (`handle_app_error`) and
   sessionkit's `AuthError` (`handle_auth_error`). Don't merge them into one
@@ -327,10 +354,36 @@ Three separate things are easy to conflate here — don't:
   exactly the scenario forward-only migrations exist to handle instead.
   Migration 2, added the same day, is the current reference example of the
   "adding a column with a constant default" case above: `quote_line_items`/
-  `invoice_line_items` both get `tax_rate TEXT NOT NULL DEFAULT '0'`.)
+  `invoice_line_items` both get `tax_rate TEXT NOT NULL DEFAULT '0'`.
+  Migration 3 added `Organisation`/`organisation_members` plus nullable
+  `organisation_id` on `accounts`/`quotes`/`invoices` (nullable, not a
+  constant default, since there's no sensible organisation to backfill
+  existing rows with — see `docs/data-model.md`'s "Multi-tenancy" on the
+  consequence: old rows become invisible, not an error). Migration 4 is the
+  other rebuild-and-swap reference example, alongside the `NOT NULL`
+  case above: `quotes.number`/`invoices.number` had a column-level
+  `UNIQUE`, wrong once numbering became per-organisation (two
+  organisations' first quotes can both legitimately be `Q-0001`) — SQLite
+  can't drop a column constraint via `ALTER TABLE` any more than it can add
+  one, so this rebuilds both tables and replaces it with a composite
+  `UNIQUE INDEX` on `(organisation_id, number)` instead, carrying row ids
+  across explicitly so `quote_line_items`/`invoice_line_items` and
+  `invoices.quote_id` keep pointing at the right rows.)
 - Storage is a single shared SQLite connection/file — **serialise every
   access on a lock** inside the repository implementation rather than
-  assuming the caller will.
+  assuming the caller will. That lock is per-*call*, not across a sequence
+  of calls: `OrganisationService.get_or_create_for_user` composes a
+  check (`get_organisation_id_for_user`) with a create
+  (`create_organisation` + `add_organisation_member`), so two concurrent
+  first-ever requests for the same brand-new user can both pass the check.
+  `SqliteRepository.add_organisation_member` handles that race itself (a
+  single locked check-then-insert, returning the *winning*
+  `organisation_id` rather than raising on the loser) rather than pushing
+  retry logic up into `core.py` — found by e2e stress-testing (concurrent
+  Playwright workers hitting the same freshly-logged-in user), not by
+  reasoning about it up front; a naive `INSERT` here crashes with an
+  `IntegrityError` under real concurrency even though every single-request
+  test passes.
 - Changing a domain default (currency, invoice-number format, a status
   value, ...) — `grep` the test suite for the old value first; tests that
   assert exact strings/values are usually the ones that catch a half-done

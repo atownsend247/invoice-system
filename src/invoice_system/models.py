@@ -24,10 +24,28 @@ class InvoiceStatus(StrEnum):
 
 
 @dataclass
+class Organisation:
+    """The tenant boundary: every Account/Quote/Invoice belongs to exactly
+    one Organisation, and a user can only see/touch data in their own (see
+    CLAUDE.md). Currently always exactly one member (see
+    `organisation_members` in storage/schema.py, UNIQUE on user_id) -
+    auto-created the first time a login user needs one
+    (OrganisationService.get_or_create_for_user). The UNIQUE constraint is
+    deliberately the *only* thing standing in the way of multiple users
+    sharing one Organisation later; the shape here doesn't need to change
+    for that, just the constraint and an invite/add-member flow."""
+
+    id: int | None
+    name: str
+    created_at: datetime
+
+
+@dataclass
 class Account:
     """A business we provide a service to and bill via quotes/invoices."""
 
     id: int | None
+    organisation_id: int
     business_name: str
     contact_name: str | None
     email: str
@@ -118,6 +136,7 @@ class LineItem:
 @dataclass
 class Quote:
     id: int | None
+    organisation_id: int
     account_id: int
     number: str | None
     status: QuoteStatus
@@ -143,6 +162,7 @@ class Quote:
 @dataclass
 class Invoice:
     id: int | None
+    organisation_id: int
     account_id: int
     quote_id: int | None
     number: str | None

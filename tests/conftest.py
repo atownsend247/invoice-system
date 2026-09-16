@@ -29,3 +29,13 @@ def application(tmp_path, fake_clock: FakeClock) -> Application:
     app = build_application(tmp_path / "test.db", clock=fake_clock)
     yield app
     app.close()
+
+
+@pytest.fixture
+def organisation_id(application: Application) -> int:
+    """A single user's (id 1) auto-created Organisation - the tenant
+    boundary every Account/Quote/Invoice call now requires (see CLAUDE.md).
+    Most tests only care that there's *an* organisation, not which one -
+    tests asserting isolation between two organisations build their own
+    second id via `application.organisations.get_or_create_for_user(2)`."""
+    return application.organisations.get_or_create_for_user(1)

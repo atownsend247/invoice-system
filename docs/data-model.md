@@ -2,22 +2,27 @@
 
 **Status: implemented** (`src/invoice_system/models.py`,
 `storage/schema.py`). Keep this table in sync with the actual schema — this
-doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` has two
-entries: the flattened baseline (2026-09-16) plus migration 2, which added
-`tax_rate` to both line-item tables (see `CLAUDE.md`'s migrations gotcha) —
-schema changes from here on are new entries appended to that list, not
-edits to either.
+doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` has four
+entries: the flattened baseline (2026-09-16), migration 2 (added `tax_rate`
+to both line-item tables), migration 3 (added `Organisation` — the tenant
+boundary — plus nullable `organisation_id` columns on `accounts`/`quotes`/
+`invoices`), and migration 4 (rescoped `Quote.number`/`Invoice.number`
+uniqueness from a single global column constraint to a composite
+`(organisation_id, number)` index, since numbering is now per-organisation —
+see `CLAUDE.md`'s migrations gotcha). Schema changes from here on are new
+entries appended to that list, not edits to any of these four.
 
 ## Entities
 
 | Entity | Key fields | Notes |
 |---|---|---|
-| `Account` | id, business_name, contact_name, email, phone, address, created_at | A business you provide a service to and bill. Editable after creation (`AccountService.update_account`, full replace). Not a login identity — see `CLAUDE.md`. |
-| `Quote` | id, account_id, number, status, currency, issue_date, expiry_date, created_at | `status`: `draft \| sent \| accepted \| rejected \| expired \| converted`. `number` (`Q-0001`, ...) is assigned on `send`, not on creation. |
-| `Invoice` | id, account_id, quote_id, number, status, currency, issue_date, due_date, created_at | `status`: `draft \| sent \| paid \| overdue \| void`. `quote_id` is set when created via conversion, `NULL` otherwise. `number` (`INV-0001`, ...) and `due_date` are assigned on `send`. `paid` is assigned by `InvoiceService.pay()`, only from `sent` — `overdue` is a defined enum value nothing ever actually sets (see "Not yet modelled"). |
+| `Organisation` | id, name, created_at | The tenant boundary — every `Account`/`Quote`/`Invoice` belongs to exactly one. Auto-created the first time a login user needs one (`OrganisationService.get_or_create_for_user`), via an `organisation_members` join table (`organisation_id`, `user_id`, `created_at`) with `UNIQUE` on `user_id` enforcing "one organisation per user" *for now* — see "Multi-tenancy" below. |
+| `Account` | id, organisation_id, business_name, contact_name, email, phone, address, created_at | A business you provide a service to and bill, scoped to one `Organisation`. Editable after creation (`AccountService.update_account`, full replace). Not a login identity — see `CLAUDE.md`. |
+| `Quote` | id, organisation_id, account_id, number, status, currency, issue_date, expiry_date, created_at | `status`: `draft \| sent \| accepted \| rejected \| expired \| converted`. `number` (`Q-0001`, ...) is assigned on `send`, not on creation, and is unique per-`organisation_id`, not globally (see migration 4 above) — two organisations' first quotes can both be `Q-0001`. |
+| `Invoice` | id, organisation_id, account_id, quote_id, number, status, currency, issue_date, due_date, created_at | `status`: `draft \| sent \| paid \| overdue \| void`. `quote_id` is set when created via conversion, `NULL` otherwise. `number` (`INV-0001`, ...) and `due_date` are assigned on `send`, and — same as `Quote.number` — unique per-`organisation_id`, not globally. `paid` is assigned by `InvoiceService.pay()`, only from `sent` — `overdue` is a defined enum value nothing ever actually sets (see "Not yet modelled"). |
 | `LineItem` | id, description, quantity, unit_price, tax_rate, position | One shape, shared by quotes and invoices; associated via `quote_line_items`/`invoice_line_items` join tables (`quote_id`/`invoice_id` + the same columns). `tax_rate` is a fraction (`0.20` = 20% UK VAT; `0` = none), independently set per line. `net_total`/`tax_amount`/`total` (`net_total + tax_amount`, gross) are derived properties, never stored — `tax_amount` is rounded to the minor currency unit, `net_total` is not (see `CLAUDE.md`). |
-| `BusinessProfile` | id, user_id, title, first_name, last_name, business_name, address_line1, address_line2, town_or_city, county, postcode, payment_terms_days, currency, utr, vat_number, created_at, updated_at | The logged-in user's *own* details, in three groups (see `CLAUDE.md`): user settings (`title` optional, `first_name`/`last_name` required), business settings (`business_name` required; `address_line1`/`address_line2`/`town_or_city`/`county`/`postcode` — a UK GOV.UK Design System-style address, each line independently optional), payment and tax settings (`payment_terms_days`, `currency` — the home dashboard's *reporting* currency, defaults `"GBP"`, independent of any quote/invoice's own `currency` — `utr`/`vat_number` optional). Not `Account` (the client being billed). One per `user_id` (`UNIQUE`), which is sessionkit's `User.id` — a plain column, not an enforced FK (see `CLAUDE.md`, "Login accounts" below). Every optional field: blank input is normalised to `NULL`, never stored as `""`. |
-| counters (internal) | name, value | Backs `next_quote_number`/`next_invoice_number`; not a domain entity, not exposed via API/CLI. |
+| `BusinessProfile` | id, user_id, title, first_name, last_name, business_name, address_line1, address_line2, town_or_city, county, postcode, payment_terms_days, currency, utr, vat_number, created_at, updated_at | The logged-in user's *own* details, in three groups (see `CLAUDE.md`): user settings (`title` optional, `first_name`/`last_name` required), business settings (`business_name` required; `address_line1`/`address_line2`/`town_or_city`/`county`/`postcode` — a UK GOV.UK Design System-style address, each line independently optional), payment and tax settings (`payment_terms_days`, `currency` — the home dashboard's *reporting* currency, defaults `"GBP"`, independent of any quote/invoice's own `currency` — `utr`/`vat_number` optional). Not `Account` (the client being billed). One per `user_id` (`UNIQUE`), which is sessionkit's `User.id` — a plain column, not an enforced FK (see `CLAUDE.md`, "Login accounts" below). Deliberately still per-*user*, not per-`Organisation` — see "Multi-tenancy" below. Every optional field: blank input is normalised to `NULL`, never stored as `""`. |
+| counters (internal) | name, value | Backs `next_quote_number`/`next_invoice_number`; not a domain entity, not exposed via API/CLI. `name` is `"<organisation_id>:quote"`/`"<organisation_id>:invoice"`, not a bare `"quote"`/`"invoice"` — each organisation gets its own independent sequence starting from one. |
 
 `MonthlyInvoiceTotals` (`month`, `paid_total`, `unpaid_total`) and `Stats`
 (`account_count`) are **not** stored tables — they're
@@ -28,6 +33,10 @@ for exactly what the former includes/excludes.
 ## Relationships
 
 ```
+Organisation 1──* Account
+Organisation 1──* Quote
+Organisation 1──* Invoice
+Organisation 1──1 User (sessionkit, via organisation_members - see "Multi-tenancy" below)
 Account 1──* Quote
 Account 1──* Invoice
 Quote   1──* LineItem   (via quote_line_items)
@@ -63,20 +72,60 @@ Invoice 1──* LineItem   (via invoice_line_items)
   `business_name`/`email`/`address` as `create_account` and always replaces
   the whole record (no partial-field updates) — 404s via `get_account` if
   the id doesn't exist first.
-- `StatsService.get_stats()` has no `user_id`/`account_id` scoping - it's a
-  single, system-wide snapshot, same as `InvoiceService.monthly_totals`.
+- `StatsService.get_stats(organisation_id)` is scoped to one `Organisation`
+  — not a system-wide snapshot, same as `InvoiceService.monthly_totals`.
 - `InvoiceService.pay()` only transitions `sent → paid` — rejects `draft`
   (never sent, nothing to have been paid for), `void` (cancelled), and an
   already-`paid` invoice. Stricter than `void()`, which also allows `draft`.
-- `InvoiceService.monthly_totals(currency, months=12)` buckets every
-  non-`draft`, non-`void` invoice **system-wide** (not filtered by
-  account) by the calendar month of `issue_date` (when it was created, not
-  `due_date`/`created_at`'s time-of-day), for the trailing `months` months
-  ending with the current one. Only invoices whose `currency` matches the
-  argument count — a different-currency invoice is excluded, never summed
-  in regardless. `paid` invoices go in `paid_total`; everything else left
-  (`sent`) goes in `unpaid_total`. Months with no matching invoices still
-  appear, with both totals `Decimal("0")`.
+- `InvoiceService.monthly_totals(organisation_id, currency, months=12)`
+  buckets every non-`draft`, non-`void` invoice **belonging to that
+  organisation** (not filtered by account) by the calendar month of
+  `issue_date` (when it was created, not `due_date`/`created_at`'s
+  time-of-day), for the trailing `months` months ending with the current
+  one. Only invoices whose `currency` matches the argument count — a
+  different-currency invoice is excluded, never summed in regardless.
+  `paid` invoices go in `paid_total`; everything else left (`sent`) goes in
+  `unpaid_total`. Months with no matching invoices still appear, with both
+  totals `Decimal("0")`.
+- Fetching another organisation's `Account`/`Quote`/`Invoice` by id raises
+  `NotFound` (`AccountService.get_account`/`QuoteService.get_quote`/
+  `InvoiceService.get_invoice` all filter by `organisation_id` at the
+  storage layer, not just by id) — the same error as "doesn't exist",
+  deliberately, so a cross-tenant lookup never reveals *that* a given id
+  belongs to someone else, only that it isn't visible to you.
+
+## Multi-tenancy
+
+`Organisation` is the tenant boundary (see its docstring in `models.py`).
+Every `Account`/`Quote`/`Invoice` create/get/list/update call takes an
+`organisation_id` — there is no "admin" bypass anywhere in `core.py`.
+
+- **API**: `api/app.py`'s `get_organisation_id` dependency resolves it from
+  the authenticated user (`Depends(get_current_user)` →
+  `application.organisations.get_or_create_for_user(user.id)`), auto-creating
+  an `Organisation` the first time that user hits any domain route. A
+  client never sends or sees an `organisation_id` — it's entirely
+  server-side, deliberately absent from every request/response schema in
+  `api/schemas.py`.
+- **CLI**: has no login session to resolve a user from, so `--user-id` is a
+  **required** option on every account/quote/invoice command (a breaking
+  change from before `Organisation` existed, where these commands took no
+  user context at all) — see `docs/development.md`'s CLI section.
+- **Currently**: exactly one login user per `Organisation`
+  (`organisation_members.user_id` is `UNIQUE`) — auto-created, never
+  explicitly named by a user today (see `OrganisationService.get_or_create_for_user`'s
+  `default_name`). "Multiple users per organisation" (inviting a
+  colleague to share one business's data) is deliberately future work: the
+  schema shape doesn't need to change for it, only dropping that `UNIQUE`
+  constraint and adding an invite/add-member flow — see `docs/roadmap.md`.
+- **Migrating from a pre-`Organisation` database**: `accounts`/`quotes`/
+  `invoices.organisation_id` is nullable and **not backfilled** — there's
+  no way to know which login user should adopt a pre-existing row, so a
+  database created before this feature simply has all its old data become
+  invisible (every query is `WHERE organisation_id = ?`, and `NULL` never
+  matches). For a local/dev database, the practical fix is to delete
+  `invoice_system.db` (and, if you want a clean login too, `auth.db`) and
+  re-run `invoice-system-cli init-db`.
 
 ## Login accounts (not this schema)
 

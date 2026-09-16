@@ -1,7 +1,14 @@
 from pathlib import Path
 
 from .clock import Clock, system_clock
-from .core import AccountService, BusinessProfileService, InvoiceService, QuoteService, StatsService
+from .core import (
+    AccountService,
+    BusinessProfileService,
+    InvoiceService,
+    OrganisationService,
+    QuoteService,
+    StatsService,
+)
 from .repository import Repository
 from .storage.sqlite_repository import SqliteRepository
 
@@ -10,6 +17,7 @@ class Application:
     def __init__(
         self,
         repository: Repository,
+        organisations: OrganisationService,
         accounts: AccountService,
         quotes: QuoteService,
         invoices: InvoiceService,
@@ -17,6 +25,7 @@ class Application:
         stats: StatsService,
     ) -> None:
         self.repository = repository
+        self.organisations = organisations
         self.accounts = accounts
         self.quotes = quotes
         self.invoices = invoices
@@ -38,6 +47,7 @@ def build_application(db_path: str | Path, clock: Clock = system_clock) -> Appli
     repository.migrate()
     return Application(
         repository=repository,
+        organisations=OrganisationService(repository, clock=clock),
         accounts=AccountService(repository, clock=clock),
         quotes=QuoteService(repository, clock=clock),
         invoices=InvoiceService(repository, clock=clock),

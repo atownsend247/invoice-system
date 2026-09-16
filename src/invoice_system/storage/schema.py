@@ -107,4 +107,95 @@ MIGRATIONS: list[str] = [
     ALTER TABLE quote_line_items ADD COLUMN tax_rate TEXT NOT NULL DEFAULT '0';
     ALTER TABLE invoice_line_items ADD COLUMN tax_rate TEXT NOT NULL DEFAULT '0';
     """,
+    """
+    -- The tenant boundary - see CLAUDE.md and models.py's Organisation
+    -- docstring. user_id is sessionkit's User.id, same cross-database
+    -- plain-column reasoning as business_profiles.user_id: not an
+    -- enforced FK, lives in the separate auth.db. UNIQUE on user_id
+    -- enforces "one organisation per user" for now; multiple users
+    -- sharing one organisation later means dropping that constraint, not
+    -- restructuring this table.
+    CREATE TABLE IF NOT EXISTS organisations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS organisation_members (
+        organisation_id INTEGER NOT NULL REFERENCES organisations(id),
+        user_id INTEGER NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (organisation_id, user_id)
+    );
+
+    -- Nullable, not NOT NULL - there's no meaningful default organisation
+    -- to backfill existing rows with (unlike migration 2's tax_rate),  and
+    -- SQLite can't add a NOT NULL column without one. A pre-migration row
+    -- keeps NULL and becomes invisible under the new per-organisation
+    -- scoping (nothing dereferences accounts.organisation_id and hopes for
+    -- a real Organisation without going through that scoping first) - see
+    -- CLAUDE.md for why this was a deliberate "reseed, don't migrate"
+    -- choice rather than guessing which user should adopt old rows.
+    ALTER TABLE accounts ADD COLUMN organisation_id INTEGER;
+    ALTER TABLE quotes ADD COLUMN organisation_id INTEGER;
+    ALTER TABLE invoices ADD COLUMN organisation_id INTEGER;
+    """,
+    """
+    -- Q-0001/INV-0001 are now per-organisation (see migration 3 and
+    -- next_quote_number/next_invoice_number's per-organisation counter
+    -- key) - two organisations' first quote/invoice can legitimately
+    -- both be "Q-0001"/"INV-0001". The column-level UNIQUE on
+    -- quotes.number/invoices.number from the original baseline is now
+    -- wrong (globally unique), but SQLite can't ALTER a column to drop a
+    -- UNIQUE constraint - this is a rebuild-and-swap, same pattern as the
+    -- CLAUDE.md-documented migration that relaxed a NOT NULL. Row ids are
+    -- carried across explicitly so invoice_line_items/quote_line_items
+    -- (and invoices.quote_id) keep pointing at the same rows. A
+    -- composite UNIQUE index on (organisation_id, number) replaces the
+    -- old column constraint; SQLite treats UNIQUE as NULL-distinct, so
+    -- multiple draft (number IS NULL) rows still never collide, same as
+    -- before.
+    CREATE TABLE quotes_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        organisation_id INTEGER,
+        account_id INTEGER NOT NULL REFERENCES accounts(id),
+        number TEXT,
+        status TEXT NOT NULL,
+        currency TEXT NOT NULL,
+        issue_date TEXT NOT NULL,
+        expiry_date TEXT,
+        created_at TEXT NOT NULL
+    );
+    INSERT INTO quotes_new (
+        id, organisation_id, account_id, number, status, currency, issue_date, expiry_date, created_at
+    )
+    SELECT id, organisation_id, account_id, number, status, currency, issue_date, expiry_date, created_at
+    FROM quotes;
+    DROP TABLE quotes;
+    ALTER TABLE quotes_new RENAME TO quotes;
+    CREATE UNIQUE INDEX idx_quotes_organisation_number ON quotes (organisation_id, number);
+
+    CREATE TABLE invoices_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        organisation_id INTEGER,
+        account_id INTEGER NOT NULL REFERENCES accounts(id),
+        quote_id INTEGER REFERENCES quotes(id),
+        number TEXT,
+        status TEXT NOT NULL,
+        currency TEXT NOT NULL,
+        issue_date TEXT NOT NULL,
+        due_date TEXT,
+        created_at TEXT NOT NULL
+    );
+    INSERT INTO invoices_new (
+        id, organisation_id, account_id, quote_id, number, status, currency, issue_date, due_date,
+        created_at
+    )
+    SELECT id, organisation_id, account_id, quote_id, number, status, currency, issue_date, due_date,
+        created_at
+    FROM invoices;
+    DROP TABLE invoices;
+    ALTER TABLE invoices_new RENAME TO invoices;
+    CREATE UNIQUE INDEX idx_invoices_organisation_number ON invoices (organisation_id, number);
+    """,
 ]

@@ -205,5 +205,42 @@
       beyond the one SSH credential — see `docs/deployment.md`'s "Not done
       yet".
 
+## Phase 13 — Per-user data isolation (multi-tenancy) (done)
+
+- [x] `Organisation` model + `organisation_members` join table (`UNIQUE` on
+      `user_id`), the tenant boundary — see `data-model.md`'s
+      "Multi-tenancy". Migration 3 (adds both, plus nullable
+      `organisation_id` on `accounts`/`quotes`/`invoices`) and migration 4
+      (rescopes `Quote.number`/`Invoice.number` uniqueness from a global
+      column constraint to a composite `(organisation_id, number)` index —
+      numbering is per-organisation, so two organisations' first
+      quote/invoice can both be `Q-0001`/`INV-0001`).
+- [x] `OrganisationService.get_or_create_for_user` — auto-creates an
+      `Organisation` the first time a login user needs one; atomic at the
+      storage layer (`SqliteRepository.add_organisation_member` does a
+      locked check-then-insert) so two concurrent first-ever requests for
+      the same brand-new user can't crash each other.
+- [x] `AccountService`/`QuoteService`/`InvoiceService`/`StatsService`: every
+      create/get/list/update method (and `monthly_totals`) now takes
+      `organisation_id`; fetching another organisation's row by id is a 404
+      (`NotFound`), same as a nonexistent one, deliberately — never a
+      distinct 403 that would confirm the id belongs to someone else.
+- [x] API: `organisation_id` resolved server-side from the Bearer token
+      (`api/app.py`'s `get_organisation_id` dependency) — never part of any
+      request/response schema.
+- [x] CLI: `--user-id` is now a **required** option on every
+      account/quote/invoice command (breaking change) — the CLI has no
+      login session to resolve an organisation from.
+- [x] `demo_data.py` seeds into the demo user's own auto-created
+      `Organisation`, same as any other user.
+- [x] Fixed the bug that prompted this: every login user previously saw the
+      first-ever created user's data (no tenant scoping existed at all).
+
+Not done: **multiple users sharing one organisation** (inviting a colleague
+to see the same business's data) — the schema is deliberately already
+shaped for it (`organisation_members` is a proper join table), so this is
+expected to be "drop the `UNIQUE` on `user_id`, add an invite/add-member
+flow," not a restructuring, whenever it's actually needed.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

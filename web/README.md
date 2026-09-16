@@ -103,8 +103,9 @@ failure; a failed run's trace/screenshot land in `test-results/` (gitignored).
   derivation logic is covered at the unit level instead
   (`src/pages/HomePage.test.ts`). Its monthly-totals-chart test is
   similarly deliberate about what it does and doesn't assert: the chart
-  sums invoices **system-wide**, not per-account, so concurrent tests all
-  contribute to the same buckets — it checks structure (12 months, a
+  sums invoices across the whole test login user's organisation, not
+  per-account, so concurrent tests all contribute to the same buckets — it
+  checks structure (12 months, a
   currency-shaped group name) and that paying an invoice removes it from
   Outstanding, not exact totals (see `CLAUDE.md`'s "Deliberately not
   exact" gotcha for the specific cross-file currency race this avoids).

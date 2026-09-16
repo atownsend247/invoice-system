@@ -31,9 +31,9 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | POST | `/auth/login` | public | `{email, password, otp?}` → `{token, expires_at, user}`. `401` on bad credentials or a missing/invalid TOTP code. |
 | GET | `/auth/me` | required | The current user for this token. |
 | POST | `/auth/logout` | required | Revoke the current token. `204`. |
-| POST | `/accounts` | required | Create an account (business_name, email, address required; contact_name, phone optional). |
-| GET | `/accounts` | required | List all accounts. |
-| GET | `/accounts/{id}` | required | Fetch one account. 404 if missing. |
+| POST | `/accounts` | required | Create an account in the current user's organisation (business_name, email, address required; contact_name, phone optional). |
+| GET | `/accounts` | required | List accounts in the current user's organisation. |
+| GET | `/accounts/{id}` | required | Fetch one account. 404 if missing *or* it belongs to a different organisation (see `docs/data-model.md`'s "Multi-tenancy"). |
 | PUT | `/accounts/{id}` | required | Replace it (same required/optional fields as create — a full replace, not a partial patch). 404 if missing, 422 on a blank required field. |
 | POST | `/quotes` | required | Create a draft quote (`account_id` required; `currency` defaults `USD`; `expiry_date` optional). |
 | GET | `/quotes` | required | List quotes, optionally filtered by `?account_id=`. |
@@ -47,28 +47,37 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | POST | `/invoices/{id}/send` | required | Assign an invoice number and due date (issue date + the current user's `payment_terms_days`, default 30), transition `draft → sent`. 422 if no line items. |
 | POST | `/invoices/{id}/void` | required | Transition to `void`. 409 if already `paid`. |
 | POST | `/invoices/{id}/pay` | required | Transition `sent → paid`. 409 if not currently `sent` (covers `draft`, `void`, and already-`paid`). |
-| GET | `/invoices/monthly-totals` | required | Registered *before* `/invoices/{id}` (see `CLAUDE.md`'s architecture rules on route ordering). `{currency, months: [{month, paid_total, unpaid_total}]}` for the trailing 12 months, in the current user's business profile `currency`. An invoice in any other currency isn't counted. |
+| GET | `/invoices/monthly-totals` | required | Registered *before* `/invoices/{id}` (see `CLAUDE.md`'s architecture rules on route ordering). `{currency, months: [{month, paid_total, unpaid_total}]}` for the trailing 12 months, scoped to the current user's organisation, in the current user's business profile `currency`. An invoice in any other currency isn't counted. |
 | GET | `/invoices/{id}/pdf` | required | Render the invoice as a PDF (`application/pdf`), with a "From" section for the current user's business name/address if set. |
 | GET | `/settings/business-profile` | required | The current user's own profile. Never 404s — returns sensible defaults (`payment_terms_days: 30`, `currency: "GBP"`, everything else blank/`null`) if nothing's been saved yet. |
 | PUT | `/settings/business-profile` | required | Upsert it (`first_name`, `last_name`, `business_name`, `payment_terms_days` required; `currency` defaults `"GBP"`; `title`, `address_line1`, `address_line2`, `town_or_city`, `county`, `postcode`, `utr`, `vat_number` optional — each address line independently optional). 422 on a blank required field, `payment_terms_days <= 0`, or a blank `currency`. |
-| GET | `/stats` | required | All-time, system-wide counters for the home dashboard (currently `{account_count}`). |
+| GET | `/stats` | required | Counters for the home dashboard, scoped to the current user's organisation (currently `{account_count}`). |
+
+Every account/quote/invoice route above resolves the caller's
+`organisation_id` server-side (`api/app.py`'s `get_organisation_id`
+dependency: `Bearer token → user → application.organisations.get_or_create_for_user(user.id)`,
+auto-creating an `Organisation` on a user's first domain request) — it is
+never sent or returned in a request/response body. See
+`docs/data-model.md`'s "Multi-tenancy" section.
 
 The CLI (`invoice-system-cli`) mirrors the account/quote/invoice routes
 one-for-one over the same storage, but is **not** behind login — it's a
-local, trusted tool (see `CLAUDE.md`). Where these routes resolve "which
-user" from the Bearer token, the CLI takes an explicit `--user-id` instead:
-`settings show`/`settings set` (no API equivalent by path, but the same
-`BusinessProfileService` underneath), `invoice send --user-id`, `quote
-pdf`/`invoice pdf --user-id`, `invoice monthly-totals --user-id` (mirrors
-`GET /invoices/monthly-totals`). Omit `--user-id` and those commands behave
-exactly as if no profile existed (fixed 30-day due date, no "From" section);
-`invoice monthly-totals` requires it, since there's no other way to resolve
-a currency to filter by. `invoice pay <id>` (mirrors `POST
-/invoices/{id}/pay`), `account update <id>` (mirrors `PUT /accounts/{id}`),
-`quote add-item --tax-rate` (mirrors the `tax_rate` field on `POST
-/quotes/{id}/line-items`, also default `0`), and `stats` (mirrors `GET
-/stats`) need no `--user-id` — none of them resolve "current user" from
-anything. `init-db` has no API equivalent at all (there's no `POST
+local, trusted tool (see `CLAUDE.md`). Where the API resolves both "which
+user" and "which organisation" from the Bearer token, the CLI has no
+session to resolve either from, so **every** `account`/`quote`/`invoice`
+command takes a **required** `--user-id` (`account create/list/update`,
+`quote create/add-item/send/convert/pdf`, `invoice
+list/send/void/pay/monthly-totals/pdf`, `stats`) purely to resolve
+`organisation_id` (`OrganisationService.get_or_create_for_user`, same
+auto-create-on-first-use as the API) — this is a breaking change from
+before `Organisation` existed, when these commands took no user context at
+all. `quote pdf`/`invoice pdf --user-id` and `invoice send --user-id` also
+reuse that same user id for their pre-existing purpose (the PDF "From"
+section, the payment-terms-driven due date) — `settings show`/`settings
+set --user-id` (no API equivalent by path, but the same
+`BusinessProfileService` underneath) are unaffected, since `BusinessProfile`
+stays per-user, not per-organisation (see `docs/data-model.md`'s
+"Multi-tenancy"). `init-db` has no API equivalent at all (there's no `POST
 /accounts/db` — bootstrapping is CLI-only) and seeds demo data by default;
 `--no-demo` skips it. See `docs/data-model.md`'s "Demo data" section and
 `CLAUDE.md`.
