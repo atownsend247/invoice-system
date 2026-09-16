@@ -1,5 +1,11 @@
 # Forward-only migrations. Never edit an entry once it has shipped -
 # append a new one instead. Applied in order, tracked via PRAGMA user_version.
+#
+# Flattened to a single baseline on 2026-09-16: no real database had been
+# started against the previous 5-migration history yet, so there was no
+# existing data any later migration needed to carry forward - see CLAUDE.md.
+# From here on, a schema change is a new entry appended to this list, not an
+# edit to the one below.
 MIGRATIONS: list[str] = [
     """
     CREATE TABLE IF NOT EXISTS accounts (
@@ -57,81 +63,37 @@ MIGRATIONS: list[str] = [
         name TEXT PRIMARY KEY,
         value INTEGER NOT NULL
     );
-    """,
-    """
+
     -- user_id is sessionkit's User.id - a plain column, not an enforced
     -- foreign key, since it lives in a separate SQLite file/database. See
     -- CLAUDE.md and data-model.md for why, and the orphaning consequence.
+    --
+    -- title/address_line1/address_line2/town_or_city/county/postcode/utr/
+    -- vat_number are each independently optional (nullable, no "all or
+    -- nothing" rule); first_name/last_name/business_name are required
+    -- (NOT NULL DEFAULT '', enforced as non-blank in BusinessProfileService,
+    -- never in storage). address_line1/2/town_or_city/county/postcode follow
+    -- the UK GOV.UK Design System's standard address pattern. currency is
+    -- the *reporting* currency the home dashboard's monthly-totals chart
+    -- sums in, independent of the currency chosen per quote/invoice.
     CREATE TABLE IF NOT EXISTS business_profiles (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL UNIQUE,
-        business_name TEXT NOT NULL DEFAULT '',
-        business_address TEXT NOT NULL DEFAULT '',
-        payment_terms_days INTEGER NOT NULL DEFAULT 30,
-        utr TEXT,
-        vat_number TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-    );
-    """,
-    """
-    -- Adds title/first_name/last_name and relaxes business_address to
-    -- optional. SQLite can't ALTER a column's NOT NULL constraint in place,
-    -- so this is the documented rebuild-and-swap: new table, copy existing
-    -- rows across (NULLIF turns any stored '' address into a real NULL,
-    -- matching what "optional" means for every other nullable field here),
-    -- drop the old table, rename the new one into its place.
-    CREATE TABLE business_profiles_new (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL UNIQUE,
         title TEXT,
         first_name TEXT NOT NULL DEFAULT '',
         last_name TEXT NOT NULL DEFAULT '',
         business_name TEXT NOT NULL DEFAULT '',
-        business_address TEXT,
+        address_line1 TEXT,
+        address_line2 TEXT,
+        town_or_city TEXT,
+        county TEXT,
+        postcode TEXT,
         payment_terms_days INTEGER NOT NULL DEFAULT 30,
+        currency TEXT NOT NULL DEFAULT 'GBP',
         utr TEXT,
         vat_number TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     );
-
-    INSERT INTO business_profiles_new
-        (id, user_id, business_name, business_address, payment_terms_days,
-         utr, vat_number, created_at, updated_at)
-    SELECT id, user_id, business_name, NULLIF(business_address, ''), payment_terms_days,
-           utr, vat_number, created_at, updated_at
-    FROM business_profiles;
-
-    DROP TABLE business_profiles;
-    ALTER TABLE business_profiles_new RENAME TO business_profiles;
-    """,
-    """
-    -- Splits the single business_address into UK GOV.UK Design System-style
-    -- address fields (address_line1/2, town_or_city, county, postcode) -
-    -- see CLAUDE.md and data-model.md. Unlike migration 3, this doesn't need
-    -- a rebuild-and-swap: adding nullable columns and dropping a nullable
-    -- one are both plain ALTER TABLE operations SQLite supports directly.
-    -- The old free-text address can't be parsed into structured fields
-    -- automatically, so existing data moves into address_line1 rather than
-    -- being silently dropped - a person can re-split it themselves next
-    -- time they visit Settings.
-    ALTER TABLE business_profiles ADD COLUMN address_line1 TEXT;
-    ALTER TABLE business_profiles ADD COLUMN address_line2 TEXT;
-    ALTER TABLE business_profiles ADD COLUMN town_or_city TEXT;
-    ALTER TABLE business_profiles ADD COLUMN county TEXT;
-    ALTER TABLE business_profiles ADD COLUMN postcode TEXT;
-
-    UPDATE business_profiles SET address_line1 = business_address WHERE business_address IS NOT NULL;
-
-    ALTER TABLE business_profiles DROP COLUMN business_address;
-    """,
-    """
-    -- Adds a reporting currency to business_profiles (see CLAUDE.md and
-    -- data-model.md: this is the currency the home dashboard's monthly
-    -- totals are summed in, independent of the currency chosen per
-    -- quote/invoice). A constant-default ADD COLUMN is a plain ALTER TABLE
-    -- SQLite supports directly, like migration 4 - no rebuild needed.
-    ALTER TABLE business_profiles ADD COLUMN currency TEXT NOT NULL DEFAULT 'GBP';
     """,
 ]

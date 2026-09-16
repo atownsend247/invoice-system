@@ -244,28 +244,25 @@ Three separate things are easy to conflate here — don't:
   baseline schema. Append a numbered entry to a `MIGRATIONS` list; a
   migration runner applies whatever's pending and tracks progress via
   `PRAGMA user_version`. Existing data must survive every migration — write
-  it as if a production database will run it unattended. Two reference
-  examples, both in `tests/storage/test_sqlite_repository.py`, each
-  building a database frozen at an earlier migration and asserting the next
-  one doesn't lose data — write that same style of test for any migration
-  that reshapes an existing table, not just ones that add a new one:
-  - Migration 3 (making `business_address` optional): SQLite can't `ALTER
-    COLUMN` to relax a `NOT NULL` constraint in place, so this is a
-    rebuild-and-swap — new table with the target shape, `INSERT ...
-    SELECT` the old data across (`NULLIF(col, '')` where an old
-    required-with-default-`''` column becomes genuinely nullable), `DROP`
-    the old table, `RENAME` the new one into its place.
-  - Migration 4 (splitting `business_address` into `address_line1`/
-    `address_line2`/`town_or_city`/`county`/`postcode`): adding nullable
-    columns and dropping a nullable one are both plain `ALTER TABLE`
-    SQLite supports directly (no rebuild needed) — but a single free-text
-    address can't be parsed into structured fields automatically, so the
-    migration moves the old value into `address_line1` wholesale rather
-    than silently discarding it or guessing at a split.
-  - Migration 5 (adding `business_profiles.currency`): the simplest case —
-    `ADD COLUMN ... NOT NULL DEFAULT 'GBP'` in one statement, no rebuild
-    and no data-carrying logic needed, since a constant default backfills
-    every existing row automatically.
+  it as if a production database will run it unattended. For a migration
+  that reshapes an existing table (not just adds a new one), write a test
+  in `tests/storage/test_sqlite_repository.py` that builds a database
+  frozen at the *previous* migration, inserts a row in the old shape, runs
+  `migrate()`, and asserts the data survived in the new shape — two
+  patterns worth knowing before writing one:
+  - Relaxing a `NOT NULL` constraint: SQLite can't `ALTER COLUMN` a
+    constraint in place, so this needs a rebuild-and-swap — new table with
+    the target shape, `INSERT ... SELECT` the old data across (`NULLIF`
+    where a required-with-default-`''` column becomes genuinely nullable),
+    `DROP` the old table, `RENAME` the new one into its place.
+  - Adding/dropping a nullable column, or adding one with a constant
+    default: both are plain `ALTER TABLE` statements SQLite supports
+    directly — no rebuild needed.
+  (`MIGRATIONS` was flattened to a single baseline entry on 2026-09-16 —
+  no real database had been started against the prior 5-migration history
+  yet, so there was nothing any later migration needed to carry forward.
+  Don't flatten it again once a real database exists somewhere; that's
+  exactly the scenario forward-only migrations exist to handle instead.)
 - Storage is a single shared SQLite connection/file — **serialise every
   access on a lock** inside the repository implementation rather than
   assuming the caller will.

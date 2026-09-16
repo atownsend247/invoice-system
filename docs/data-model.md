@@ -2,7 +2,10 @@
 
 **Status: implemented** (`src/invoice_system/models.py`,
 `storage/schema.py`). Keep this table in sync with the actual schema — this
-doc is read as ground truth.
+doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` is currently
+a single flattened baseline entry (see `CLAUDE.md`'s migrations gotcha) —
+schema changes from here on are new entries appended to that list, not
+edits to it.
 
 ## Entities
 
@@ -48,20 +51,6 @@ Invoice 1──* LineItem   (via invoice_line_items)
   when no row exists yet for that `user_id`. `save_profile` upserts: the
   first save for a `user_id` inserts, every save after that updates the
   same row (`created_at` untouched, `updated_at` bumped).
-- `business_address` was originally a single `NOT NULL DEFAULT ''` column
-  (migration 2); migration 3 relaxed it to nullable via a rebuild-and-swap,
-  since SQLite can't `ALTER COLUMN` a constraint in place — see the
-  migrations gotcha in `CLAUDE.md`. Any pre-migration-3 row's stored `''`
-  became `NULL` in the copy, not a literal empty string surviving forward.
-- Migration 4 later replaced that single `business_address` column with the
-  5 structured `address_line1`/`address_line2`/`town_or_city`/`county`/
-  `postcode` columns (plain `ADD COLUMN`/`DROP COLUMN`, no rebuild needed).
-  Any pre-migration-4 value moved wholesale into `address_line1`, unparsed —
-  see the migrations gotcha in `CLAUDE.md`.
-- Migration 5 added `business_profiles.currency` as a plain
-  `ADD COLUMN ... NOT NULL DEFAULT 'GBP'` — every pre-migration-5 row is
-  backfilled to `'GBP'` by the column default itself, no data-copying logic
-  needed (unlike migrations 3/4).
 - `InvoiceService.pay()` only transitions `sent → paid` — rejects `draft`
   (never sent, nothing to have been paid for), `void` (cancelled), and an
   already-`paid` invoice. Stricter than `void()`, which also allows `draft`.

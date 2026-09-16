@@ -112,9 +112,10 @@
 
 ## Phase 7 — Monthly totals chart (done)
 
-- [x] `BusinessProfile.currency` (migration 5, plain `ADD COLUMN ... NOT
-      NULL DEFAULT 'GBP'`) — the *reporting* currency the chart below sums
-      in, independent of any quote/invoice's own `currency`. Surfaced in
+- [x] `BusinessProfile.currency` (`NOT NULL DEFAULT 'GBP'`, part of the
+      flattened baseline schema — see `CLAUDE.md`'s migrations gotcha) —
+      the *reporting* currency the chart below sums in, independent of any
+      quote/invoice's own `currency`. Surfaced in
       the "Payment and tax settings" section of `web/`'s settings page and
       pre-fills the "New quote" form's currency field (previously a
       hardcoded `'USD'` default).
