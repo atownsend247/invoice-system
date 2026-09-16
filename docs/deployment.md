@@ -34,40 +34,23 @@ Not automated by this pipeline — do this once per container:
    directly, you'll need `pct exec <vmid> -- <command>` wrapping instead of
    the direct `ssh` calls in `deploy/deploy.sh` — a small adjustment to
    that script, not the Jenkinsfile.
-2. Inside the container, install: `nginx`, `curl`, and a `deploy` user (or
-   use an existing account, e.g. `root` — whatever you set `DEPLOY_USER`
-   to in the Jenkinsfile):
+2. Inside the container, install: `nginx`, `curl`, and a `deploy` user:
    ```
    apt update && apt install -y nginx curl rsync
    useradd -m -s /bin/bash deploy
    ```
-3. As `$DEPLOY_USER`, install `uv` (same installer as the Jenkins agent):
-   `curl -LsSf https://astral.sh/uv/install.sh | sh`.
-4. **Enable password login for `$DEPLOY_USER` and set its password** —
-   this pipeline authenticates with a username/password (via `sshpass`),
-   not an SSH key (see `deploy/deploy.sh`):
-   ```
-   passwd <deploy-user>   # sets the password Jenkins will use to log in
-   ```
-   Most distros already allow password auth for an ordinary user
-   (`PasswordAuthentication yes` in `/etc/ssh/sshd_config`, usually the
-   default) — only edit that file if connections get refused. If
-   `DEPLOY_USER` is `root` (the Jenkinsfile's own placeholder value),
-   you'll also need `PermitRootLogin yes` there specifically — many
-   distros default to `PermitRootLogin prohibit-password`, which allows a
-   root SSH key but silently rejects a root password — then
-   `systemctl restart sshd`. Store that password as a Jenkins credential,
-   not a keypair — see "One-time Jenkins setup" below.
-5. Let `$DEPLOY_USER` restart the backend service and reload nginx without
-   a password, and nothing else:
+3. As the `deploy` user, install `uv` (same installer as the Jenkins
+   agent): `curl -LsSf https://astral.sh/uv/install.sh | sh`.
+4. Add the Jenkins SSH public key to `~deploy/.ssh/authorized_keys`
+   (create the matching private key as a Jenkins credential — see below).
+5. Let `deploy` restart the backend service and reload nginx without a
+   password, and nothing else:
    ```
    echo 'deploy ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart invoice-system-api, /usr/bin/systemctl reload nginx' \
        | sudo tee /etc/sudoers.d/invoice-system-deploy
    ```
-   (substitute your actual `$DEPLOY_USER` for `deploy` above, and confirm
-   the `systemctl` path with `which systemctl` on the container — distros
-   occasionally differ. Skip this step entirely if `DEPLOY_USER` is
-   `root`, which needs no sudo grant to run these commands itself.)
+   (confirm the `systemctl` path with `which systemctl` on the container —
+   distros occasionally differ.)
 6. Copy in the example service unit and nginx site config from `deploy/`
    in this repo, following the setup comments at the top of each file:
    `deploy/invoice-system-api.service` and
