@@ -6,8 +6,12 @@
 // pinned to the same version as web/.node-version - see CLAUDE.md's Node
 // version gotcha for why that pin matters. Python/uv are bootstrapped
 // inline (see the Backend stage) rather than assumed pre-installed on the
-// agent. See docs/deployment.md for the one-time Jenkins/container setup
-// this pipeline assumes, and what each DEPLOY_* variable below means.
+// agent. The Deploy stage authenticates with a username/password (via
+// `sshpass`, not the SSH Agent plugin - see deploy/deploy.sh), so the
+// Jenkins agent itself needs `sshpass` installed (a one-time, manual,
+// sudo-requiring step - see docs/deployment.md). See docs/deployment.md
+// for the one-time Jenkins/container setup this pipeline assumes, and
+// what each DEPLOY_* variable below means.
 
 pipeline {
     agent any
@@ -25,7 +29,10 @@ pipeline {
         // see docs/deployment.md --
         DEPLOY_HOST        = '192.168.71.25'
         DEPLOY_USER        = 'root'
-        DEPLOY_SSH_CRED_ID = 'invoices-lxc-ssh'
+        // A Jenkins "Secret text" credential holding just the deploy
+        // password (DEPLOY_USER above supplies the username) - see the
+        // Deploy stage below and docs/deployment.md.
+        DEPLOY_CRED_ID     = 'invoices-lxc-password'
         BACKEND_DIR        = '/opt/invoice-system'
         FRONTEND_DIR       = '/var/www/invoice-system'
         BACKEND_SERVICE    = 'invoice-system-api'
@@ -141,7 +148,11 @@ pipeline {
                 expression { "${env.GIT_LOCAL_BRANCH}" == 'main' }
             }
             steps {
-                sshagent(credentials: [env.DEPLOY_SSH_CRED_ID]) {
+                // Binds straight to $SSHPASS, not a differently-named
+                // variable - `sshpass -e` (used throughout deploy.sh)
+                // reads the password from that exact env var name by
+                // convention, so no renaming step is needed in between.
+                withCredentials([string(credentialsId: env.DEPLOY_CRED_ID, variable: 'SSHPASS')]) {
                     sh 'chmod +x deploy/deploy.sh && ./deploy/deploy.sh'
                 }
             }
