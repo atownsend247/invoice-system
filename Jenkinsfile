@@ -152,9 +152,8 @@ pipeline {
                 // variable - `sshpass -e` (used throughout deploy.sh)
                 // reads the password from that exact env var name by
                 // convention, so no renaming step is needed in between.
-                withCredentials([string(credentialsId: env.DEPLOY_CRED_ID, variable: 'SSHPASS')]) {
                     sh 'chmod +x deploy/deploy.sh && ./deploy/deploy.sh'
-                }
+
             }
         }
     }
