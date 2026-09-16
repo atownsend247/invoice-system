@@ -108,7 +108,10 @@ Three separate things are easy to conflate here — don't:
   `localhost` over `127.0.0.1` when hitting it directly). `VITE_API_BASE_URL`
   points it at the API (default `http://127.0.0.1:8000`). `npm test` /
   `npm run test:e2e` (Playwright; spins up its own throwaway backend + this
-  app, see `web/README.md`) / `npm run build` in `web/`.
+  app, see `web/README.md`) / `npm run build` in `web/`. `npm run dev:lan`
+  (`vite --host`) plus `uvicorn ... --host 0.0.0.0` and a LAN
+  `VITE_API_BASE_URL` serves both to other devices on the same network —
+  opt-in, not the default; see `docs/development.md`.
 - CI: `.github/workflows/ci.yml` — `backend`, `frontend`, `e2e` (the last
   gated on the first two passing), on every push/PR. See
   `docs/testing-and-ci.md`.

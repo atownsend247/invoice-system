@@ -45,6 +45,20 @@ curl -s -X POST http://127.0.0.1:8000/auth/login \
 # -> {"token": "...", "expires_at": "...", "user": {...}}
 ```
 
+To reach the API from another device on the same network (a phone, another
+computer) instead of just this machine, bind it to every interface:
+
+```
+uv run uvicorn invoice_system.api.app:app --reload --host 0.0.0.0
+```
+
+`CORSMiddleware` already allows every origin by default (see `CLAUDE.md`),
+so nothing else needs to change on the API side for a browser on another
+device to call it — but anyone else on the same network/wifi can reach it
+too for as long as it's running, not just your own other devices. Only do
+this on a network you trust. Combine with `npm run dev:lan` below so the
+web client is reachable from other devices too.
+
 ## Use the CLI
 
 ```
@@ -126,6 +140,22 @@ hang. It talks to the API at `VITE_API_BASE_URL` (default
 your API is elsewhere. Log in with the demo user (`demo@example.test` /
 `demo-password-123`, if `init-db` ran without `--no-demo`) or one created
 via `sessionkit add`; there is no signup screen.
+
+To reach the web client from another device on the same network, use
+`npm run dev:lan` instead of `npm run dev` (it's the same `vite` command
+with `--host` added, which binds every interface instead of just
+`localhost` — Vite then prints both the `Local` and `Network` URLs to use).
+You also need `VITE_API_BASE_URL` set to this machine's LAN address, not
+`127.0.0.1` — another device resolves `127.0.0.1` to itself, not to your
+machine:
+
+```
+VITE_API_BASE_URL=http://192.168.1.23:8000 npm run dev:lan
+```
+
+(with the backend also started with `--host 0.0.0.0`, see above). Same
+caveat: anyone on the network can reach it while it's running, so only do
+this somewhere you trust.
 
 ## Running tests
 

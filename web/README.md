@@ -19,6 +19,12 @@ see `.env.example`. Start the backend first (`../docs/development.md`),
 which by default seeds a demo login (`demo@example.test` /
 `demo-password-123`) plus a year of demo data; there is no signup screen.
 
+`npm run dev:lan` (same as `dev`, plus Vite's `--host`) binds every network
+interface instead of just `localhost`, so another device on the same
+network can reach it — set `VITE_API_BASE_URL` to this machine's LAN
+address first and start the API with `--host 0.0.0.0` too. See
+`../docs/development.md` for the full walkthrough and the security caveat.
+
 ## Test / build
 
 ```
