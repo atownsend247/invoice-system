@@ -23,9 +23,9 @@ pipeline {
 
         // -- Proxmox LXC deploy target - fill in for your environment,
         // see docs/deployment.md --
-        DEPLOY_HOST        = 'invoice.lxc.example.internal'
-        DEPLOY_USER        = 'deploy'
-        DEPLOY_SSH_CRED_ID = 'proxmox-lxc-ssh'
+        DEPLOY_HOST        = '192.168.71.25'
+        DEPLOY_USER        = 'root'
+        DEPLOY_SSH_CRED_ID = 'invoices-lxc-ssh'
         BACKEND_DIR        = '/opt/invoice-system'
         FRONTEND_DIR       = '/var/www/invoice-system'
         BACKEND_SERVICE    = 'invoice-system-api'
