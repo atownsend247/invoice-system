@@ -297,13 +297,16 @@ Four separate things are easy to conflate here — don't:
   partial patch — same required fields (`business_name`/`email`/`address`)
   and validation as `create_account`, mirroring `save_business_profile`'s
   PUT semantics rather than inventing PATCH-style partial updates. `PUT
-  /accounts/{id}` and CLI `account update <id>`. The web UI edits a row
-  in place (`AccountsPage.tsx`'s `AccountForm`, shared between "New
-  account" and "Edit") rather than a separate `/accounts/:id` detail/edit
-  route — there's no `AccountDetailPage` at all, unlike quotes/invoices;
-  don't add one without being asked, the inline pattern was a deliberate
-  match for how accounts are already listed (a flat table), not an
-  oversight.
+  /accounts/{id}` and CLI `account update <id>`. The web UI has a
+  `/accounts/:id` detail page (`AccountDetailPage.tsx`), like quotes/
+  invoices: it shows the account's own fields (an inline "Edit" toggle
+  reveals the same `AccountForm` used for "New account" on
+  `AccountsPage.tsx`, extracted to `components/AccountForm.tsx` so both
+  pages share it) plus that account's quotes and invoices, both listed
+  newest-issued-first. `AccountsPage.tsx`'s list-row "Edit" is a `Link` to
+  this page, not an inline row-editing form; creating a new account there
+  also navigates straight to its detail page on success, rather than
+  staying on the list.
 - `StatsService.get_stats(organisation_id)` is the all-time counters,
   scoped to one organisation, behind the home dashboard's "All-time stats"
   section (`GET /stats`, CLI `stats`) — currently just `account_count`. A

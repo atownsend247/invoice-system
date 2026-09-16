@@ -1,6 +1,7 @@
 import { Route, Routes } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { ProtectedRoute } from './components/ProtectedRoute'
+import { AccountDetailPage } from './pages/AccountDetailPage'
 import { AccountsPage } from './pages/AccountsPage'
 import { HomePage } from './pages/HomePage'
 import { InvoiceDetailPage } from './pages/InvoiceDetailPage'
@@ -19,6 +20,7 @@ export function App() {
         <Route element={<Layout />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/accounts" element={<AccountsPage />} />
+          <Route path="/accounts/:id" element={<AccountDetailPage />} />
           <Route path="/quotes" element={<QuotesPage />} />
           <Route path="/quotes/new" element={<QuoteNewPage />} />
           <Route path="/quotes/:id" element={<QuoteDetailPage />} />

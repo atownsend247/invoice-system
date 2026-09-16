@@ -143,10 +143,10 @@
       account doesn't exist. `PUT /accounts/{id}`, CLI `account update
       <id>`.
 - [x] `web/`: `AccountsPage.tsx`'s `NewAccountForm` generalised into
-      `AccountForm` (shared by create and edit), with a per-row "Edit"
-      button that swaps that row for the form in place, Save/Cancel — no
-      separate `/accounts/:id` route, matching the page's existing flat-list
-      convention rather than adding a detail page just for this.
+      `AccountForm` (shared by create and edit). Originally a per-row
+      "Edit" button that swapped that row for the form in place, no
+      separate `/accounts/:id` route — superseded by Phase 14's
+      `AccountDetailPage`, below.
 
 ## Phase 9 — Per-line VAT/tax rate (done)
 
@@ -241,6 +241,18 @@ to see the same business's data) — the schema is deliberately already
 shaped for it (`organisation_members` is a proper join table), so this is
 expected to be "drop the `UNIQUE` on `user_id`, add an invite/add-member
 flow," not a restructuring, whenever it's actually needed.
+
+## Phase 14 — Account detail page (done)
+
+- [x] `web/`: `AccountDetailPage.tsx` (`/accounts/:id`) — an account's own
+      fields (an "Edit" toggle reveals `AccountForm`, now extracted to
+      `components/AccountForm.tsx` so `AccountsPage.tsx` and this page
+      share one implementation instead of two), plus that account's quotes
+      and invoices, each listed newest-`issue_date`-first. Replaces Phase
+      8's inline per-row editing: `AccountsPage.tsx`'s list-row "Edit" is
+      now a `Link` to this page, and creating a new account there
+      navigates straight to its detail page on success rather than staying
+      on the list.
 
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

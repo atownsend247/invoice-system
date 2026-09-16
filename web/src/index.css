@@ -159,6 +159,22 @@ h2 {
   font-weight: 600;
 }
 
+.account-details {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.4rem 1rem;
+  margin: 0 0 1.5rem;
+}
+
+.account-details dt {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.account-details dd {
+  margin: 0;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
