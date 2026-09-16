@@ -41,8 +41,16 @@ Not automated by this pipeline — do this once per container:
    ```
 3. As the `deploy` user, install `uv` (same installer as the Jenkins
    agent): `curl -LsSf https://astral.sh/uv/install.sh | sh`.
-4. Add the Jenkins SSH public key to `~deploy/.ssh/authorized_keys`
-   (create the matching private key as a Jenkins credential — see below).
+4. Generate (or reuse) an SSH keypair for whichever OS user actually runs
+   the Jenkins agent process, and add its public key to
+   `~deploy/.ssh/authorized_keys` on the container. **No Jenkins
+   credential or plugin is involved** — `deploy/deploy.sh` runs plain
+   `ssh`/`rsync` and relies entirely on that agent user's own ambient SSH
+   setup (`~/.ssh/id_ed25519`, `~/.ssh/config`, an `ssh-agent` already
+   running for that account, etc.) to reach the container, exactly as
+   running those commands by hand from that account would. Verify it
+   directly before wiring up the pipeline — as the Jenkins agent's own
+   user, `ssh deploy@<host> whoami` should succeed with no prompt.
 5. Let `deploy` restart the backend service and reload nginx without a
    password, and nothing else:
    ```
@@ -62,30 +70,22 @@ Not automated by this pipeline — do this once per container:
 
 ## One-time Jenkins setup
 
-1. Plugins: **NodeJS Plugin**, **Credentials Binding Plugin**,
-   **Timestamper**, and **Workspace Cleanup** (all common; Credentials
-   Binding and JUnit result publishing are typically bundled with Jenkins
-   core/its default plugin set already — only install manually if
-   `withCredentials` isn't recognized in the Deploy stage).
+1. Plugins: **NodeJS Plugin**, **Timestamper**, and **Workspace Cleanup**
+   (all common; likely already installed on most Jenkins instances — JUnit
+   result publishing is bundled with Jenkins core, nothing extra needed
+   for that one). No SSH-specific plugin is required — the Deploy stage
+   shells out to plain `ssh`/`rsync` and relies on the agent's own ambient
+   SSH setup, not a Jenkins-managed credential (see "One-time Proxmox LXC
+   container setup" above).
 2. **Manage Jenkins → Tools** → add a NodeJS installation named exactly
    `NodeJS 24.21.0` (matching `web/.node-version` — see CLAUDE.md's Node
    version gotcha for why the pin matters; update both together if you
    bump it).
-3. Install `sshpass` on the Jenkins **agent** (not the controller, unless
-   they're the same machine) — e.g. `apt-get install sshpass` on
-   Debian/Ubuntu. `deploy/deploy.sh` shells out to it for password-based
-   SSH/rsync and fails fast with a clear message if it's missing.
-4. **Manage Jenkins → Credentials** → add the deploy password as a
-   **"Secret text"** credential (not "Username with password" — the
-   username lives in the Jenkinsfile's own `DEPLOY_USER`, not the
-   credential, so a plain secret string is all that's needed). Give it the
-   ID `invoices-lxc-password` (or change `DEPLOY_CRED_ID` in the
-   Jenkinsfile to match whatever ID you actually used).
-5. Create a **Multibranch Pipeline** job pointed at this repo (the
+3. Create a **Multibranch Pipeline** job pointed at this repo (the
    Jenkinsfile's `when { branch 'main' }` deploy gate assumes
    `env.BRANCH_NAME` is populated, which only a Multibranch job — not a
    plain single-branch Pipeline job — does automatically).
-6. Edit the `environment { }` block at the top of the `Jenkinsfile` for
+4. Edit the `environment { }` block at the top of the `Jenkinsfile` for
    your actual container hostname/paths — everything under "Proxmox LXC
    deploy target" there.
 
@@ -127,18 +127,11 @@ changes.
   Terraform/Ansible/cloud-init-managed.
 - No rollback automation — redeploying the previous commit is the rollback
   path for now.
-- No secrets management beyond the one deploy-password credential;
+- No Jenkins-managed secret at all for deploy auth — the SSH private key
+  lives only in the Jenkins agent's own filesystem (`~/.ssh/`), outside
+  Jenkins' credential store entirely, which also means it isn't rotatable
+  or auditable through Jenkins the way a stored credential would be.
   `INVOICE_SYSTEM_*` environment variables live in the systemd unit file on
-  the container, not a vault.
-- Password-based SSH auth (rather than a key) is a deliberate tradeoff for
-  this deployment, not a default recommendation — it's generally weaker
-  (no passphrase-protected key, brute-forceable if exposed, no easy
-  per-credential revocation the way removing a key from
-  `authorized_keys` is) and needs `sshpass` on the Jenkins agent as an
-  extra piece of infrastructure. Switching back to a key (`sshagent` +
-  an "SSH Username with private key" credential, reverting
-  `deploy/deploy.sh`'s `sshpass -e ssh ...` calls to plain `ssh`/`rsync`
-  and restoring `-o BatchMode=yes`) remains the more conventional choice
-  if that's ever revisited.
+  the container, not a vault either.
 - No staging environment — `main` deploys straight to the one container
   described here.

@@ -2,13 +2,17 @@
 # Deploys the backend and the already-built frontend (web/dist/) to the
 # Proxmox LXC container named by $DEPLOY_HOST. Called from the Jenkinsfile's
 # Deploy stage, which exports the DEPLOY_*/BACKEND_*/FRONTEND_* variables
-# below and runs this from the repo root, inside an `sshagent` block (so an
-# SSH key is already loaded - this script doesn't handle auth itself).
+# below and runs this from the repo root. This script doesn't handle SSH
+# auth itself - it assumes the Jenkins agent already has working key-based
+# SSH access to $DEPLOY_USER@$DEPLOY_HOST (no Jenkins-managed credential
+# or plugin involved; `-o BatchMode=yes` below means it fails fast rather
+# than hanging on a password prompt if that's not actually set up yet) -
+# see docs/deployment.md for how to set that up on the agent.
 #
-# Assumes the container was already provisioned once by hand: a `deploy`
-# user with the Jenkins SSH key in ~/.ssh/authorized_keys, uv installed for
-# that user, and passwordless sudo for exactly the two commands this script
-# runs remotely (restarting the backend service, reloading nginx) - see
+# Assumes the container was already provisioned once by hand: the deploy
+# user's public key in ~/.ssh/authorized_keys, uv installed for that user,
+# and passwordless sudo for exactly the two commands this script runs
+# remotely (restarting the backend service, reloading nginx) - see
 # docs/deployment.md for the full one-time setup, including
 # invoice-system-api.service and nginx-invoice-system.conf in this
 # directory as the starting point for that.

@@ -6,8 +6,12 @@
 // pinned to the same version as web/.node-version - see CLAUDE.md's Node
 // version gotcha for why that pin matters. Python/uv are bootstrapped
 // inline (see the Backend stage) rather than assumed pre-installed on the
-// agent. See docs/deployment.md for the one-time Jenkins/container setup
-// this pipeline assumes, and what each DEPLOY_* variable below means.
+// agent. The Deploy stage assumes the Jenkins agent itself already has
+// working SSH access to the container (no Jenkins-managed credential/
+// plugin involved - see deploy/deploy.sh and docs/deployment.md for what
+// that means to set up). See docs/deployment.md for the one-time
+// Jenkins/container setup this pipeline assumes, and what each DEPLOY_*
+// variable below means.
 
 pipeline {
     agent any
@@ -25,7 +29,6 @@ pipeline {
         // see docs/deployment.md --
         DEPLOY_HOST        = '192.168.71.25'
         DEPLOY_USER        = 'root'
-        DEPLOY_SSH_CRED_ID = 'invoices-lxc-ssh'
         BACKEND_DIR        = '/opt/invoice-system'
         FRONTEND_DIR       = '/var/www/invoice-system'
         BACKEND_SERVICE    = 'invoice-system-api'
