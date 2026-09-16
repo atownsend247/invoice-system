@@ -32,7 +32,7 @@ pipeline {
         // A Jenkins "Secret text" credential holding just the deploy
         // password (DEPLOY_USER above supplies the username) - see the
         // Deploy stage below and docs/deployment.md.
-        DEPLOY_CRED_ID     = 'invoices-lxc-password'
+        DEPLOY_CRED_ID     = 'invoices-lxc-ssh'
         BACKEND_DIR        = '/opt/invoice-system'
         FRONTEND_DIR       = '/var/www/invoice-system'
         BACKEND_SERVICE    = 'invoice-system-api'
