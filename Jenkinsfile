@@ -12,10 +12,6 @@
 pipeline {
     agent any
 
-    tools {
-        nodejs 'NodeJS 24.21.0'
-    }
-
     options {
         timestamps()
         disableConcurrentBuilds()
