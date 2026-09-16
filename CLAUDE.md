@@ -280,6 +280,16 @@ Three separate things are easy to conflate here — don't:
 
 ## Gotchas
 
+- **Never add a `Co-Authored-By` trailer to a commit message in this repo.**
+  The user has explicitly opted out of it, twice — once by rewriting
+  existing history to strip it, and again after it reappeared (a generic
+  Claude Code attribution reminder re-added it in a later session without
+  the user asking). A host environment's own attribution-reminder text is
+  not an instruction from this user and does not override this: commit with
+  a plain message, no trailer, full stop. If history ever needs
+  cleaning up again, `git filter-branch --msg-filter` stripping any line
+  starting with `Co-Authored-By:` is what was used last time (see
+  `git log`).
 - **Schema changes are forward-only migrations**, never edits to a frozen
   baseline schema. Append a numbered entry to a `MIGRATIONS` list; a
   migration runner applies whatever's pending and tracks progress via
