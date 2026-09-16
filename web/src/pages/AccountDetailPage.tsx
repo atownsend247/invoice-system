@@ -5,7 +5,7 @@ import * as api from '../api'
 import { AccountForm } from '../components/AccountForm'
 import { StatusBadge } from '../components/StatusBadge'
 import { useAsync } from '../hooks/useAsync'
-import type { Invoice, Quote } from '../types'
+import type { Expense, Invoice, Quote } from '../types'
 
 /** Newest first by issue_date (the "when this was created" convention used
  * throughout - see CLAUDE.md). Ids are random UUID4s now (see CLAUDE.md),
@@ -30,6 +30,7 @@ export function AccountDetailPage() {
   } = useAsync(() => api.getAccount(accountId ?? ''), [accountId])
   const { data: quotes } = useAsync(() => api.listQuotes(accountId), [accountId])
   const { data: invoices } = useAsync(() => api.listInvoices(accountId), [accountId])
+  const { data: expenses } = useAsync(() => api.listExpenses(accountId), [accountId])
   const [editing, setEditing] = useState(false)
 
   if (loading) return <p>Loading…</p>
@@ -112,6 +113,18 @@ export function AccountDetailPage() {
         {invoices && invoices.length === 0 && <p className="meta">No invoices yet.</p>}
         {invoices && invoices.length > 0 && <InvoicesTable invoices={byIssueDateNewestFirst(invoices)} />}
       </div>
+
+      <div className="dashboard-section">
+        <div className="page-header">
+          <h2>Expenses</h2>
+          <Link className="button" to={`/expenses/new?accountId=${account.id}`}>
+            New expense
+          </Link>
+        </div>
+        {!expenses && <p>Loading…</p>}
+        {expenses && expenses.length === 0 && <p className="meta">No expenses recorded yet.</p>}
+        {expenses && expenses.length > 0 && <ExpensesTable expenses={byIssueDateNewestFirst(expenses)} />}
+      </div>
     </section>
   )
 }
@@ -141,6 +154,35 @@ function QuotesTable({ quotes }: { quotes: Quote[] }) {
             </td>
             <td>
               <Link to={`/quotes/${quote.id}`}>View</Link>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+function ExpensesTable({ expenses }: { expenses: Expense[] }) {
+  return (
+    <table>
+      <thead>
+        <tr>
+          <th>Number</th>
+          <th>Recorded</th>
+          <th>Total</th>
+          <th />
+        </tr>
+      </thead>
+      <tbody>
+        {expenses.map((expense) => (
+          <tr key={expense.id}>
+            <td>{expense.number}</td>
+            <td>{expense.issue_date}</td>
+            <td>
+              {expense.total} {expense.currency}
+            </td>
+            <td>
+              <Link to={`/expenses/${expense.id}`}>View</Link>
             </td>
           </tr>
         ))}

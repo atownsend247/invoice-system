@@ -161,6 +161,39 @@ class InvoiceOut(BaseModel):
         )
 
 
+class ExpenseCreateIn(BaseModel):
+    account_id: str
+    currency: str = "USD"
+
+
+class ExpenseOut(BaseModel):
+    id: str
+    account_id: str
+    number: str
+    currency: str
+    issue_date: date
+    created_at: datetime
+    line_items: list[LineItemOut]
+    subtotal: str
+    tax_total: str
+    total: str
+
+    @classmethod
+    def from_model(cls, expense) -> "ExpenseOut":
+        return cls(
+            id=expense.id,
+            account_id=expense.account_id,
+            number=expense.number,
+            currency=expense.currency,
+            issue_date=expense.issue_date,
+            created_at=expense.created_at,
+            line_items=[LineItemOut.from_model(item) for item in expense.line_items],
+            subtotal=str(expense.subtotal),
+            tax_total=str(expense.tax_total),
+            total=str(expense.total),
+        )
+
+
 class BusinessProfileIn(BaseModel):
     first_name: str
     last_name: str

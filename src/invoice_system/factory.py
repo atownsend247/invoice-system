@@ -4,6 +4,7 @@ from .clock import Clock, system_clock
 from .core import (
     AccountService,
     BusinessProfileService,
+    ExpenseService,
     InvoiceService,
     OrganisationService,
     QuoteService,
@@ -21,6 +22,7 @@ class Application:
         accounts: AccountService,
         quotes: QuoteService,
         invoices: InvoiceService,
+        expenses: ExpenseService,
         business_profiles: BusinessProfileService,
         stats: StatsService,
     ) -> None:
@@ -29,6 +31,7 @@ class Application:
         self.accounts = accounts
         self.quotes = quotes
         self.invoices = invoices
+        self.expenses = expenses
         self.business_profiles = business_profiles
         self.stats = stats
 
@@ -51,6 +54,7 @@ def build_application(db_path: str | Path, clock: Clock = system_clock) -> Appli
         accounts=AccountService(repository, clock=clock),
         quotes=QuoteService(repository, clock=clock),
         invoices=InvoiceService(repository, clock=clock),
+        expenses=ExpenseService(repository, clock=clock),
         business_profiles=BusinessProfileService(repository, clock=clock),
         stats=StatsService(repository, clock=clock),
     )

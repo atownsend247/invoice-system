@@ -94,6 +94,17 @@ def test_seed_demo_data_uses_more_than_one_vat_rate(application, auth):
     assert len(rates) >= 2
 
 
+def test_seed_demo_data_creates_expenses_with_numbers_and_line_items(application, auth):
+    seed_demo_data(application, auth, now=FIXED_NOW)
+    organisation_id = _demo_organisation_id(application, auth)
+
+    expenses = application.expenses.list_expenses(organisation_id)
+    assert len(expenses) >= 2
+    assert all(e.number and e.number.startswith("EXP-") for e in expenses)
+    assert all(e.line_items for e in expenses)
+    assert all(e.currency == DEMO_CURRENCY for e in expenses)
+
+
 def test_seed_demo_data_is_idempotent(application, auth):
     first = seed_demo_data(application, auth, now=FIXED_NOW)
     organisation_id = _demo_organisation_id(application, auth)

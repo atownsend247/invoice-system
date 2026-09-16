@@ -123,6 +123,25 @@ export interface MonthlyTotalsReport {
   months: MonthlyInvoiceTotal[]
 }
 
+// A cost incurred against an Account - e.g. a domain renewal paid on a
+// client's behalf. Unlike Quote/Invoice there's no status/lifecycle field:
+// it's a record of money already spent, not a document with a draft/sent
+// workflow, so `number` (EXP-0001, same per-organisation counter pattern
+// as Quote.number/Invoice.number) is always set, never null - see
+// CLAUDE.md and models.Expense.
+export interface Expense {
+  id: string
+  account_id: string
+  number: string
+  currency: string
+  issue_date: string
+  created_at: string
+  line_items: LineItem[]
+  subtotal: string
+  tax_total: string
+  total: string
+}
+
 // All-time, organisation-scoped counters for the home dashboard's stats
 // section - see StatsService.get_stats. A small, flat shape that grows one
 // field at a time as new stats are actually asked for. quotes_sent_count/

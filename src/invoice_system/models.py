@@ -231,6 +231,42 @@ class Invoice:
 
 
 @dataclass
+class Expense:
+    """A cost incurred against an Account - e.g. a domain renewal paid on a
+    client's behalf. Unlike Quote/Invoice there's no draft/sent lifecycle
+    (see CLAUDE.md): it's a record of money already spent, not a document
+    issued to anyone, so there's nothing to "send" - `number` (EXP-0001,
+    same per-organisation counter pattern as Quote.number/Invoice.number,
+    see SqliteRepository.next_expense_number) is assigned immediately at
+    creation, and line items can be added any time after, not gated behind
+    a status check the way Quote.add_line_item is gated on `draft`. Line
+    items share the same shape as Quote/Invoice's (LineItem, including a
+    per-line tax_rate) rather than a simpler description+amount shape,
+    since VAT paid on a business expense may be separately reclaimable."""
+
+    id: str
+    organisation_id: str
+    account_id: str
+    number: str
+    currency: str
+    issue_date: date
+    created_at: datetime
+    line_items: list[LineItem] = field(default_factory=list)
+
+    @property
+    def subtotal(self) -> Decimal:
+        return sum((item.net_total for item in self.line_items), Decimal("0"))
+
+    @property
+    def tax_total(self) -> Decimal:
+        return sum((item.tax_amount for item in self.line_items), Decimal("0"))
+
+    @property
+    def total(self) -> Decimal:
+        return sum((item.total for item in self.line_items), Decimal("0"))
+
+
+@dataclass
 class MonthlyInvoiceTotals:
     """One month's worth of invoice totals, split by paid vs not - see
     InvoiceService.monthly_totals. `month` is "YYYY-MM"."""

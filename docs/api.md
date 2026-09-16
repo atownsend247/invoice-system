@@ -49,29 +49,38 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | POST | `/invoices/{id}/pay` | required | Transition `sent → paid`. 409 if not currently `sent` (covers `draft`, `void`, and already-`paid`). |
 | GET | `/invoices/monthly-totals` | required | Registered *before* `/invoices/{id}` (see `CLAUDE.md`'s architecture rules on route ordering). `{currency, months: [{month, paid_total, unpaid_total}]}` for the trailing 12 months, scoped to the current user's organisation, in the current user's business profile `currency`. An invoice in any other currency isn't counted. |
 | GET | `/invoices/{id}/pdf` | required | Render the invoice as a PDF (`application/pdf`), with a "From" section for the current user's business name/address if set, and their `document_header`/`document_footer` (if set) above the title/below the totals table. |
+| POST | `/expenses` | required | Create an expense against an account (`account_id` required; `currency` defaults `USD`). Unlike a quote, its `EXP-0001` `number` is assigned immediately - there's no draft state (see `CLAUDE.md`). |
+| GET | `/expenses` | required | List expenses, optionally filtered by `?account_id=`. |
+| GET | `/expenses/{id}` | required | Fetch one expense with its line items, `subtotal`, `tax_total`, and (gross) `total`. |
+| POST | `/expenses/{id}/line-items` | required | Add a line item (`description`, `quantity`, `unit_price` required; `tax_rate` defaults `"0"`, must be within `[0, 1]`) - not gated behind any status check, unlike `POST /quotes/{id}/line-items` (there's no draft/sent distinction to gate on). 422 on an out-of-range `tax_rate`. |
+| GET | `/expenses/{id}/pdf` | required | Render the expense as a PDF (`application/pdf`), same "View PDF"/"Download PDF" pattern as quotes/invoices - but with no "Status:" line and no due/expiry date, since an expense has neither. |
 | GET | `/settings/business-profile` | required | The current user's own profile. Never 404s — returns sensible defaults (`payment_terms_days: 30`, `currency: "GBP"`, everything else blank/`null`) if nothing's been saved yet. |
 | PUT | `/settings/business-profile` | required | Upsert it (`first_name`, `last_name`, `business_name`, `payment_terms_days` required; `currency` defaults `"GBP"`; `title`, `address_line1`, `address_line2`, `town_or_city`, `county`, `postcode`, `utr`, `vat_number`, `bank_account_name`, `bank_sort_code`, `bank_account_number`, `document_header`, `document_footer` optional — each address line independently optional). 422 on a blank required field, `payment_terms_days <= 0`, or a blank `currency`. |
 | GET | `/stats` | required | All-time counters for the home dashboard, scoped to the current user's organisation: `{account_count, quote_count, invoice_count, quotes_sent_count, quotes_converted_count, total_paid, currency}`. `total_paid` is filtered to `currency` (the caller's own business profile's reporting currency, same resolution as `/invoices/monthly-totals`) — a paid invoice in a different currency isn't counted. `quotes_sent_count`/`quotes_converted_count` are raw counts, not a precomputed rate; the web UI derives a conversion percentage from them client-side (`HomePage.tsx`'s `conversionRate`). |
 
-Every account/quote/invoice route above resolves the caller's
+Every account/quote/invoice/expense route above resolves the caller's
 `organisation_id` server-side (`api/app.py`'s `get_organisation_id`
 dependency: `Bearer token → user → application.organisations.get_or_create_for_user(user.id)`,
 auto-creating an `Organisation` on a user's first domain request) — it is
 never sent or returned in a request/response body. See
 `docs/data-model.md`'s "Multi-tenancy" section.
 
-The CLI (`invoice-system-cli`) mirrors the account/quote/invoice routes
+The CLI (`invoice-system-cli`) mirrors the account/quote/invoice/expense
+routes
 one-for-one over the same storage, but is **not** behind login — it's a
 local, trusted tool (see `CLAUDE.md`). Where the API resolves both "which
 user" and "which organisation" from the Bearer token, the CLI has no
-session to resolve either from, so **every** `account`/`quote`/`invoice`
+session to resolve either from, so **every** `account`/`quote`/`invoice`/
+`expense`
 command takes a **required** `--user-id` (`account create/list/update`,
 `quote create/add-item/send/convert/pdf`, `invoice
-list/send/void/pay/monthly-totals/pdf`, `stats`) purely to resolve
+list/send/void/pay/monthly-totals/pdf`, `expense create/list/add-item/pdf`,
+`stats`) purely to resolve
 `organisation_id` (`OrganisationService.get_or_create_for_user`, same
 auto-create-on-first-use as the API) — this is a breaking change from
 before `Organisation` existed, when these commands took no user context at
-all. `quote pdf`/`invoice pdf --user-id` and `invoice send --user-id` also
+all. `quote pdf`/`invoice pdf`/`expense pdf --user-id` and `invoice send
+--user-id` also
 reuse that same user id for their pre-existing purpose (the PDF "From"
 section, the payment-terms-driven due date) — `settings show`/`settings
 set --user-id` (no API equivalent by path, but the same
@@ -99,9 +108,11 @@ stays per-user, not per-organisation (see `docs/data-model.md`'s
   everywhere except `POST /auth/login`, where the route maps it to `401`
   itself (see `api/auth.py`) since a bad TOTP code at login is
   indistinguishable from bad credentials to the caller.
-- `GET /quotes/{id}/pdf`/`GET /invoices/{id}/pdf` are a single route each,
+- `GET /quotes/{id}/pdf`/`GET /invoices/{id}/pdf`/`GET /expenses/{id}/pdf`
+  are a single route each,
   not one per "view" vs "download" - that distinction is purely a web UI
-  concern (`web/src/pages/QuoteDetailPage.tsx`/`InvoiceDetailPage.tsx`
+  concern (`web/src/pages/QuoteDetailPage.tsx`/`InvoiceDetailPage.tsx`/
+  `ExpenseDetailPage.tsx`
   offer both as separate buttons over the same response bytes: "Download
   PDF" forces a browser download, "View PDF" shows an in-page preview via
   `components/PdfViewerModal.tsx` - **not** a new browser tab, see

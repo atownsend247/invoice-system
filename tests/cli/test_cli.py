@@ -119,6 +119,86 @@ def test_full_cli_flow(tmp_path):
     assert invoice_pdf_path.exists()
 
 
+def test_full_expense_cli_flow(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, ["--db", str(db_path), "init-db", "--no-demo"])
+
+    result = runner.invoke(
+        cli,
+        [
+            "--db",
+            str(db_path),
+            "account",
+            "create",
+            "--user-id",
+            "1",
+            "--business-name",
+            "Acme",
+            "--email",
+            "a@b.test",
+            "--address-line1",
+            "1 Main St",
+        ],
+    )
+    account_id = _id_from(result.output, r"Created account (\S+):")
+
+    result = runner.invoke(
+        cli, ["--db", str(db_path), "expense", "create", "--user-id", "1", "--account-id", account_id]
+    )
+    assert result.exit_code == 0, result.output
+    # Unlike "quote create", an expense gets its EXP-0001 number
+    # immediately - there's no draft/send lifecycle (see models.Expense).
+    assert "EXP-0001" in result.output
+    expense_id = _id_from(result.output, r"Created expense (\S+) \(")
+
+    result = runner.invoke(
+        cli,
+        [
+            "--db",
+            str(db_path),
+            "expense",
+            "add-item",
+            expense_id,
+            "--user-id",
+            "1",
+            "--description",
+            "Domain renewal",
+            "--quantity",
+            "1",
+            "--unit-price",
+            "12.00",
+            "--tax-rate",
+            "0.20",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Added line item" in result.output
+
+    result = runner.invoke(cli, ["--db", str(db_path), "expense", "list", "--user-id", "1"])
+    assert result.exit_code == 0, result.output
+    assert "EXP-0001" in result.output
+
+    pdf_path = tmp_path / "expense.pdf"
+    result = runner.invoke(
+        cli, ["--db", str(db_path), "expense", "pdf", expense_id, "-o", str(pdf_path), "--user-id", "1"]
+    )
+    assert result.exit_code == 0, result.output
+    assert pdf_path.exists()
+
+
+def test_expense_create_requires_existing_account(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, ["--db", str(db_path), "init-db", "--no-demo"])
+
+    result = runner.invoke(
+        cli,
+        ["--db", str(db_path), "expense", "create", "--user-id", "1", "--account-id", "does-not-exist"],
+    )
+    assert result.exit_code != 0
+
+
 def test_missing_account_returns_nonzero_exit(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()

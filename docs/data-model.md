@@ -2,7 +2,7 @@
 
 **Status: implemented** (`src/invoice_system/models.py`,
 `storage/schema.py`). Keep this table in sync with the actual schema — this
-doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` has seven
+doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` has eight
 entries: the flattened baseline (2026-09-16), migration 2 (added `tax_rate`
 to both line-item tables), migration 3 (added `Organisation` — the tenant
 boundary — plus nullable `organisation_id` columns on `accounts`/`quotes`/
@@ -13,11 +13,13 @@ migration 5 (split `accounts.address` into `address_line1`/
 `address_line2`/`town_or_city`/`county`/`postcode`, same UK GOV.UK Design
 System structure as `BusinessProfile`'s), migration 6 (added
 `bank_account_name`/`bank_sort_code`/`bank_account_number`/
-`document_header`/`document_footer` to `business_profiles`), and migration 7
+`document_header`/`document_footer` to `business_profiles`), migration 7
 (every primary key, and every column referencing one, switched from an
 autoincrementing `INTEGER` to an opaque UUID4 `TEXT` string — see "Opaque
-ids" below and `CLAUDE.md`'s migrations gotcha). Schema changes from here on
-are new entries appended to that list, not edits to any of these seven.
+ids" below and `CLAUDE.md`'s migrations gotcha), and migration 8 (added
+`expenses`/`expense_line_items` — two brand new tables, a plain `CREATE
+TABLE` each, no rebuild needed). Schema changes from here on are new
+entries appended to that list, not edits to any of these eight.
 
 ## Entities
 
@@ -27,12 +29,14 @@ are new entries appended to that list, not edits to any of these seven.
 | `Account` | id, organisation_id, business_name, contact_name, email, phone, address_line1, address_line2, town_or_city, county, postcode, created_at | A business you provide a service to and bill, scoped to one `Organisation`. Editable after creation (`AccountService.update_account`, full replace). Not a login identity — see `CLAUDE.md`. Address fields follow the same UK GOV.UK Design System pattern as `BusinessProfile`'s below, except `address_line1` is required here (an `Account` is a real client being billed, not the user's own optionally-published details) — the rest are each independently optional. |
 | `Quote` | id, organisation_id, account_id, number, status, currency, issue_date, expiry_date, created_at | `status`: `draft \| sent \| accepted \| rejected \| expired \| converted`. `number` (`Q-0001`, ...) is assigned on `send`, not on creation, and is unique per-`organisation_id`, not globally (see migration 4 above) — two organisations' first quotes can both be `Q-0001`. |
 | `Invoice` | id, organisation_id, account_id, quote_id, number, status, currency, issue_date, due_date, created_at | `status`: `draft \| sent \| paid \| overdue \| void`. `quote_id` is set when created via conversion, `NULL` otherwise. `number` (`INV-0001`, ...) and `due_date` are assigned on `send`, and — same as `Quote.number` — unique per-`organisation_id`, not globally. `paid` is assigned by `InvoiceService.pay()`, only from `sent` — `overdue` is a defined enum value nothing ever actually sets (see "Not yet modelled"). |
-| `LineItem` | id, description, quantity, unit_price, tax_rate, position | One shape, shared by quotes and invoices; associated via `quote_line_items`/`invoice_line_items` join tables (`quote_id`/`invoice_id` + the same columns). `tax_rate` is a fraction (`0.20` = 20% UK VAT; `0` = none), independently set per line. `net_total`/`tax_amount`/`total` (`net_total + tax_amount`, gross) are derived properties, never stored — `tax_amount` is rounded to the minor currency unit, `net_total` is not (see `CLAUDE.md`). |
-| `BusinessProfile` | id, user_id, title, first_name, last_name, business_name, address_line1, address_line2, town_or_city, county, postcode, payment_terms_days, currency, utr, vat_number, bank_account_name, bank_sort_code, bank_account_number, document_header, document_footer, created_at, updated_at | The logged-in user's *own* details, in four groups (see `CLAUDE.md`): user settings (`title` optional, `first_name`/`last_name` required), business settings (`business_name` required; `address_line1`/`address_line2`/`town_or_city`/`county`/`postcode` — a UK GOV.UK Design System-style address, each line independently optional), payment and tax settings (`payment_terms_days`, `currency` — the home dashboard's *reporting* currency, defaults `"GBP"`, independent of any quote/invoice's own `currency` — `utr`/`vat_number`/`bank_account_name`/`bank_sort_code`/`bank_account_number` all optional and purely informational, not currently rendered on a PDF), document settings (`document_header`/`document_footer`, free text, each independently optional — inserted into every quote/invoice PDF this user generates, see `pdf.py`'s `document_header_lines()`/`document_footer_lines()` and the invariants below). Not `Account` (the client being billed). One per `user_id` (`UNIQUE`), which is sessionkit's `User.id` — a plain column, not an enforced FK (see `CLAUDE.md`, "Login accounts" below). Deliberately still per-*user*, not per-`Organisation` — see "Multi-tenancy" below. Every optional field: blank input is normalised to `NULL`, never stored as `""`. |
-| counters (internal) | name, value | Backs `next_quote_number`/`next_invoice_number`; not a domain entity, not exposed via API/CLI. `name` is `"<organisation_id>:quote"`/`"<organisation_id>:invoice"`, not a bare `"quote"`/`"invoice"` — each organisation gets its own independent sequence starting from one. |
+| `LineItem` | id, description, quantity, unit_price, tax_rate, position | One shape, shared by quotes, invoices, and expenses; associated via `quote_line_items`/`invoice_line_items`/`expense_line_items` join tables (`quote_id`/`invoice_id`/`expense_id` + the same columns). `tax_rate` is a fraction (`0.20` = 20% UK VAT; `0` = none), independently set per line. `net_total`/`tax_amount`/`total` (`net_total + tax_amount`, gross) are derived properties, never stored — `tax_amount` is rounded to the minor currency unit, `net_total` is not (see `CLAUDE.md`). |
+| `Expense` | id, organisation_id, account_id, number, currency, issue_date, created_at | A cost incurred against an `Account` (e.g. a domain renewal paid on the client's behalf) — see `CLAUDE.md`. Unlike `Quote`/`Invoice`, no `status` column: there's no draft/sent lifecycle, so `number` (`EXP-0001`, ..., same per-`organisation_id` composite-unique-index pattern as `Quote.number`/`Invoice.number` — see migration 8) is `NOT NULL` and assigned by `ExpenseService.create_expense` immediately, not deferred to a later `send()`. |
+| `BusinessProfile` | id, user_id, title, first_name, last_name, business_name, address_line1, address_line2, town_or_city, county, postcode, payment_terms_days, currency, utr, vat_number, bank_account_name, bank_sort_code, bank_account_number, document_header, document_footer, created_at, updated_at | The logged-in user's *own* details, in four groups (see `CLAUDE.md`): user settings (`title` optional, `first_name`/`last_name` required), business settings (`business_name` required; `address_line1`/`address_line2`/`town_or_city`/`county`/`postcode` — a UK GOV.UK Design System-style address, each line independently optional), payment and tax settings (`payment_terms_days`, `currency` — the home dashboard's *reporting* currency, defaults `"GBP"`, independent of any quote/invoice's own `currency` — `utr`/`vat_number`/`bank_account_name`/`bank_sort_code`/`bank_account_number` all optional and purely informational, not currently rendered on a PDF), document settings (`document_header`/`document_footer`, free text, each independently optional — inserted into every quote/invoice/expense PDF this user generates, see `pdf.py`'s `document_header_lines()`/`document_footer_lines()` and the invariants below). Not `Account` (the client being billed). One per `user_id` (`UNIQUE`), which is sessionkit's `User.id` — a plain column, not an enforced FK (see `CLAUDE.md`, "Login accounts" below). Deliberately still per-*user*, not per-`Organisation` — see "Multi-tenancy" below. Every optional field: blank input is normalised to `NULL`, never stored as `""`. |
+| counters (internal) | name, value | Backs `next_quote_number`/`next_invoice_number`/`next_expense_number`; not a domain entity, not exposed via API/CLI. `name` is `"<organisation_id>:quote"`/`"<organisation_id>:invoice"`/`"<organisation_id>:expense"`, not a bare `"quote"`/`"invoice"`/`"expense"` — each organisation gets its own independent sequence starting from one. |
 
 `MonthlyInvoiceTotals` (`month`, `paid_total`, `unpaid_total`) and `Stats`
-(`account_count`) are **not** stored tables — they're
+(`account_count`, `quote_count`, `invoice_count`, `quotes_sent_count`,
+`quotes_converted_count`, `total_paid`) are **not** stored tables — they're
 `InvoiceService.monthly_totals()`/`StatsService.get_stats()`'s return
 shapes, computed on read for the home dashboard. See the invariants below
 for exactly what the former includes/excludes.
@@ -91,12 +95,15 @@ migrations (every other entry in this list) exist to avoid.
 Organisation 1──* Account
 Organisation 1──* Quote
 Organisation 1──* Invoice
+Organisation 1──* Expense
 Organisation 1──1 User (sessionkit, via organisation_members - see "Multi-tenancy" below)
 Account 1──* Quote
 Account 1──* Invoice
+Account 1──* Expense
 Quote   1──* LineItem   (via quote_line_items)
 Quote   0/1──0/1 Invoice  (conversion; quote.status becomes "converted")
 Invoice 1──* LineItem   (via invoice_line_items)
+Expense 1──* LineItem   (via expense_line_items)
 ```
 
 ## Invariants enforced in `core`, not in storage
@@ -128,8 +135,16 @@ Invoice 1──* LineItem   (via invoice_line_items)
   address lines stay independently optional, blank input normalised to
   `NULL`) and always replaces the whole record (no partial-field updates)
   — 404s via `get_account` if the id doesn't exist first.
-- `StatsService.get_stats(organisation_id)` is scoped to one `Organisation`
-  — not a system-wide snapshot, same as `InvoiceService.monthly_totals`.
+- `StatsService.get_stats(organisation_id, currency)` is scoped to one
+  `Organisation` — not a system-wide snapshot, same as
+  `InvoiceService.monthly_totals`. `total_paid` follows that same method's
+  currency-filtering convention: only paid invoices in `currency` count.
+- `ExpenseService.create_expense` assigns `number` immediately — unlike
+  `Quote`/`Invoice`, there's no draft state for it to be deferred past, so
+  it's never `NULL` (migration 8's `expenses.number` is `NOT NULL`, unlike
+  `quotes.number`/`invoices.number`). `add_line_item` isn't gated behind any
+  status check — a line item can be added at any time, not just while
+  "draft" (there is no draft).
 - `InvoiceService.pay()` only transitions `sent → paid` — rejects `draft`
   (never sent, nothing to have been paid for), `void` (cancelled), and an
   already-`paid` invoice. Stricter than `void()`, which also allows `draft`.
@@ -161,7 +176,7 @@ Invoice 1──* LineItem   (via invoice_line_items)
 ## Multi-tenancy
 
 `Organisation` is the tenant boundary (see its docstring in `models.py`).
-Every `Account`/`Quote`/`Invoice` create/get/list/update call takes an
+Every `Account`/`Quote`/`Invoice`/`Expense` create/get/list call takes an
 `organisation_id` — there is no "admin" bypass anywhere in `core.py`.
 
 - **API**: `api/app.py`'s `get_organisation_id` dependency resolves it from
@@ -172,9 +187,9 @@ Every `Account`/`Quote`/`Invoice` create/get/list/update call takes an
   server-side, deliberately absent from every request/response schema in
   `api/schemas.py`.
 - **CLI**: has no login session to resolve a user from, so `--user-id` is a
-  **required** option on every account/quote/invoice command (a breaking
-  change from before `Organisation` existed, where these commands took no
-  user context at all) — see `docs/development.md`'s CLI section.
+  **required** option on every account/quote/invoice/expense command (a
+  breaking change from before `Organisation` existed, where these commands
+  took no user context at all) — see `docs/development.md`'s CLI section.
 - **Currently**: exactly one login user per `Organisation`
   (`organisation_members.user_id` is `UNIQUE`) — auto-created, never
   explicitly named by a user today (see `OrganisationService.get_or_create_for_user`'s
@@ -203,7 +218,8 @@ Every `Account`/`Quote`/`Invoice` create/get/list/update call takes an
 ## Demo data
 
 `invoice-system-cli init-db` seeds a demo login user, a `BusinessProfile`,
-several `Account`s, and a 12-month spread of `Quote`/`Invoice` statuses
+several `Account`s, a 12-month spread of `Quote`/`Invoice` statuses, and a
+handful of `Expense`s across a few accounts
 (`src/invoice_system/demo_data.py`) unless `--no-demo` is passed. It's
 idempotent (a no-op once the demo user exists) and goes through the real
 service layer with a backdated clock, not hand-crafted storage rows — see

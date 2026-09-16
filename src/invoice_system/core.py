@@ -9,6 +9,7 @@ from .ids import new_id as default_new_id
 from .models import (
     Account,
     BusinessProfile,
+    Expense,
     Invoice,
     InvoiceStatus,
     LineItem,
@@ -535,6 +536,74 @@ class InvoiceService:
         if invoice.status != InvoiceStatus.DRAFT:
             raise InvalidTransition(f"invoice {invoice_id} is not editable (status={invoice.status.value})")
         return invoice
+
+
+class ExpenseService:
+    """Costs incurred against an Account - see models.Expense. Unlike
+    QuoteService/InvoiceService there's no draft/sent lifecycle: an expense
+    is a record of money already spent, not a document issued to anyone,
+    so `create_expense` assigns its EXP-0001 number immediately rather than
+    deferring that to a later `send()` the way Quote/Invoice do, and
+    `add_line_item` isn't gated behind a status check the way
+    QuoteService.add_line_item requires `draft`."""
+
+    def __init__(
+        self, repository: Repository, clock: Clock = system_clock, new_id: IdGenerator = default_new_id
+    ) -> None:
+        self._repository = repository
+        self._clock = clock
+        self._new_id = new_id
+
+    def create_expense(self, *, organisation_id: str, account_id: str, currency: str = "USD") -> Expense:
+        if self._repository.get_account(organisation_id, account_id) is None:
+            raise NotFound(f"account {account_id} not found")
+        expense = Expense(
+            id=self._new_id(),
+            organisation_id=organisation_id,
+            account_id=account_id,
+            number=self._repository.next_expense_number(organisation_id),
+            currency=currency,
+            issue_date=self._clock().date(),
+            created_at=self._clock(),
+        )
+        return self._repository.create_expense(expense)
+
+    def get_expense(self, organisation_id: str, expense_id: str) -> Expense:
+        return self._get_expense(organisation_id, expense_id)
+
+    def list_expenses(self, organisation_id: str, account_id: str | None = None) -> list[Expense]:
+        return self._repository.list_expenses(organisation_id, account_id=account_id)
+
+    def add_line_item(
+        self,
+        organisation_id: str,
+        expense_id: str,
+        *,
+        description: str,
+        quantity: Decimal,
+        unit_price: Decimal,
+        tax_rate: Decimal = Decimal("0"),
+    ) -> Expense:
+        expense = self._get_expense(organisation_id, expense_id)
+        if not description.strip():
+            raise ValidationFailed("description is required")
+        _validate_tax_rate(tax_rate)
+        item = LineItem(
+            id=self._new_id(),
+            description=description,
+            quantity=quantity,
+            unit_price=unit_price,
+            tax_rate=tax_rate,
+            position=len(expense.line_items),
+        )
+        self._repository.add_expense_line_item(expense_id, item)
+        return self._get_expense(organisation_id, expense_id)
+
+    def _get_expense(self, organisation_id: str, expense_id: str) -> Expense:
+        expense = self._repository.get_expense(organisation_id, expense_id)
+        if expense is None:
+            raise NotFound(f"expense {expense_id} not found")
+        return expense
 
 
 class StatsService:

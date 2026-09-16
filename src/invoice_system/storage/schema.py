@@ -377,4 +377,34 @@ MIGRATIONS: list[str] = [
         updated_at TEXT NOT NULL
     );
     """,
+    """
+    -- Expenses - a cost incurred against an Account (see models.Expense).
+    -- Unlike quotes/invoices there's no draft/sent status column: an
+    -- expense is a record of money already spent, not a document with a
+    -- lifecycle, so `number` is NOT NULL (assigned immediately at
+    -- creation, never deferred to a later "send" step - see
+    -- ExpenseService.create_expense) rather than nullable-until-sent like
+    -- quotes.number/invoices.number. New tables, so a plain CREATE TABLE -
+    -- no rebuild needed, same as every other addition in this file.
+    CREATE TABLE expenses (
+        id TEXT PRIMARY KEY,
+        organisation_id TEXT NOT NULL REFERENCES organisations(id),
+        account_id TEXT NOT NULL REFERENCES accounts(id),
+        number TEXT NOT NULL,
+        currency TEXT NOT NULL,
+        issue_date TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX idx_expenses_organisation_number ON expenses (organisation_id, number);
+
+    CREATE TABLE expense_line_items (
+        id TEXT PRIMARY KEY,
+        expense_id TEXT NOT NULL REFERENCES expenses(id),
+        description TEXT NOT NULL,
+        quantity TEXT NOT NULL,
+        unit_price TEXT NOT NULL,
+        tax_rate TEXT NOT NULL DEFAULT '0',
+        position INTEGER NOT NULL
+    );
+    """,
 ]

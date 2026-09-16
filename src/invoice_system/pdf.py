@@ -8,7 +8,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from .models import Account, BusinessProfile, Invoice, LineItem, Quote
+from .models import Account, BusinessProfile, Expense, Invoice, LineItem, Quote
 
 
 def render_quote_pdf(account: Account, quote: Quote, from_profile: BusinessProfile | None = None) -> bytes:
@@ -39,6 +39,28 @@ def render_invoice_pdf(
         account=account,
         line_items=invoice.line_items,
         currency=invoice.currency,
+        from_profile=from_profile,
+    )
+
+
+def render_expense_pdf(
+    account: Account, expense: Expense, from_profile: BusinessProfile | None = None
+) -> bytes:
+    # No status - unlike Quote/Invoice, an Expense has no draft/sent
+    # lifecycle (see models.Expense/CLAUDE.md), so there's nothing
+    # meaningful to print on a "Status:" line; _render omits it entirely
+    # when status is None rather than printing a fake constant. No
+    # due/expiry date either, for the same reason.
+    return _render(
+        title="Expense",
+        number=expense.number,
+        status=None,
+        issue_date=expense.issue_date,
+        due_or_expiry_label="",
+        due_or_expiry_date=None,
+        account=account,
+        line_items=expense.line_items,
+        currency=expense.currency,
         from_profile=from_profile,
     )
 
@@ -101,7 +123,7 @@ def _render(
     *,
     title: str,
     number: str,
-    status: str,
+    status: str | None,
     issue_date: date,
     due_or_expiry_label: str,
     due_or_expiry_date: date | None,
@@ -124,7 +146,7 @@ def _render(
     story.extend(
         [
             Paragraph(f"{title} {number}", styles["Title"]),
-            Paragraph(f"Status: {status}", styles["Normal"]),
+            *([Paragraph(f"Status: {status}", styles["Normal"])] if status is not None else []),
             Paragraph(f"Issue date: {issue_date.isoformat()}", styles["Normal"]),
         ]
     )

@@ -14,7 +14,7 @@ from sessionkit import ValidationError as AuthValidationError
 from ..auth import build_auth
 from ..errors import AppError, Duplicate, InvalidTransition, NotFound, ValidationFailed
 from ..factory import Application, build_application
-from ..pdf import render_invoice_pdf, render_quote_pdf
+from ..pdf import render_expense_pdf, render_invoice_pdf, render_quote_pdf
 from .auth import (
     get_current_user,
 )
@@ -29,6 +29,8 @@ from .schemas import (
     AccountOut,
     BusinessProfileIn,
     BusinessProfileOut,
+    ExpenseCreateIn,
+    ExpenseOut,
     InvoiceOut,
     LineItemIn,
     MonthlyTotalsReportOut,
@@ -348,6 +350,70 @@ def get_invoice_pdf(
     account = application.accounts.get_account(organisation_id, invoice.account_id)
     profile = application.business_profiles.get_profile(user.id)
     return Response(content=render_invoice_pdf(account, invoice, profile), media_type="application/pdf")
+
+
+@domain_router.post("/expenses", response_model=ExpenseOut, status_code=201)
+def create_expense(
+    body: ExpenseCreateIn,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> ExpenseOut:
+    expense = application.expenses.create_expense(
+        organisation_id=organisation_id, account_id=body.account_id, currency=body.currency
+    )
+    return ExpenseOut.from_model(expense)
+
+
+@domain_router.get("/expenses", response_model=list[ExpenseOut])
+def list_expenses(
+    account_id: str | None = None,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> list[ExpenseOut]:
+    return [
+        ExpenseOut.from_model(e)
+        for e in application.expenses.list_expenses(organisation_id, account_id=account_id)
+    ]
+
+
+@domain_router.get("/expenses/{expense_id}", response_model=ExpenseOut)
+def get_expense(
+    expense_id: str,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> ExpenseOut:
+    return ExpenseOut.from_model(application.expenses.get_expense(organisation_id, expense_id))
+
+
+@domain_router.post("/expenses/{expense_id}/line-items", response_model=ExpenseOut, status_code=201)
+def add_expense_line_item(
+    expense_id: str,
+    body: LineItemIn,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> ExpenseOut:
+    expense = application.expenses.add_line_item(
+        organisation_id,
+        expense_id,
+        description=body.description,
+        quantity=Decimal(body.quantity),
+        unit_price=Decimal(body.unit_price),
+        tax_rate=Decimal(body.tax_rate),
+    )
+    return ExpenseOut.from_model(expense)
+
+
+@domain_router.get("/expenses/{expense_id}/pdf")
+def get_expense_pdf(
+    expense_id: str,
+    application: Application = Depends(get_application),
+    user: SessionUser = Depends(get_current_user),
+    organisation_id: str = Depends(get_organisation_id),
+) -> Response:
+    expense = application.expenses.get_expense(organisation_id, expense_id)
+    account = application.accounts.get_account(organisation_id, expense.account_id)
+    profile = application.business_profiles.get_profile(user.id)
+    return Response(content=render_expense_pdf(account, expense, profile), media_type="application/pdf")
 
 
 @domain_router.get("/settings/business-profile", response_model=BusinessProfileOut)

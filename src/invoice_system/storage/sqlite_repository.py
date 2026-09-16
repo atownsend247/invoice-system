@@ -7,6 +7,7 @@ from pathlib import Path
 from ..models import (
     Account,
     BusinessProfile,
+    Expense,
     Invoice,
     InvoiceStatus,
     LineItem,
@@ -500,6 +501,95 @@ class SqliteRepository:
             unit_price=Decimal(row["unit_price"]),
             tax_rate=Decimal(row["tax_rate"]),
             position=row["position"],
+        )
+
+    # -- Expenses --------------------------------------------------------------
+
+    def create_expense(self, expense: Expense) -> Expense:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO expenses (id, organisation_id, account_id, number, currency, issue_date, "
+                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    expense.id,
+                    expense.organisation_id,
+                    expense.account_id,
+                    expense.number,
+                    expense.currency,
+                    expense.issue_date.isoformat(),
+                    expense.created_at.isoformat(),
+                ),
+            )
+            self._conn.commit()
+            return expense
+
+    def get_expense(self, organisation_id: str, expense_id: str) -> Expense | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM expenses WHERE id = ? AND organisation_id = ?",
+                (expense_id, organisation_id),
+            ).fetchone()
+            if row is None:
+                return None
+            item_rows = self._conn.execute(
+                "SELECT * FROM expense_line_items WHERE expense_id = ? ORDER BY position", (expense_id,)
+            ).fetchall()
+        return self._row_to_expense(row, item_rows)
+
+    def list_expenses(self, organisation_id: str, account_id: str | None = None) -> list[Expense]:
+        # ORDER BY rowid - see list_accounts' comment above.
+        with self._lock:
+            if account_id is None:
+                rows = self._conn.execute(
+                    "SELECT * FROM expenses WHERE organisation_id = ? ORDER BY rowid",
+                    (organisation_id,),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT * FROM expenses WHERE organisation_id = ? AND account_id = ? ORDER BY rowid",
+                    (organisation_id, account_id),
+                ).fetchall()
+            expenses = []
+            for row in rows:
+                item_rows = self._conn.execute(
+                    "SELECT * FROM expense_line_items WHERE expense_id = ? ORDER BY position", (row["id"],)
+                ).fetchall()
+                expenses.append(self._row_to_expense(row, item_rows))
+        return expenses
+
+    def add_expense_line_item(self, expense_id: str, item: LineItem) -> LineItem:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO expense_line_items "
+                "(id, expense_id, description, quantity, unit_price, tax_rate, position) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    item.id,
+                    expense_id,
+                    item.description,
+                    str(item.quantity),
+                    str(item.unit_price),
+                    str(item.tax_rate),
+                    item.position,
+                ),
+            )
+            self._conn.commit()
+            return item
+
+    def next_expense_number(self, organisation_id: str) -> str:
+        return self._next_number(f"{organisation_id}:expense", "EXP-")
+
+    @staticmethod
+    def _row_to_expense(row: sqlite3.Row, item_rows: list[sqlite3.Row]) -> Expense:
+        return Expense(
+            id=row["id"],
+            organisation_id=row["organisation_id"],
+            account_id=row["account_id"],
+            number=row["number"],
+            currency=row["currency"],
+            issue_date=date.fromisoformat(row["issue_date"]),
+            created_at=datetime.fromisoformat(row["created_at"]),
+            line_items=[SqliteRepository._row_to_line_item(r) for r in item_rows],
         )
 
     # -- Shared --------------------------------------------------------------

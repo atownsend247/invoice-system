@@ -365,5 +365,45 @@ flow," not a restructuring, whenever it's actually needed.
       and e2e (34 tests) suites updated and passing against real UUIDs
       end-to-end.
 
+## Phase 18 — Expense tracking (done)
+
+- [x] `Expense` model (`id`, `organisation_id`, `account_id`, `number`,
+      `currency`, `issue_date`, `created_at`, `line_items`) - a cost
+      incurred against an `Account`, e.g. a domain renewal paid on a
+      client's behalf. Deliberately no `status`/lifecycle field, unlike
+      `Quote`/`Invoice`: it's a record of money already spent, not a
+      document issued to anyone, so `ExpenseService.create_expense`
+      assigns its `EXP-0001` number (same per-organisation counter
+      pattern as `Q-`/`INV-`) immediately at creation rather than
+      deferring to a later `send()`, and `add_line_item` isn't gated
+      behind any status check - a line item can be added at any time.
+      Line items share `LineItem` (including a per-line `tax_rate`)
+      rather than a simpler description+amount shape, since VAT on a
+      business expense may be separately reclaimable. Migration 8:
+      `expenses`/`expense_line_items`, two brand new tables (a plain
+      `CREATE TABLE` each, no rebuild needed).
+- [x] `POST /expenses`, `GET /expenses` (optionally `?account_id=`), `GET
+      /expenses/{id}`, `POST /expenses/{id}/line-items`, `GET
+      /expenses/{id}/pdf`. CLI: `expense create/list/add-item/pdf`, same
+      required `--user-id` pattern as `quote`/`invoice`.
+- [x] `pdf.py`'s `render_expense_pdf` reuses `_render` (now taking an
+      optional `status: str | None` - `None` omits the "Status:" line
+      entirely, since an `Expense` has none) with no due/expiry date.
+- [x] `web/`: `AccountDetailPage.tsx` gained a third "Expenses" section
+      below Quotes/Invoices, newest-issued-first, with a "New expense"
+      link to `ExpenseNewPage.tsx` (same create-form pattern as
+      `QuoteNewPage.tsx`). `ExpenseDetailPage.tsx` (`/expenses/:id`)
+      reuses `LineItemsTable`/`PdfViewerModal` unchanged, but has no
+      status badge or send/convert actions - there's no lifecycle to
+      show one for, and its add-item form is always shown (no draft
+      gate).
+- [x] `demo_data.py` seeds a handful of `Expense`s (domain renewal,
+      software subscription, stock photography) across a few demo
+      accounts, spread over the last 12 months like the quote/invoice
+      scenarios.
+- [x] Full backend (196 tests, 97.85% coverage), frontend (33 unit
+      tests), and e2e (40 tests, new `expenses.spec.ts`) suites updated
+      and passing.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

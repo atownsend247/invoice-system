@@ -21,7 +21,14 @@ from decimal import Decimal
 from sessionkit import DuplicateUser
 
 from .auth import Auth
-from .core import AccountService, BusinessProfileService, InvoiceService, OrganisationService, QuoteService
+from .core import (
+    AccountService,
+    BusinessProfileService,
+    ExpenseService,
+    InvoiceService,
+    OrganisationService,
+    QuoteService,
+)
 from .factory import Application
 
 DEMO_EMAIL = "demo@example.test"
@@ -120,6 +127,20 @@ _LINE_ITEM_POOL: list[tuple[str, Decimal, Decimal, Decimal]] = [
 
 DEMO_CURRENCY = "GBP"  # matches the demo profile's reporting currency, so
 # the home dashboard's chart picks up every seeded invoice - see CLAUDE.md.
+
+# (description, quantity, unit_price, tax_rate) - expenses recorded against
+# an account, shown at the bottom of its detail page (see CLAUDE.md).
+_EXPENSE_LINE_ITEM_POOL: list[tuple[str, Decimal, Decimal, Decimal]] = [
+    ("Domain renewal", Decimal("1"), Decimal("12.00"), Decimal("0.20")),
+    ("Software subscription", Decimal("1"), Decimal("29.00"), Decimal("0.20")),
+    ("Stock photography licence", Decimal("3"), Decimal("15.00"), Decimal("0")),
+]
+
+# (months_ago, account_index, item_index) - unlike _SCENARIOS below, an
+# expense has no draft/sent lifecycle to exercise (see models.Expense), so
+# this is just enough spread to show a few EXP-numbered records with
+# different accounts/VAT rates on the demo account detail pages.
+_EXPENSE_SCENARIOS = [(11, 0, 0), (6, 1, 1), (2, 2, 2)]
 
 
 def _months_ago(now: datetime, months: int) -> datetime:
@@ -311,5 +332,22 @@ def seed_demo_data(application: Application, auth: Auth, *, now: datetime | None
             item_index=scenario.account_index,
         )
         getattr(seeder, scenario.run)()
+
+    for months_ago, account_index, item_index in _EXPENSE_SCENARIOS:
+        expenses = ExpenseService(application.repository, clock=_FixedClock(_months_ago(now, months_ago)))
+        expense = expenses.create_expense(
+            organisation_id=organisation_id,
+            account_id=account_ids[account_index],
+            currency=DEMO_CURRENCY,
+        )
+        description, quantity, unit_price, tax_rate = _EXPENSE_LINE_ITEM_POOL[item_index]
+        expenses.add_line_item(
+            organisation_id,
+            expense.id,
+            description=description,
+            quantity=quantity,
+            unit_price=unit_price,
+            tax_rate=tax_rate,
+        )
 
     return True

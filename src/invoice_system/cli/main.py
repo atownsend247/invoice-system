@@ -9,7 +9,7 @@ from ..auth import DEFAULT_AUTH_DB_PATH, build_auth
 from ..demo_data import DEMO_EMAIL, DEMO_PASSWORD, seed_demo_data
 from ..errors import AppError
 from ..factory import Application, build_application
-from ..pdf import render_invoice_pdf, render_quote_pdf
+from ..pdf import render_expense_pdf, render_invoice_pdf, render_quote_pdf
 
 DEFAULT_DB_PATH = "invoice_system.db"
 
@@ -326,6 +326,85 @@ def invoice_pdf(application: Application, invoice_id: str, output: str, user_id:
     account = application.accounts.get_account(organisation_id, fetched.account_id)
     profile = application.business_profiles.get_profile(user_id)
     Path(output).write_bytes(render_invoice_pdf(account, fetched, profile))
+    click.echo(f"Wrote {output}")
+
+
+@cli.group()
+def expense() -> None:
+    pass
+
+
+@expense.command("create")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option("--account-id", required=True)
+@click.option("--currency", default="USD", show_default=True)
+@click.pass_obj
+def expense_create(application: Application, user_id: str, account_id: str, currency: str) -> None:
+    created = application.expenses.create_expense(
+        organisation_id=_organisation_id(application, user_id), account_id=account_id, currency=currency
+    )
+    click.echo(f"Created expense {created.id} ({created.number})")
+
+
+@expense.command("list")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option("--account-id", default=None)
+@click.pass_obj
+def expense_list(application: Application, user_id: str, account_id: str | None) -> None:
+    organisation_id = _organisation_id(application, user_id)
+    for exp in application.expenses.list_expenses(organisation_id, account_id=account_id):
+        click.echo(f"{exp.id}\t{exp.number}\t{exp.total} {exp.currency}")
+
+
+@expense.command("add-item")
+@click.argument("expense_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option("--description", required=True)
+@click.option("--quantity", required=True, type=Decimal)
+@click.option("--unit-price", required=True, type=Decimal)
+@click.option(
+    "--tax-rate",
+    default="0",
+    type=Decimal,
+    show_default=True,
+    help="VAT/tax rate as a fraction, e.g. 0.20 for 20%.",
+)
+@click.pass_obj
+def expense_add_item(
+    application: Application,
+    expense_id: str,
+    user_id: str,
+    description: str,
+    quantity: Decimal,
+    unit_price: Decimal,
+    tax_rate: Decimal,
+) -> None:
+    application.expenses.add_line_item(
+        _organisation_id(application, user_id),
+        expense_id,
+        description=description,
+        quantity=quantity,
+        unit_price=unit_price,
+        tax_rate=tax_rate,
+    )
+    click.echo("Added line item")
+
+
+@expense.command("pdf")
+@click.argument("expense_id")
+@click.option("--output", "-o", type=click.Path(), required=True)
+@click.option(
+    "--user-id",
+    required=True,
+    help=_USER_ID_HELP + " Also shown on the PDF as the 'From' party (see 'settings show'), if set.",
+)
+@click.pass_obj
+def expense_pdf(application: Application, expense_id: str, output: str, user_id: str) -> None:
+    organisation_id = _organisation_id(application, user_id)
+    fetched = application.expenses.get_expense(organisation_id, expense_id)
+    account = application.accounts.get_account(organisation_id, fetched.account_id)
+    profile = application.business_profiles.get_profile(user_id)
+    Path(output).write_bytes(render_expense_pdf(account, fetched, profile))
     click.echo(f"Wrote {output}")
 
 

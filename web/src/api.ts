@@ -1,6 +1,7 @@
 import type {
   Account,
   BusinessProfile,
+  Expense,
   Invoice,
   LoginResult,
   MonthlyTotalsReport,
@@ -226,6 +227,36 @@ export function downloadInvoicePdf(invoice: Invoice): Promise<void> {
 
 export function getInvoicePdfUrl(invoice: Invoice): Promise<string> {
   return getPdfObjectUrl(`/invoices/${invoice.id}/pdf`)
+}
+
+// -- expenses ----------------------------------------------------------------
+
+export function listExpenses(accountId?: string): Promise<Expense[]> {
+  const query = accountId ? `?account_id=${accountId}` : ''
+  return request(`/expenses${query}`)
+}
+
+export function getExpense(id: string): Promise<Expense> {
+  return request(`/expenses/${id}`)
+}
+
+export function createExpense(accountId: string, currency = 'USD'): Promise<Expense> {
+  return request('/expenses', { method: 'POST', body: JSON.stringify({ account_id: accountId, currency }) })
+}
+
+export function addExpenseLineItem(
+  expenseId: string,
+  input: { description: string; quantity: string; unit_price: string; tax_rate?: string },
+): Promise<Expense> {
+  return request(`/expenses/${expenseId}/line-items`, { method: 'POST', body: JSON.stringify(input) })
+}
+
+export function downloadExpensePdf(expense: Expense): Promise<void> {
+  return downloadPdf(`/expenses/${expense.id}/pdf`, `${expense.number}.pdf`)
+}
+
+export function getExpensePdfUrl(expense: Expense): Promise<string> {
+  return getPdfObjectUrl(`/expenses/${expense.id}/pdf`)
 }
 
 // -- settings ----------------------------------------------------------------

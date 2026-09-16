@@ -3,6 +3,8 @@ import { Layout } from './components/Layout'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { AccountDetailPage } from './pages/AccountDetailPage'
 import { AccountsPage } from './pages/AccountsPage'
+import { ExpenseDetailPage } from './pages/ExpenseDetailPage'
+import { ExpenseNewPage } from './pages/ExpenseNewPage'
 import { HomePage } from './pages/HomePage'
 import { InvoiceDetailPage } from './pages/InvoiceDetailPage'
 import { InvoicesPage } from './pages/InvoicesPage'
@@ -26,6 +28,8 @@ export function App() {
           <Route path="/quotes/:id" element={<QuoteDetailPage />} />
           <Route path="/invoices" element={<InvoicesPage />} />
           <Route path="/invoices/:id" element={<InvoiceDetailPage />} />
+          <Route path="/expenses/new" element={<ExpenseNewPage />} />
+          <Route path="/expenses/:id" element={<ExpenseDetailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Route>

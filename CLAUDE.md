@@ -7,12 +7,18 @@ into an Invoice rather than the two being independently created. Each line
 item can carry its own UK VAT rate. Quotes and Invoices are each
 independently viewable (an in-page preview) or downloadable as PDFs, and a
 sent invoice can be marked `paid` (a single status flag, not a payment
-ledger). A `BusinessProfile` holds the logged-in user's *own* business
+ledger). An Account can also have `Expense`s recorded against it (e.g. a
+domain renewal paid on the client's behalf) — unlike Quote/Invoice, an
+Expense has no draft/sent lifecycle: it's a record of money already spent,
+so it gets its `EXP-0001` number immediately at creation rather than at a
+later "send" step, and line items can be added at any time, not gated
+behind a status check (see ExpenseService). A `BusinessProfile` holds the
+logged-in user's *own* business
 details (name/address/payment terms/reporting currency/UTR/VAT/bank
 details/a document header & footer shown on every PDF they generate) — see
 below for why that's a third, deliberately separate thing from both
 `Account` and sessionkit's `User`.
-Every `Account`/`Quote`/`Invoice` also belongs to exactly one
+Every `Account`/`Quote`/`Invoice`/`Expense` also belongs to exactly one
 `Organisation` — the tenant boundary, auto-created per login user, so one
 user's data is never visible to another (see below and
 `docs/data-model.md`'s "Multi-tenancy"). A fresh `invoice-system-cli
@@ -35,7 +41,8 @@ login) by default — see Commands and `demo_data.py`.
   pipeline itself. See `docs/deployment.md`.
 - `src/invoice_system/` — flat top level holds the load-bearing modules
   (`core.py` all domain logic — `AccountService`, `QuoteService`,
-  `InvoiceService`, `BusinessProfileService`, `StatsService`; `models.py`,
+  `InvoiceService`, `ExpenseService`, `BusinessProfileService`,
+  `StatsService`; `models.py`,
   `errors.py`, `clock.py`, `repository.py` the storage Protocol,
   `factory.py` wiring, `pdf.py` PDF rendering used by both entry points,
   `auth.py` wiring for the login/session cross-cutting concern,
@@ -365,7 +372,8 @@ Four separate things are easy to conflate here — don't:
   the account's own fields (an inline "Edit" toggle reveals the same
   `AccountForm` used for "New account" on `AccountsPage.tsx`, extracted to
   `components/AccountForm.tsx` so both pages share it) plus that account's
-  quotes and invoices, both listed newest-issued-first. `AccountsPage.tsx`
+  quotes, invoices, and expenses (see below), each listed
+  newest-issued-first. `AccountsPage.tsx`
   also has a search box (`accountMatchesQuery` in that file, unit-tested
   in `AccountsPage.test.ts`) that filters client-side against every shown
   field, and each row is clickable (`role="link"`, keyboard-operable via
@@ -374,6 +382,30 @@ Four separate things are easy to conflate here — don't:
   it doesn't also trigger the row's own navigation. Creating a new account
   navigates straight to its detail page on success, rather than staying on
   the list.
+- `ExpenseService` (`core.py`) tracks costs incurred against an `Account` -
+  e.g. a domain renewal paid on a client's behalf. Deliberately no draft/
+  sent status field, unlike `Quote`/`Invoice`: an expense is a record of
+  money already spent, not a document issued to anyone, so
+  `create_expense` assigns its `EXP-0001` number (same per-organisation
+  counter pattern as `Quote.number`/`Invoice.number`) immediately rather
+  than deferring that to a later `send()`, and `add_line_item` isn't
+  gated behind a status check the way `QuoteService.add_line_item`
+  requires `draft` - a line item can be added at any time. Line items
+  share the same shape as Quote/Invoice's (`LineItem`, including a
+  per-line `tax_rate`) rather than a simpler description+amount shape,
+  since VAT paid on a business expense may be separately reclaimable.
+  `POST /expenses`, `GET /expenses` (optionally `?account_id=`), `GET
+  /expenses/{id}`, `POST /expenses/{id}/line-items`, `GET
+  /expenses/{id}/pdf` (same `render_expense_pdf` pattern as
+  quotes/invoices in `pdf.py`, but with no "Status:" line - `_render`'s
+  `status` param is `None`-able specifically for this case - and no due/
+  expiry date). CLI: `expense create/list/add-item/pdf`, same
+  `--user-id`-resolves-organisation pattern as `quote`/`invoice`. Web UI:
+  listed at the bottom of `AccountDetailPage.tsx` with a "New expense"
+  link to `ExpenseNewPage.tsx` (same create-form pattern as
+  `QuoteNewPage.tsx`); `ExpenseDetailPage.tsx` (`/expenses/:id`) reuses
+  `LineItemsTable`/`PdfViewerModal` unchanged but has no status badge or
+  send/convert actions, since there's no lifecycle to show one for.
 - `StatsService.get_stats(organisation_id, currency)` is the all-time
   counters, scoped to one organisation, behind the home dashboard's
   "All-time stats" section (`GET /stats`, CLI `stats`) —
@@ -458,7 +490,13 @@ Four separate things are easy to conflate here — don't:
   historical address split. Migration 6 added five more nullable columns
   to `business_profiles` — `bank_account_name`/`bank_sort_code`/
   `bank_account_number`/`document_header`/`document_footer`, plain `ADD
-  COLUMN` × 5, no rebuild needed, same as migration 2.)
+  COLUMN` × 5, no rebuild needed, same as migration 2. Migration 7 is the
+  UUID reset (see `docs/data-model.md`'s "Opaque ids"). Migration 8 added
+  `expenses`/`expense_line_items` - two brand new tables, so a plain
+  `CREATE TABLE` × 2 (`expenses.number` is `NOT NULL`, unlike
+  `quotes.number`/`invoices.number`, since an `Expense` has no draft state
+  to leave it null through - see `ExpenseService`), no rebuild needed,
+  same reasoning as every other pure-addition migration in this file.)
 - Storage is a single shared SQLite connection/file — **serialise every
   access on a lock** inside the repository implementation rather than
   assuming the caller will. That lock is per-*call*, not across a sequence

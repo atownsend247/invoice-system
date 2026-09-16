@@ -21,6 +21,12 @@ export interface ApiInvoice {
   quote_id: string | null
 }
 
+export interface ApiExpense {
+  id: string
+  number: string
+  account_id: string
+}
+
 // Plain fetch, not Playwright's `request` fixture - these calls happen from
 // a worker-scoped fixture (apiToken), which can't depend on a test-scoped
 // one, and Node has fetch natively (see CLAUDE.md's Node version gotchas).
@@ -43,6 +49,7 @@ interface TestFixtures {
   sentQuote: ApiQuote
   draftInvoice: ApiInvoice
   sentInvoice: ApiInvoice
+  expense: ApiExpense
   reportingCurrency: string
 }
 
@@ -126,6 +133,14 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       method: 'POST',
     })
     await use(sent)
+  },
+
+  expense: async ({ apiToken, testAccount }, use) => {
+    const expense = await apiFetch<ApiExpense>('/expenses', apiToken, {
+      method: 'POST',
+      body: JSON.stringify({ account_id: testAccount.id, currency: 'USD' }),
+    })
+    await use(expense)
   },
 
   // Read-only (GET, never PUT) deliberately - the business profile is a

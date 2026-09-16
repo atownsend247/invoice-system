@@ -1,10 +1,19 @@
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import pytest
 
 from invoice_system.ids import new_id
-from invoice_system.models import Account, BusinessProfile, Organisation, Quote, QuoteStatus
+from invoice_system.models import (
+    Account,
+    BusinessProfile,
+    Expense,
+    LineItem,
+    Organisation,
+    Quote,
+    QuoteStatus,
+)
 from invoice_system.storage.schema import MIGRATIONS
 from invoice_system.storage.sqlite_repository import SqliteRepository
 
@@ -160,7 +169,7 @@ def test_migration_7_resets_ids_to_uuids(tmp_path):
     conn.close()
 
     repository = SqliteRepository(db_path)
-    repository.migrate()  # applies migration 7 - the latest, so this is fine here
+    repository.migrate()  # applies migration 7 and every migration after it
 
     assert repository.get_organisation_id_for_user("anyone") is None
     created = repository.create_organisation(
@@ -168,6 +177,43 @@ def test_migration_7_resets_ids_to_uuids(tmp_path):
     )
     assert created.id != "1"
     assert len(created.id) == 36  # UUID4's canonical string length
+    repository.close()
+
+
+def test_migration_8_adds_expenses_without_touching_existing_data(tmp_path):
+    # Migration 8 (expenses/expense_line_items) is purely additive - new
+    # tables, no rebuild of any existing one (see schema.py) - so an
+    # organisation created under migration 7's schema should still work
+    # unchanged afterwards.
+    db_path = tmp_path / "frozen.db"
+    conn = sqlite3.connect(str(db_path))
+    for version, script in enumerate(MIGRATIONS[:7], start=1):
+        conn.executescript(script)
+        conn.execute(f"PRAGMA user_version = {version}")
+    conn.commit()
+
+    org_id = new_id()
+    now = datetime(2026, 1, 1, tzinfo=UTC).isoformat()
+    conn.execute("INSERT INTO organisations (id, name, created_at) VALUES (?, 'Org A', ?)", (org_id, now))
+    conn.commit()
+    conn.close()
+
+    repository = SqliteRepository(db_path)
+    repository.migrate()  # applies migration 8
+
+    account = repository.create_account(_account(org_id))
+    expense = repository.create_expense(
+        Expense(
+            id=new_id(),
+            organisation_id=org_id,
+            account_id=account.id,
+            number=repository.next_expense_number(org_id),
+            currency="GBP",
+            issue_date=date(2026, 1, 1),
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+    assert expense.number == "EXP-0001"
     repository.close()
 
 
@@ -406,3 +452,115 @@ def test_upsert_business_profile_round_trip_and_update(repo):
     assert updated.vat_number == "GB123456789"
     assert updated.bank_account_name is None
     assert updated.document_header is None
+
+
+def test_expense_round_trip_with_line_items(repo, organisation_id):
+    account = repo.create_account(_account(organisation_id))
+    created = repo.create_expense(
+        Expense(
+            id=new_id(),
+            organisation_id=organisation_id,
+            account_id=account.id,
+            number=repo.next_expense_number(organisation_id),
+            currency="GBP",
+            issue_date=date(2026, 1, 1),
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+    assert created.number == "EXP-0001"
+    assert created.line_items == []
+
+    repo.add_expense_line_item(
+        created.id,
+        LineItem(
+            id=new_id(),
+            description="Domain renewal",
+            quantity=Decimal("1"),
+            unit_price=Decimal("12.00"),
+            tax_rate=Decimal("0.20"),
+            position=0,
+        ),
+    )
+
+    fetched = repo.get_expense(organisation_id, created.id)
+    assert fetched.number == "EXP-0001"
+    assert fetched.account_id == account.id
+    assert [item.description for item in fetched.line_items] == ["Domain renewal"]
+    assert fetched.total == Decimal("14.40")
+
+
+def test_get_missing_expense_returns_none(repo, organisation_id):
+    assert repo.get_expense(organisation_id, "does-not-exist") is None
+
+
+def test_get_expense_from_another_organisation_returns_none(repo, organisation_id):
+    account = repo.create_account(_account(organisation_id))
+    created = repo.create_expense(
+        Expense(
+            id=new_id(),
+            organisation_id=organisation_id,
+            account_id=account.id,
+            number=repo.next_expense_number(organisation_id),
+            currency="GBP",
+            issue_date=date(2026, 1, 1),
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+
+    other = repo.create_organisation(
+        Organisation(id=new_id(), name="Other Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
+    )
+    assert repo.get_expense(other.id, created.id) is None
+
+
+def test_list_expenses_is_ordered_by_creation_not_by_id(repo, organisation_id):
+    account = repo.create_account(_account(organisation_id))
+
+    def _expense(number: str) -> Expense:
+        return Expense(
+            id=new_id(),
+            organisation_id=organisation_id,
+            account_id=account.id,
+            number=number,
+            currency="GBP",
+            issue_date=date(2026, 1, 1),
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+
+    first = repo.create_expense(_expense("EXP-0001"))
+    second = repo.create_expense(_expense("EXP-0002"))
+
+    fetched = repo.list_expenses(organisation_id)
+    assert [e.id for e in fetched] == [first.id, second.id]
+
+
+def test_list_expenses_filters_by_account(repo, organisation_id):
+    account = repo.create_account(_account(organisation_id))
+    other_account = repo.create_account(_account(organisation_id, business_name="Other"))
+
+    def _expense(account_id: str, number: str) -> Expense:
+        return Expense(
+            id=new_id(),
+            organisation_id=organisation_id,
+            account_id=account_id,
+            number=number,
+            currency="GBP",
+            issue_date=date(2026, 1, 1),
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+
+    repo.create_expense(_expense(account.id, "EXP-0001"))
+    repo.create_expense(_expense(other_account.id, "EXP-0002"))
+
+    assert len(repo.list_expenses(organisation_id)) == 2
+    assert len(repo.list_expenses(organisation_id, account_id=account.id)) == 1
+
+
+def test_next_expense_number_increments_and_is_scoped_per_organisation(repo, organisation_id):
+    other = repo.create_organisation(
+        Organisation(id=new_id(), name="Other Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
+    )
+
+    assert repo.next_expense_number(organisation_id) == "EXP-0001"
+    assert repo.next_expense_number(organisation_id) == "EXP-0002"
+    assert repo.next_expense_number(other.id) == "EXP-0001"

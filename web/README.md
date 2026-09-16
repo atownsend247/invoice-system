@@ -3,11 +3,13 @@
 React + TypeScript + Vite SPA for the backend in `../src/invoice_system/`.
 A home dashboard (overdue/outstanding invoices, a monthly paid-vs-outstanding
 totals chart, all-time stats), accounts (create/edit, searchable list,
-detail page with that account's quotes/invoices), quotes (draft → sent →
-convert to invoice, each line item with its own VAT rate), invoices
-(send/void/mark as paid), a PDF preview and download for both, and a
-settings page for your own business profile (including bank details and a
-document header/footer shown on every PDF you generate), behind login.
+detail page with that account's quotes/invoices/expenses), quotes (draft →
+sent → convert to invoice, each line item with its own VAT rate), invoices
+(send/void/mark as paid), expenses (recorded against an account, no
+draft/sent lifecycle - just an EXP-numbered record with line items), a PDF
+preview and download for all three, and a settings page for your own
+business profile (including bank details and a document header/footer
+shown on every PDF you generate), behind login.
 
 ## Develop
 
@@ -36,7 +38,7 @@ the full walkthrough and the security caveat.
 
 ```
 npm test          # vitest - unit tests: api.ts, HomePage's overdue/outstanding logic, MonthlyTotalsChart, a login/routing integration test
-npm run test:e2e  # playwright - login/home/accounts/quotes/invoices/settings, one spec each
+npm run test:e2e  # playwright - login/home/accounts/quotes/invoices/expenses/settings, one spec each
 npm run build     # tsc -b && vite build
 ```
 
@@ -77,12 +79,14 @@ failure; a failed run's trace/screenshot land in `test-results/` (gitignored).
   and return that object URL; the calling page revokes it
   (`URL.revokeObjectURL`) when the modal closes.
 - `src/pages/` — one file per route (`App.tsx` wires them up).
-  `HomePage.tsx` exports its `isOverdue`/`isOutstanding` filters (not just
-  the component) specifically so `HomePage.test.ts` can unit-test the
-  date logic against fixed dates, without a fake clock reaching the e2e
+  `HomePage.tsx` exports its `isOverdue`/`isOutstanding` filters and
+  `conversionRate` (not just the component) specifically so
+  `HomePage.test.ts` can unit-test that logic against fixed
+  values/dates, without a fake clock reaching the e2e
   layer (see the note below on why e2e can't produce a genuinely overdue
   invoice). It also renders `MonthlyTotalsChart` and the "All-time stats"
-  section (currently just accounts registered, from `GET /stats`).
+  section (accounts/quotes/invoices created, quote conversion rate, total
+  paid - from `GET /stats`).
   `components/AccountForm.tsx` is shared between `AccountsPage.tsx`'s "New
   account" and `AccountDetailPage.tsx`'s (`/accounts/:id`) "Edit" toggle -
   the same fields, same validation, differing only in initial values and
@@ -90,6 +94,13 @@ failure; a failed run's trace/screenshot land in `test-results/` (gitignored).
   (keyboard-operable too) straight to that detail page, and its search box
   (`accountMatchesQuery`, unit-tested in `AccountsPage.test.ts`) filters
   client-side against every field shown, including the address.
+  `AccountDetailPage.tsx` also lists that account's expenses (below its
+  quotes/invoices) with a "New expense" link to `ExpenseNewPage.tsx` (same
+  create-form pattern as `QuoteNewPage.tsx`); `ExpenseDetailPage.tsx`
+  (`/expenses/:id`) is the simpler sibling of `QuoteDetailPage.tsx` - it
+  reuses `LineItemsTable`/`PdfViewerModal` unchanged, but has no status
+  badge or send/convert actions, since an `Expense` has no lifecycle to
+  move through (see CLAUDE.md).
 - `src/components/MonthlyTotalsChart.tsx` — the home dashboard's paid-vs-
   outstanding bar chart. Plain CSS bars (`<div>`s with a `height: N%`
   inline style), not a charting library — 12 months, two series, doesn't
@@ -100,16 +111,18 @@ failure; a failed run's trace/screenshot land in `test-results/` (gitignored).
   about never computing a display proportion). Unit-tested
   (`MonthlyTotalsChart.test.tsx`) for the scaling math and rendered output.
 - `e2e/` — Playwright, one spec file per feature area (`login`, `home`,
-  `accounts`, `quotes`, `invoices`, `settings.spec.ts`) rather than one long
+  `accounts`, `quotes`, `invoices`, `expenses`, `settings.spec.ts`) rather
+  than one long
   combined flow, so each
   can be read/run/extended on its own as the app grows. `fixtures.ts` is
   what makes that possible: each fixture (`testAccount`, `draftQuote`,
-  `sentQuote`, `draftInvoice`, `sentInvoice`, `reportingCurrency`) sets up
+  `sentQuote`, `draftInvoice`, `sentInvoice`, `expense`, `reportingCurrency`)
+  sets up
   its slice of backend state directly through the API, not the UI, so
   `quotes.spec.ts` isn't the thing that has to create an account first,
   `invoices.spec.ts` isn't the thing that has to drive a quote through
   send-and-convert first, and no spec depends on another one having run —
-  safe to run in parallel (29 tests, 6 workers, under 7s) or in any order.
+  safe to run in parallel (40 tests, 7 workers, under 7s) or in any order.
   `home.spec.ts` only checks that a freshly-sent invoice shows up under
   "Outstanding" (not Overdue) — nothing in the app can backdate a
   `due_date` (always computed server-side as today plus a positive

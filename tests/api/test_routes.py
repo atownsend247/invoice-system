@@ -127,6 +127,68 @@ def test_account_quote_invoice_flow(client, auth_headers):
     assert response.json()["number"] == "INV-0001"
 
 
+def test_account_expense_flow(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+
+    response = client.post(
+        "/expenses", json={"account_id": account_id, "currency": "GBP"}, headers=auth_headers
+    )
+    assert response.status_code == 201
+    body = response.json()
+    expense_id = body["id"]
+    # Unlike a quote, an expense gets its number immediately - there's no
+    # draft/send lifecycle (see models.Expense).
+    assert body["number"] == "EXP-0001"
+    assert body["line_items"] == []
+
+    response = client.post(
+        f"/expenses/{expense_id}/line-items",
+        json={"description": "Domain renewal", "quantity": "1", "unit_price": "12.00", "tax_rate": "0.20"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    assert response.json()["total"] == "14.40"
+
+    response = client.get(f"/expenses/{expense_id}", headers=auth_headers)
+    assert response.status_code == 200
+    assert [item["description"] for item in response.json()["line_items"]] == ["Domain renewal"]
+
+    response = client.get("/expenses", headers=auth_headers)
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+
+    response = client.get(f"/expenses?account_id={account_id}", headers=auth_headers)
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+
+    response = client.get(f"/expenses/{expense_id}/pdf", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+
+
+def test_expense_requires_existing_account(client, auth_headers):
+    response = client.post(
+        "/expenses", json={"account_id": "does-not-exist", "currency": "GBP"}, headers=auth_headers
+    )
+    assert response.status_code == 404
+
+
+def test_expense_from_another_login_user_returns_404(client, auth_headers, other_auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Owner's Client", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    expense_id = client.post("/expenses", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+
+    response = client.get(f"/expenses/{expense_id}", headers=other_auth_headers)
+    assert response.status_code == 404
+
+
 def test_accounts_are_isolated_between_login_users(client, auth_headers, other_auth_headers):
     # Regression test: two different login users must not see each other's
     # accounts/quotes/invoices - see CLAUDE.md and models.py's Organisation
