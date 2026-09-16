@@ -374,13 +374,21 @@ Four separate things are easy to conflate here — don't:
   it doesn't also trigger the row's own navigation. Creating a new account
   navigates straight to its detail page on success, rather than staying on
   the list.
-- `StatsService.get_stats(organisation_id)` is the all-time counters,
-  scoped to one organisation, behind the home dashboard's "All-time stats"
-  section (`GET /stats`, CLI `stats`) — currently just `account_count`. A
-  separate service, not a method on `AccountService`, because these stats
-  are expected to grow beyond accounts; add a field to `Stats` (models.py)
-  and a line to `get_stats()` when a new one is actually asked for, not
-  speculatively.
+- `StatsService.get_stats(organisation_id, currency)` is the all-time
+  counters, scoped to one organisation, behind the home dashboard's
+  "All-time stats" section (`GET /stats`, CLI `stats`) —
+  `account_count`/`quote_count`/`invoice_count` (every row, any status),
+  `quotes_sent_count`/`quotes_converted_count` (raw counts, not a
+  precomputed rate — the caller divides, same reasoning as
+  `HomePage.tsx`'s `isOverdue`/`isOutstanding` being computed client-side;
+  see its `conversionRate`), and `total_paid` (paid invoices only, filtered
+  to `currency` — same convention as `InvoiceService.monthly_totals`, an
+  invoice in a different currency is excluded rather than naively summed
+  in, so `get_stats` takes a plain `currency: str` and doesn't know whose
+  profile it came from, same as `monthly_totals`). A separate service, not
+  a method on `AccountService`, because these stats span every entity; add
+  a field to `Stats` (models.py) and a line to `get_stats()` when a new one
+  is actually asked for, not speculatively.
 - Two separate exception hierarchies get mapped to HTTP status in `api/app.py`,
   each in its own handler: this app's `AppError` (`handle_app_error`) and
   sessionkit's `AuthError` (`handle_auth_error`). Don't merge them into one

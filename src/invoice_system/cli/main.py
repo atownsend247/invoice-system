@@ -430,11 +430,24 @@ def settings_set(
 
 
 @cli.command("stats")
-@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option(
+    "--user-id",
+    required=True,
+    help=_USER_ID_HELP + " Also resolves this user's reporting currency (see 'settings show') - only "
+    "paid invoices in that currency count toward total paid.",
+)
 @click.pass_obj
 def stats(application: Application, user_id: str) -> None:
-    result = application.stats.get_stats(_organisation_id(application, user_id))
+    organisation_id = _organisation_id(application, user_id)
+    profile = application.business_profiles.get_profile(user_id)
+    result = application.stats.get_stats(organisation_id, profile.currency)
     click.echo(f"Accounts: {result.account_count}")
+    click.echo(
+        f"Quotes: {result.quote_count} "
+        f"({result.quotes_sent_count} sent, {result.quotes_converted_count} converted)"
+    )
+    click.echo(f"Invoices: {result.invoice_count}")
+    click.echo(f"Total paid: {result.total_paid} {profile.currency}")
 
 
 def main() -> None:

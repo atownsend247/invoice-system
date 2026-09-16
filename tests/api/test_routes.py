@@ -355,6 +355,18 @@ def test_stats_counts_accounts(client, auth_headers):
     assert response.json()["account_count"] == before + 1
 
 
+def test_stats_includes_quote_invoice_and_total_paid_fields(client, auth_headers):
+    response = client.get("/stats", headers=auth_headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["quote_count"] == 0
+    assert body["invoice_count"] == 0
+    assert body["quotes_sent_count"] == 0
+    assert body["quotes_converted_count"] == 0
+    assert body["total_paid"] == "0"
+    assert body["currency"]  # the caller's reporting currency, defaulted if unset
+
+
 def test_business_profile_requires_auth(client):
     response = client.get("/settings/business-profile")
     assert response.status_code == 401

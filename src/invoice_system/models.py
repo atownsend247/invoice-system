@@ -242,9 +242,22 @@ class MonthlyInvoiceTotals:
 
 @dataclass
 class Stats:
-    """All-time, system-wide counters for the home dashboard's stats
-    section - see StatsService.get_stats. Deliberately a small, flat
+    """All-time, organisation-scoped counters for the home dashboard's
+    stats section - see StatsService.get_stats. Deliberately a small, flat
     dataclass rather than one field per entity type growing organically -
-    add fields here as new stats are actually asked for, not speculatively."""
+    add fields here as new stats are actually asked for, not speculatively.
+    `quotes_sent_count`/`quotes_converted_count` are two raw counts rather
+    than a precomputed rate - dividing them (and handling the "no quotes
+    sent yet" case) is left to the caller, same as `isOverdue`/
+    `isOutstanding` being computed client-side on HomePage.tsx rather than
+    baked into the API response. `total_paid` follows
+    InvoiceService.monthly_totals' currency-filtering convention: only
+    invoices in the currency the caller asked for count, others are
+    excluded rather than naively summed in - see StatsService.get_stats."""
 
     account_count: int
+    quote_count: int
+    invoice_count: int
+    quotes_sent_count: int
+    quotes_converted_count: int
+    total_paid: Decimal

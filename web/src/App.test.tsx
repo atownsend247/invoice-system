@@ -60,7 +60,15 @@ describe('App', () => {
     mockedApi.listAccounts.mockResolvedValue([])
     mockedApi.listInvoices.mockResolvedValue([])
     mockedApi.getMonthlyInvoiceTotals.mockResolvedValue({ currency: 'GBP', months: [] })
-    mockedApi.getStats.mockResolvedValue({ account_count: 0 })
+    mockedApi.getStats.mockResolvedValue({
+      account_count: 0,
+      quote_count: 0,
+      invoice_count: 0,
+      quotes_sent_count: 0,
+      quotes_converted_count: 0,
+      total_paid: '0',
+      currency: 'GBP',
+    })
 
     renderApp('/login')
     const user = userEvent.setup()

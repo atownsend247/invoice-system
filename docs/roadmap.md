@@ -168,11 +168,18 @@
 
 ## Phase 10 — All-time stats (done)
 
-- [x] `StatsService.get_stats()` (currently just `account_count`,
-      system-wide) — a separate service from `AccountService` since more
-      stats are expected later. `GET /stats`, CLI `stats`.
+- [x] `StatsService.get_stats(organisation_id, currency)` — a separate
+      service from `AccountService` since stats span every entity.
+      `account_count`/`quote_count`/`invoice_count` (every row, any
+      status), `quotes_sent_count`/`quotes_converted_count` (raw counts, a
+      conversion rate is derived client-side), `total_paid` (paid invoices
+      only, filtered to `currency` — same convention as
+      `InvoiceService.monthly_totals`). `GET /stats`, CLI `stats`.
 - [x] An "All-time stats" section on the home dashboard
-      (`web/src/pages/HomePage.tsx`), below the monthly-totals chart.
+      (`web/src/pages/HomePage.tsx`), below the monthly-totals chart:
+      accounts registered, quotes created, quote conversion rate
+      (`conversionRate`, unit-tested in `HomePage.test.ts`), invoices
+      created, total paid.
 
 ## Phase 11 — Demo data (done)
 

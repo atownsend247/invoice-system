@@ -3,7 +3,7 @@ import * as api from '../api'
 import { MonthlyTotalsChart } from '../components/MonthlyTotalsChart'
 import { StatusBadge } from '../components/StatusBadge'
 import { useAsync } from '../hooks/useAsync'
-import type { Account, Invoice } from '../types'
+import type { Account, Invoice, Stats } from '../types'
 
 /** Today as an ISO date (`YYYY-MM-DD`) - comparable directly against
  * `due_date`, which is stored/serialised the same way (see CLAUDE.md,
@@ -23,6 +23,17 @@ export function isOverdue(invoice: Invoice, asOf: string = today()): boolean {
 
 export function isOutstanding(invoice: Invoice, asOf: string = today()): boolean {
   return invoice.status === 'sent' && !isOverdue(invoice, asOf)
+}
+
+/** The percentage of sent quotes that went on to become an invoice.
+ * `quotes_sent_count`/`quotes_converted_count` are raw counts from the API
+ * (see types.ts's Stats) - the division, and the "no quotes sent yet" case,
+ * are handled here rather than server-side, same reasoning as isOverdue/
+ * isOutstanding above. `null` (not 0 or NaN) when nothing's been sent yet,
+ * so the caller can render a dash instead of a misleading "0%". */
+export function conversionRate(stats: Pick<Stats, 'quotes_sent_count' | 'quotes_converted_count'>): number | null {
+  if (stats.quotes_sent_count === 0) return null
+  return (stats.quotes_converted_count / stats.quotes_sent_count) * 100
 }
 
 export function HomePage() {
@@ -87,6 +98,26 @@ export function HomePage() {
             <div className="stat">
               <dt>Accounts registered</dt>
               <dd>{stats.account_count}</dd>
+            </div>
+            <div className="stat">
+              <dt>Quotes created</dt>
+              <dd>{stats.quote_count}</dd>
+            </div>
+            <div className="stat">
+              <dt>Quote conversion rate</dt>
+              <dd>
+                {conversionRate(stats) === null ? '—' : `${conversionRate(stats)!.toFixed(0)}%`}
+              </dd>
+            </div>
+            <div className="stat">
+              <dt>Invoices created</dt>
+              <dd>{stats.invoice_count}</dd>
+            </div>
+            <div className="stat">
+              <dt>Total paid</dt>
+              <dd>
+                {stats.total_paid} {stats.currency}
+              </dd>
             </div>
           </dl>
         )}

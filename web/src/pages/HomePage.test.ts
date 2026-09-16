@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Invoice } from '../types'
-import { isOutstanding, isOverdue } from './HomePage'
+import { conversionRate, isOutstanding, isOverdue } from './HomePage'
 
 function invoice(overrides: Partial<Invoice>): Invoice {
   return {
@@ -57,5 +57,23 @@ describe('isOutstanding', () => {
 
   it('is false for a non-sent invoice', () => {
     expect(isOutstanding(invoice({ status: 'paid' }), '2026-01-16')).toBe(false)
+  })
+})
+
+describe('conversionRate', () => {
+  it('is null when no quotes have been sent yet, not 0 or NaN', () => {
+    expect(conversionRate({ quotes_sent_count: 0, quotes_converted_count: 0 })).toBeNull()
+  })
+
+  it('is a percentage of sent quotes that were converted', () => {
+    expect(conversionRate({ quotes_sent_count: 4, quotes_converted_count: 1 })).toBe(25)
+  })
+
+  it('is 100 when every sent quote converted', () => {
+    expect(conversionRate({ quotes_sent_count: 3, quotes_converted_count: 3 })).toBe(100)
+  })
+
+  it('is 0 when quotes were sent but none converted', () => {
+    expect(conversionRate({ quotes_sent_count: 3, quotes_converted_count: 0 })).toBe(0)
   })
 })

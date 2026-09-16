@@ -123,9 +123,20 @@ export interface MonthlyTotalsReport {
   months: MonthlyInvoiceTotal[]
 }
 
-// All-time, system-wide counters for the home dashboard's stats section -
-// see StatsService.get_stats. A small, flat shape that grows one field at
-// a time as new stats are actually asked for.
+// All-time, organisation-scoped counters for the home dashboard's stats
+// section - see StatsService.get_stats. A small, flat shape that grows one
+// field at a time as new stats are actually asked for. quotes_sent_count/
+// quotes_converted_count are raw counts, not a precomputed rate - dividing
+// them (and handling "no quotes sent yet") is done client-side, same as
+// isOverdue/isOutstanding below. total_paid follows the same
+// currency-filtering convention as MonthlyTotalsReport: only paid invoices
+// in `currency` count.
 export interface Stats {
   account_count: number
+  quote_count: number
+  invoice_count: number
+  quotes_sent_count: number
+  quotes_converted_count: number
+  total_paid: string
+  currency: string
 }

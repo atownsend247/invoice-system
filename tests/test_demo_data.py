@@ -48,7 +48,7 @@ def test_seed_demo_data_creates_a_business_profile_in_the_demo_currency(applicat
 def test_seed_demo_data_creates_multiple_accounts(application, auth):
     seed_demo_data(application, auth, now=FIXED_NOW)
     organisation_id = _demo_organisation_id(application, auth)
-    assert application.stats.get_stats(organisation_id).account_count >= 3
+    assert application.stats.get_stats(organisation_id, DEMO_CURRENCY).account_count >= 3
 
 
 def test_seed_demo_data_spans_a_mix_of_quote_and_invoice_statuses(application, auth):
@@ -97,10 +97,10 @@ def test_seed_demo_data_uses_more_than_one_vat_rate(application, auth):
 def test_seed_demo_data_is_idempotent(application, auth):
     first = seed_demo_data(application, auth, now=FIXED_NOW)
     organisation_id = _demo_organisation_id(application, auth)
-    accounts_after_first = application.stats.get_stats(organisation_id).account_count
+    accounts_after_first = application.stats.get_stats(organisation_id, DEMO_CURRENCY).account_count
 
     second = seed_demo_data(application, auth, now=FIXED_NOW)
 
     assert first is True
     assert second is False
-    assert application.stats.get_stats(organisation_id).account_count == accounts_after_first
+    assert application.stats.get_stats(organisation_id, DEMO_CURRENCY).account_count == accounts_after_first

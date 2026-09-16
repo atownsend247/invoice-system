@@ -249,7 +249,21 @@ class MonthlyTotalsReportOut(BaseModel):
 
 class StatsOut(BaseModel):
     account_count: int
+    quote_count: int
+    invoice_count: int
+    quotes_sent_count: int
+    quotes_converted_count: int
+    total_paid: str
+    currency: str
 
     @classmethod
-    def from_model(cls, stats) -> "StatsOut":
-        return cls(account_count=stats.account_count)
+    def from_model(cls, stats, currency: str) -> "StatsOut":
+        return cls(
+            account_count=stats.account_count,
+            quote_count=stats.quote_count,
+            invoice_count=stats.invoice_count,
+            quotes_sent_count=stats.quotes_sent_count,
+            quotes_converted_count=stats.quotes_converted_count,
+            total_paid=str(stats.total_paid),
+            currency=currency,
+        )

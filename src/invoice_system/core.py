@@ -548,5 +548,27 @@ class StatsService:
         self._repository = repository
         self._clock = clock
 
-    def get_stats(self, organisation_id: str) -> Stats:
-        return Stats(account_count=len(self._repository.list_accounts(organisation_id)))
+    def get_stats(self, organisation_id: str, currency: str) -> Stats:
+        """`total_paid` is filtered to `currency` only, same convention as
+        InvoiceService.monthly_totals - an invoice in a different currency
+        is excluded rather than naively summed in. This service doesn't
+        know whose profile `currency` came from, same as monthly_totals."""
+        accounts = self._repository.list_accounts(organisation_id)
+        quotes = self._repository.list_quotes(organisation_id)
+        invoices = self._repository.list_invoices(organisation_id)
+
+        quotes_sent_count = sum(1 for q in quotes if q.status != QuoteStatus.DRAFT)
+        quotes_converted_count = sum(1 for q in quotes if q.status == QuoteStatus.CONVERTED)
+        total_paid = sum(
+            (i.total for i in invoices if i.status == InvoiceStatus.PAID and i.currency == currency),
+            Decimal("0"),
+        )
+
+        return Stats(
+            account_count=len(accounts),
+            quote_count=len(quotes),
+            invoice_count=len(invoices),
+            quotes_sent_count=quotes_sent_count,
+            quotes_converted_count=quotes_converted_count,
+            total_paid=total_paid,
+        )

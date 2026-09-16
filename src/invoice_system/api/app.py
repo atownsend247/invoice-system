@@ -391,9 +391,12 @@ def save_business_profile(
 @domain_router.get("/stats", response_model=StatsOut)
 def get_stats(
     application: Application = Depends(get_application),
+    user: SessionUser = Depends(get_current_user),
     organisation_id: str = Depends(get_organisation_id),
 ) -> StatsOut:
-    return StatsOut.from_model(application.stats.get_stats(organisation_id))
+    profile = application.business_profiles.get_profile(user.id)
+    stats = application.stats.get_stats(organisation_id, profile.currency)
+    return StatsOut.from_model(stats, profile.currency)
 
 
 app.include_router(domain_router)
