@@ -44,7 +44,7 @@ ssh "${ssh_opts[@]}" "$target" "
     cd '$BACKEND_DIR'
     export PATH=\"\$HOME/.local/bin:\$PATH\"
     uv sync --frozen --no-dev
-    uv run invoice-system-cli init-db --no-demo
+    uv run invoice-system-cli init-db
 "
 
 echo "==> Restarting the backend service"
