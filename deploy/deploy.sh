@@ -11,11 +11,12 @@
 #
 # Assumes the container was already provisioned once by hand: the deploy
 # user's public key in ~/.ssh/authorized_keys, uv installed for that user,
-# and passwordless sudo for exactly the two commands this script runs
-# remotely (restarting the backend service, reloading nginx) - see
-# docs/deployment.md for the full one-time setup, including
-# invoice-system-api.service and nginx-invoice-system.conf in this
-# directory as the starting point for that.
+# and passwordless sudo for exactly the commands this script runs remotely
+# (restarting the backend service, reloading nginx, and - the first time
+# only, see below - installing the systemd unit) - see docs/deployment.md
+# for the full one-time setup, including invoice-system-api.service and
+# nginx-invoice-system.conf in this directory as the starting point for
+# that.
 set -euo pipefail
 
 : "${DEPLOY_HOST:?}"
@@ -29,6 +30,32 @@ ssh_opts=(-o StrictHostKeyChecking=accept-new -o BatchMode=yes)
 
 echo "==> Ensuring target directories exist on $DEPLOY_HOST"
 ssh "${ssh_opts[@]}" "$target" "mkdir -p '$BACKEND_DIR' '$FRONTEND_DIR'"
+
+echo "==> Ensuring the systemd service is installed"
+# Only installs it if it's missing - never overwrites an already-installed
+# unit file, so hand edits made directly on the container (or a
+# deliberately different config) survive every later deploy. Delete
+# /etc/systemd/system/$BACKEND_SERVICE.service on the container yourself
+# first if you want a newer deploy/invoice-system-api.service to actually
+# take effect there.
+service_file="/etc/systemd/system/$BACKEND_SERVICE.service"
+if ssh "${ssh_opts[@]}" "$target" "test -f '$service_file'"; then
+    echo "    Already installed, skipping"
+else
+    echo "    Not found - installing deploy/$BACKEND_SERVICE.service"
+    rsync -az -e "ssh ${ssh_opts[*]}" "deploy/$BACKEND_SERVICE.service" "$target:/tmp/$BACKEND_SERVICE.service"
+    # enable, not enable --now (unlike the manual command in the .service
+    # file's own header comment) - this runs before the code is even
+    # synced yet (see below), so nothing should start it early; the
+    # "Restarting the backend service" step further down starts it for
+    # real, once there's actually something deployed to run.
+    ssh "${ssh_opts[@]}" "$target" "
+        set -euo pipefail
+        sudo mv '/tmp/$BACKEND_SERVICE.service' '$service_file'
+        sudo systemctl daemon-reload
+        sudo systemctl enable '$BACKEND_SERVICE'
+    "
+fi
 
 echo "==> Syncing backend source"
 # --delete keeps the remote tree an exact mirror of what was just tested -

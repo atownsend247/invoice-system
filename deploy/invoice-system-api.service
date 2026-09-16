@@ -1,7 +1,17 @@
-# Example systemd unit for the backend API, inside the Proxmox LXC
-# container. Not applied automatically by the Jenkins pipeline - copy it
-# in once during initial container setup (see docs/deployment.md), then
-# `deploy.sh` just restarts it on every deploy.
+# Systemd unit for the backend API, inside the Proxmox LXC container.
+# `deploy.sh` installs this itself, automatically, but only the first
+# time - it checks for /etc/systemd/system/invoice-system-api.service and
+# never overwrites it if that's already there, so edit
+# INVOICE_SYSTEM_CORS_ORIGINS below (and anything else you need to change
+# for your environment) in this file *before* your first deploy, since
+# whatever's committed here is what gets copied onto the container
+# verbatim. To make a later deploy pick up local changes to this file,
+# either edit the installed copy directly on the container, or delete it
+# there first (`sudo rm /etc/systemd/system/invoice-system-api.service`)
+# so the next deploy reinstalls it fresh. See docs/deployment.md.
+#
+# The manual equivalent of what deploy.sh does, if you ever need to run it
+# by hand:
 #
 #   sudo cp invoice-system-api.service /etc/systemd/system/
 #   sudo systemctl daemon-reload
