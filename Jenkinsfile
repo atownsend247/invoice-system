@@ -120,7 +120,7 @@ pipeline {
             // before shipping it. Only runs when a deploy is actually
             // about to happen, so PRs/other branches don't pay for it.
             when {
-                expression { BRANCH_NAME == 'main' }
+                expression { "${GIT_LOCAL_BRANCH}" == 'main' }
             }
             environment {
                 VITE_API_BASE_URL = "${env.API_PUBLIC_URL}"
@@ -134,7 +134,7 @@ pipeline {
 
         stage('Deploy') {
             when {
-                expression { BRANCH_NAME == 'main' }
+                expression { "${GIT_LOCAL_BRANCH}" == 'main' }
             }
             steps {
                 sshagent(credentials: [env.DEPLOY_SSH_CRED_ID]) {
