@@ -1,0 +1,34 @@
+# Example systemd unit for the backend API, inside the Proxmox LXC
+# container. Not applied automatically by the Jenkins pipeline - copy it
+# in once during initial container setup (see docs/deployment.md), then
+# `deploy.sh` just restarts it on every deploy.
+#
+#   sudo cp invoice-system-api.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now invoice-system-api
+
+[Unit]
+Description=Invoice System API
+After=network.target
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/invoice-system
+Environment=INVOICE_SYSTEM_DB=/opt/invoice-system/invoice_system.db
+Environment=INVOICE_SYSTEM_AUTH_DB=/opt/invoice-system/auth.db
+# Same-origin via the nginx reverse proxy (see nginx-invoice-system.conf),
+# so this can be tightened from the wide-open default - see CLAUDE.md.
+Environment=INVOICE_SYSTEM_CORS_ORIGINS=https://invoice.example.com
+# 127.0.0.1, not 0.0.0.0 - only nginx should reach this directly; the LXC
+# container's own firewall/network setup is what actually keeps port 8000
+# off the public network, this is just defense in depth (see CLAUDE.md's
+# LAN-serving gotcha for the --host distinction this mirrors).
+ExecStart=/home/deploy/.local/bin/uv run --project /opt/invoice-system \
+    uvicorn invoice_system.api.app:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

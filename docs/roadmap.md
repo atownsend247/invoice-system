@@ -187,5 +187,23 @@
       rows. **Must be kept in sync with new features by hand** — see
       `CLAUDE.md`.
 
+## Phase 12 — CI/CD (basic, done)
+
+- [x] `Jenkinsfile`: build + test (mirrors `.github/workflows/ci.yml` -
+      backend and frontend in parallel, e2e after both pass) and, on `main`
+      only, deploy both the backend and the built frontend to a Proxmox LXC
+      container over SSH (`deploy/deploy.sh`). `deploy/
+      invoice-system-api.service` and `deploy/nginx-invoice-system.conf`
+      are one-time-setup reference config for the container (systemd unit,
+      nginx reverse-proxying `/api/` to the backend same-origin), not
+      applied by the pipeline itself. Always deploys with `init-db
+      --no-demo` — see `CLAUDE.md`. See `docs/deployment.md` for the full
+      one-time Jenkins/container setup this assumes.
+- [ ] Infrastructure provisioning (the container itself, TLS, `nginx`/`uv`
+      installation) is manual, not Terraform/Ansible/cloud-init-managed.
+- [ ] No rollback automation, no staging environment, no secrets management
+      beyond the one SSH credential — see `docs/deployment.md`'s "Not done
+      yet".
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

@@ -18,9 +18,16 @@ quotes, invoices, a demo login) by default — see Commands and
 
 - Design docs: `docs/` — start with `docs/development.md` (how to run it) and
   `docs/architecture.md`. `docs/data-model.md`, `docs/api.md`, `docs/roadmap.md`
-  are the reference. **Keep these in sync when code changes** (roadmap phases,
-  endpoint tables, model tables) — a stale doc is worse than no doc, because an
-  agent reads it as ground truth.
+  are the reference. `docs/deployment.md` covers the `Jenkinsfile`/`deploy/`
+  pipeline (build/test/deploy to a Proxmox LXC container). **Keep these in
+  sync when code changes** (roadmap phases, endpoint tables, model tables) —
+  a stale doc is worse than no doc, because an agent reads it as ground truth.
+- `Jenkinsfile` (repo root) + `deploy/` — CI/CD: build, test, and (on `main`)
+  deploy both the backend and the web client to a Proxmox LXC container over
+  SSH. `deploy/deploy.sh` does the actual rsync/ssh work;
+  `deploy/invoice-system-api.service` and `deploy/nginx-invoice-system.conf`
+  are one-time-setup reference config for the container, not applied by the
+  pipeline itself. See `docs/deployment.md`.
 - `src/invoice_system/` — flat top level holds the load-bearing modules
   (`core.py` all domain logic — `AccountService`, `QuoteService`,
   `InvoiceService`, `BusinessProfileService`, `StatsService`; `models.py`,
@@ -398,7 +405,10 @@ Three separate things are easy to conflate here — don't:
   running the seeder and checking due dates against today, not just by
   reading the code — a "12 months of history" generator is exactly the
   kind of date-math code worth a real run, not just unit tests with a
-  fixed clock.
+  fixed clock. `deploy/deploy.sh` (see `docs/deployment.md`) always runs
+  `init-db --no-demo` for exactly this reason — a real deployment getting
+  a demo login with a published password would be a real problem, not a
+  cosmetic one.
 - **Deliberately not exact**: `web/e2e/home.spec.ts`'s monthly-totals-chart
   test reads `reportingCurrency` (a fixture that `GET`s the current
   business profile's `currency`) once at the start, then asserts the chart

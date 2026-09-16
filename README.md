@@ -67,6 +67,8 @@ including running without demo data and serving on your local network.
 - [`docs/roadmap.md`](docs/roadmap.md) — phase status.
 - [`docs/testing-and-ci.md`](docs/testing-and-ci.md) — test layout, fixtures,
   coverage, CI shape.
+- [`docs/deployment.md`](docs/deployment.md) — the Jenkins pipeline and
+  Proxmox LXC deployment setup.
 - [`docs/extracting-reusable-packages.md`](docs/extracting-reusable-packages.md)
   — playbook for carving a cross-cutting concern into its own package.
 - [`web/README.md`](web/README.md) — the web client: where things are, how
