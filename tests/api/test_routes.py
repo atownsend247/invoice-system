@@ -121,6 +121,58 @@ def test_get_missing_account_returns_404(client, auth_headers):
     assert response.status_code == 404
 
 
+def test_update_account_persists_and_is_returned_on_refetch(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+
+    response = client.put(
+        f"/accounts/{account_id}",
+        json={
+            "business_name": "Acme Ltd",
+            "email": "b@b.test",
+            "address": "2 High St",
+            "contact_name": "Jane Doe",
+            "phone": "555-1234",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["business_name"] == "Acme Ltd"
+
+    response = client.get(f"/accounts/{account_id}", headers=auth_headers)
+    assert response.json()["business_name"] == "Acme Ltd"
+    assert response.json()["contact_name"] == "Jane Doe"
+    assert response.json()["phone"] == "555-1234"
+    assert response.json()["address"] == "2 High St"
+
+
+def test_update_missing_account_returns_404(client, auth_headers):
+    response = client.put(
+        "/accounts/999",
+        json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+def test_update_account_without_a_name_returns_422(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+
+    response = client.put(
+        f"/accounts/{account_id}",
+        json={"business_name": "", "email": "a@b.test", "address": "1 Main St"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
 def test_line_item_rejects_non_decimal_quantity(client, auth_headers):
     response = client.post(
         "/accounts",
@@ -138,6 +190,62 @@ def test_line_item_rejects_non_decimal_quantity(client, auth_headers):
     assert response.status_code == 422
 
 
+def test_line_item_applies_tax_rate_to_the_line_and_quote_totals(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+
+    response = client.post(
+        f"/quotes/{quote_id}/line-items",
+        json={"description": "Work", "quantity": "1", "unit_price": "100.00", "tax_rate": "0.20"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    item = response.json()["line_items"][0]
+    assert item["tax_rate"] == "0.20"
+    assert item["net_total"] == "100.00"
+    assert item["tax_amount"] == "20.00"
+    assert item["total"] == "120.00"
+    assert response.json()["subtotal"] == "100.00"
+    assert response.json()["tax_total"] == "20.00"
+    assert response.json()["total"] == "120.00"
+
+
+def test_line_item_tax_rate_defaults_to_zero(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+
+    response = client.post(
+        f"/quotes/{quote_id}/line-items",
+        json={"description": "Work", "quantity": "1", "unit_price": "100.00"},
+        headers=auth_headers,
+    )
+    assert response.json()["line_items"][0]["tax_rate"] == "0"
+
+
+def test_line_item_rejects_tax_rate_above_one(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+
+    response = client.post(
+        f"/quotes/{quote_id}/line-items",
+        json={"description": "Work", "quantity": "1", "unit_price": "100.00", "tax_rate": "1.5"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
 def test_sending_quote_with_no_line_items_returns_422(client, auth_headers):
     response = client.post(
         "/accounts",
@@ -149,6 +257,26 @@ def test_sending_quote_with_no_line_items_returns_422(client, auth_headers):
 
     response = client.post(f"/quotes/{quote_id}/send", headers=auth_headers)
     assert response.status_code == 422
+
+
+def test_stats_requires_auth(client):
+    response = client.get("/stats")
+    assert response.status_code == 401
+
+
+def test_stats_counts_accounts(client, auth_headers):
+    response = client.get("/stats", headers=auth_headers)
+    assert response.status_code == 200
+    before = response.json()["account_count"]
+
+    client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"},
+        headers=auth_headers,
+    )
+
+    response = client.get("/stats", headers=auth_headers)
+    assert response.json()["account_count"] == before + 1
 
 
 def test_business_profile_requires_auth(client):

@@ -14,9 +14,9 @@
 
 - [x] `Account`/`Quote`/`Invoice`/`LineItem` models and migrations (see
       `data-model.md`).
-- [x] `AccountService`, `QuoteService`, `InvoiceService`: create account,
-      create/edit/send draft quote, convert quote → invoice, send/void
-      invoice.
+- [x] `AccountService`, `QuoteService`, `InvoiceService`: create/edit
+      account, create/edit/send draft quote, convert quote → invoice,
+      send/void invoice.
 - [x] CLI covering the same operations, over the same service
       (`invoice-system-cli`).
 - [x] FastAPI routes per `api.md`, thin per `architecture.md`.
@@ -135,6 +135,57 @@
       Outstanding — not exact chart totals, since the chart sums
       system-wide across whatever else is running concurrently in e2e (see
       `web/README.md` and the CLAUDE.md gotcha on this).
+
+## Phase 8 — Editing accounts (done)
+
+- [x] `AccountService.update_account(account_id, ...)` — a full replace,
+      same required fields/validation as `create_account`, 404 if the
+      account doesn't exist. `PUT /accounts/{id}`, CLI `account update
+      <id>`.
+- [x] `web/`: `AccountsPage.tsx`'s `NewAccountForm` generalised into
+      `AccountForm` (shared by create and edit), with a per-row "Edit"
+      button that swaps that row for the form in place, Save/Cancel — no
+      separate `/accounts/:id` route, matching the page's existing flat-list
+      convention rather than adding a detail page just for this.
+
+## Phase 9 — Per-line VAT/tax rate (done)
+
+- [x] `LineItem.tax_rate` (a fraction, `[0, 1]`, default `0`) plus
+      `net_total`/`tax_amount`/`total` (gross) properties; `Quote`/`Invoice`
+      gained matching `subtotal`/`tax_total`/`total`. `tax_amount` is
+      rounded to the minor currency unit — see `CLAUDE.md` for the
+      `20.0000`-vs-`20.00` bug this fixes and why `net_total` itself stays
+      unrounded.
+- [x] `POST /quotes/{id}/line-items` accepts `tax_rate` (defaults `"0"`);
+      CLI `quote add-item --tax-rate`. `QuoteService.convert_to_invoice`
+      carries it across to the new `Invoice`'s line items.
+- [x] `web/`: a VAT-rate `<select>` in `LineItemsTable.tsx`'s add-item form
+      (Standard 20% / Reduced 5% / Zero 0% — the UK's three rates; the field
+      itself isn't restricted to just those server-side), a VAT column per
+      line, and a Subtotal/VAT/Total footer replacing the old single-Total
+      row. `pdf.py`'s line-item table gained the same VAT column and
+      three-row summary, shared by both quote and invoice PDFs.
+
+## Phase 10 — All-time stats (done)
+
+- [x] `StatsService.get_stats()` (currently just `account_count`,
+      system-wide) — a separate service from `AccountService` since more
+      stats are expected later. `GET /stats`, CLI `stats`.
+- [x] An "All-time stats" section on the home dashboard
+      (`web/src/pages/HomePage.tsx`), below the monthly-totals chart.
+
+## Phase 11 — Demo data (done)
+
+- [x] `src/invoice_system/demo_data.py`: a demo login user
+      (`demo@example.test`), a `BusinessProfile`, 5 accounts, and ~14
+      quotes/invoices spread across the trailing 12 months in a mix of
+      statuses (draft/sent/rejected/expired quotes; draft/outstanding/
+      overdue/paid/void invoices) and VAT rates — seeded by
+      `invoice-system-cli init-db` unless `--no-demo` is passed. Idempotent
+      (checked via sessionkit's `DuplicateUser`), goes through the real
+      service layer with a backdated clock rather than hand-crafted storage
+      rows. **Must be kept in sync with new features by hand** — see
+      `CLAUDE.md`.
 
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

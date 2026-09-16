@@ -40,6 +40,33 @@ def test_get_missing_account_returns_none(repo):
     assert repo.get_account(999) is None
 
 
+def test_update_account_round_trip(repo):
+    created = repo.create_account(
+        Account(
+            id=None,
+            business_name="Acme",
+            contact_name=None,
+            email="a@b.test",
+            phone=None,
+            address="1 Main St",
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+
+    created.business_name = "Acme Ltd"
+    created.contact_name = "Jane Doe"
+    created.phone = "555-1234"
+    created.address = "2 High St"
+    updated = repo.update_account(created)
+    assert updated.business_name == "Acme Ltd"
+
+    fetched = repo.get_account(created.id)
+    assert fetched.business_name == "Acme Ltd"
+    assert fetched.contact_name == "Jane Doe"
+    assert fetched.phone == "555-1234"
+    assert fetched.address == "2 High St"
+
+
 def test_next_number_increments_and_is_scoped_by_name(repo):
     assert repo.next_quote_number() == "Q-0001"
     assert repo.next_quote_number() == "Q-0002"

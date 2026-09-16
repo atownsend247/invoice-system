@@ -1,4 +1,13 @@
-import type { Account, BusinessProfile, Invoice, LoginResult, MonthlyTotalsReport, Quote, User } from './types'
+import type {
+  Account,
+  BusinessProfile,
+  Invoice,
+  LoginResult,
+  MonthlyTotalsReport,
+  Quote,
+  Stats,
+  User,
+} from './types'
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://127.0.0.1:8000'
 
@@ -102,6 +111,10 @@ export function createAccount(input: CreateAccountInput): Promise<Account> {
   return request('/accounts', { method: 'POST', body: JSON.stringify(input) })
 }
 
+export function updateAccount(id: number, input: CreateAccountInput): Promise<Account> {
+  return request(`/accounts/${id}`, { method: 'PUT', body: JSON.stringify(input) })
+}
+
 // -- quotes ----------------------------------------------------------------
 
 export function listQuotes(accountId?: number): Promise<Quote[]> {
@@ -119,7 +132,7 @@ export function createQuote(accountId: number, currency = 'USD'): Promise<Quote>
 
 export function addQuoteLineItem(
   quoteId: number,
-  input: { description: string; quantity: string; unit_price: string },
+  input: { description: string; quantity: string; unit_price: string; tax_rate?: string },
 ): Promise<Quote> {
   return request(`/quotes/${quoteId}/line-items`, { method: 'POST', body: JSON.stringify(input) })
 }
@@ -191,4 +204,10 @@ export interface SaveBusinessProfileInput {
 
 export function saveBusinessProfile(input: SaveBusinessProfileInput): Promise<BusinessProfile> {
   return request('/settings/business-profile', { method: 'PUT', body: JSON.stringify(input) })
+}
+
+// -- stats ----------------------------------------------------------------
+
+export function getStats(): Promise<Stats> {
+  return request('/stats')
 }

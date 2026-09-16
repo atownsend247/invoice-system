@@ -1,0 +1,267 @@
+"""Demo data: a 12-month spread of accounts, quotes, and invoices in a
+mix of statuses, plus a demo login user and business profile - seeded by
+`invoice-system-cli init-db` unless `--no-demo` is passed (see CLAUDE.md).
+
+**Keep this in sync with the rest of the app.** When a feature changes what
+an Account/Quote/Invoice/BusinessProfile can look like (a new field, a new
+status, a new line-item property), update the data here so the demo still
+shows it off - a stale demo dataset that only exercises last year's feature
+set is worse than none, because it quietly stops being a smoke test for
+anything new.
+
+Idempotent: re-running `init-db --demo` against a database that already has
+the demo user does nothing further (checked via sessionkit's DuplicateUser),
+so it's safe to run on every fresh `init-db` without piling up duplicates.
+"""
+
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+
+from sessionkit import DuplicateUser
+
+from .auth import Auth
+from .core import AccountService, BusinessProfileService, InvoiceService, QuoteService
+from .factory import Application
+
+DEMO_EMAIL = "demo@example.test"
+DEMO_PASSWORD = "demo-password-123"  # noqa: S105 - a throwaway local demo login, not a real secret.
+
+
+class _FixedClock:
+    """A `Clock` (see clock.py) that always returns the same instant -
+    lets each seeded quote/invoice be backdated to a specific point in the
+    last 12 months, going through the real service layer (so numbering,
+    status-transition rules, and totals all behave exactly as they would
+    for a real user), rather than hand-crafting rows in storage directly."""
+
+    def __init__(self, when: datetime) -> None:
+        self._when = when
+
+    def __call__(self) -> datetime:
+        return self._when
+
+
+@dataclass
+class _DemoAccount:
+    business_name: str
+    contact_name: str | None
+    email: str
+    address: str
+    phone: str | None
+
+
+_ACCOUNTS = [
+    _DemoAccount(
+        "Northwind Traders",
+        "Priya Patel",
+        "billing@northwindtraders.test",
+        "12 Kings Road, London, SW1A 1AA",
+        "020 7946 0958",
+    ),
+    _DemoAccount(
+        "Blue Harbour Consulting",
+        "Tom Ellery",
+        "accounts@blueharbour.test",
+        "4 Harbour View, Bristol, BS1 4ST",
+        None,
+    ),
+    _DemoAccount(
+        "Fenwick & Vale",
+        "Sarah Chen",
+        "sarah@fenwickvale.test",
+        "88 Mill Lane, Manchester, M1 2WD",
+        "0161 496 0123",
+    ),
+    _DemoAccount("Orchard Studio", None, "hello@orchardstudio.test", "3 Orchard Court, Leeds, LS1 4DY", None),
+    _DemoAccount(
+        "Camden Digital",
+        "Michael Osei",
+        "michael@camdendigital.test",
+        "27 Camden High St, London, NW1 7JR",
+        "020 7946 0111",
+    ),
+]
+
+# (description, quantity, unit_price, tax_rate) - cycled through so the
+# demo shows all three UK VAT rates the web UI's dropdown offers.
+_LINE_ITEM_POOL: list[tuple[str, Decimal, Decimal, Decimal]] = [
+    ("Website design", Decimal("1"), Decimal("1200.00"), Decimal("0.20")),
+    ("Consulting (day rate)", Decimal("3"), Decimal("450.00"), Decimal("0.20")),
+    ("Copywriting", Decimal("5"), Decimal("80.00"), Decimal("0.20")),
+    ("Hosting (annual)", Decimal("1"), Decimal("240.00"), Decimal("0")),
+    ("Training workshop", Decimal("1"), Decimal("650.00"), Decimal("0.05")),
+    ("Logo design", Decimal("1"), Decimal("350.00"), Decimal("0.20")),
+    ("Monthly retainer", Decimal("1"), Decimal("900.00"), Decimal("0.20")),
+    ("Print materials", Decimal("200"), Decimal("1.20"), Decimal("0")),
+]
+
+DEMO_CURRENCY = "GBP"  # matches the demo profile's reporting currency, so
+# the home dashboard's chart picks up every seeded invoice - see CLAUDE.md.
+
+
+def _months_ago(now: datetime, months: int) -> datetime:
+    # A fixed days-ago offset from `now`, not calendar-month stepping to a
+    # fixed day of the month - "the 12th of N months ago" can land in the
+    # *future* when today is early in the month (e.g. today the 3rd, this
+    # month's 12th hasn't happened yet), which would silently produce a
+    # not-actually-backdated "historical" invoice. Days-ago is always
+    # safely in the past, and still spreads scenarios across ~12 distinct
+    # calendar months since each step is ~30 days.
+    return now - timedelta(days=30 * months + 3)
+
+
+def _add_line_items(quotes: QuoteService, quote_id: int, *item_indices: int) -> None:
+    for i in item_indices:
+        description, quantity, unit_price, tax_rate = _LINE_ITEM_POOL[i % len(_LINE_ITEM_POOL)]
+        quotes.add_line_item(
+            quote_id, description=description, quantity=quantity, unit_price=unit_price, tax_rate=tax_rate
+        )
+
+
+@dataclass
+class _Scenario:
+    months_ago: int
+    account_index: int
+    run: str  # method name on _Seeder, for a flat, readable table below
+
+
+class _Seeder:
+    """One instance per seeded quote/invoice - services here are always
+    built with a `_FixedClock` for a specific historical `when`, so
+    `issue_date`/`created_at` land in the right month regardless of when
+    `init-db` actually runs."""
+
+    def __init__(self, application: Application, account_id: int, when: datetime, item_index: int) -> None:
+        clock = _FixedClock(when)
+        self.repository = application.repository
+        self.quotes = QuoteService(self.repository, clock=clock)
+        self.invoices = InvoiceService(self.repository, clock=clock)
+        self.account_id = account_id
+        self.item_index = item_index
+
+    def _new_quote(self) -> int:
+        quote = self.quotes.create_quote(account_id=self.account_id, currency=DEMO_CURRENCY)
+        _add_line_items(self.quotes, quote.id, self.item_index, self.item_index + 1)
+        return quote.id
+
+    def draft_quote(self) -> None:
+        self._new_quote()
+
+    def sent_quote(self) -> None:
+        self.quotes.send(self._new_quote())
+
+    def rejected_quote(self) -> None:
+        quote_id = self._new_quote()
+        self.quotes.send(quote_id)
+        self.quotes.mark_rejected(quote_id)
+
+    def expired_quote(self) -> None:
+        quote_id = self._new_quote()
+        self.quotes.send(quote_id)
+        self.quotes.mark_expired(quote_id)
+
+    def _accepted_and_converted(self) -> int:
+        quote_id = self._new_quote()
+        self.quotes.send(quote_id)
+        self.quotes.mark_accepted(quote_id)
+        return self.quotes.convert_to_invoice(quote_id).id
+
+    def draft_invoice(self) -> None:
+        self._accepted_and_converted()
+
+    def outstanding_invoice(self) -> None:
+        invoice_id = self._accepted_and_converted()
+        # Generous payment terms, not the usual 30 - this scenario is only
+        # ever scheduled a few weeks back at most (see _SCENARIOS), and
+        # needs to stay reliably not-yet-due regardless of which exact day
+        # `init-db` runs on.
+        self.invoices.send(invoice_id, payment_terms_days=60)
+
+    def overdue_invoice(self) -> None:
+        invoice_id = self._accepted_and_converted()
+        self.invoices.send(invoice_id, payment_terms_days=14)
+
+    def paid_invoice(self) -> None:
+        invoice_id = self._accepted_and_converted()
+        self.invoices.send(invoice_id, payment_terms_days=14)
+        self.invoices.pay(invoice_id)
+
+    def void_invoice(self) -> None:
+        invoice_id = self._accepted_and_converted()
+        self.invoices.send(invoice_id, payment_terms_days=14)
+        self.invoices.void(invoice_id)
+
+
+# Spread across the last 12 months (11 = a year ago, 0 = this month).
+# `overdue_invoice` is pinned far enough back, and `outstanding_invoice`
+# close enough to now, that both stay true regardless of exactly which day
+# `init-db` runs on.
+_SCENARIOS = [
+    _Scenario(11, 0, "draft_quote"),
+    _Scenario(10, 1, "sent_quote"),
+    _Scenario(10, 2, "overdue_invoice"),
+    _Scenario(9, 3, "rejected_quote"),
+    _Scenario(8, 4, "paid_invoice"),
+    _Scenario(7, 0, "expired_quote"),
+    _Scenario(6, 1, "void_invoice"),
+    _Scenario(5, 2, "paid_invoice"),
+    _Scenario(4, 3, "draft_invoice"),
+    _Scenario(3, 4, "sent_quote"),
+    _Scenario(2, 0, "paid_invoice"),
+    _Scenario(1, 1, "outstanding_invoice"),
+    _Scenario(0, 2, "outstanding_invoice"),
+    _Scenario(0, 3, "draft_quote"),
+]
+
+
+def seed_demo_data(application: Application, auth: Auth, *, now: datetime | None = None) -> bool:
+    """Seeds the demo login user, business profile, accounts, and a
+    12-month spread of quotes/invoices. Returns False (no-op) if the demo
+    user already exists - safe to call on every `init-db`. `now` is the
+    reference point everything is backdated from (defaults to the real
+    time); tests pass a fixed value so "is this invoice overdue yet"
+    assertions don't depend on which day the suite happens to run."""
+    try:
+        user = auth.service.create_user(DEMO_EMAIL, DEMO_PASSWORD, name="Demo User")
+    except DuplicateUser:
+        return False
+
+    now = now or datetime.now(UTC)
+    BusinessProfileService(application.repository, clock=lambda: now).save_profile(
+        user.id,
+        title="Ms",
+        first_name="Jordan",
+        last_name="Blake",
+        business_name="Blake Freelance Design",
+        address_line1="15 Riverside Walk",
+        town_or_city="London",
+        postcode="E1 6AN",
+        payment_terms_days=30,
+        currency=DEMO_CURRENCY,
+        utr="1234567890",
+        vat_number="GB123456789",
+    )
+
+    accounts = AccountService(application.repository, clock=lambda: now)
+    account_ids = [
+        accounts.create_account(
+            business_name=a.business_name,
+            email=a.email,
+            address=a.address,
+            contact_name=a.contact_name,
+            phone=a.phone,
+        ).id
+        for a in _ACCOUNTS
+    ]
+
+    for scenario in _SCENARIOS:
+        seeder = _Seeder(
+            application,
+            account_id=account_ids[scenario.account_index],
+            when=_months_ago(now, scenario.months_ago),
+            item_index=scenario.account_index,
+        )
+        getattr(seeder, scenario.run)()
+
+    return True

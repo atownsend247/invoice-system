@@ -22,11 +22,17 @@ export interface Account {
   created_at: string
 }
 
+// tax_rate is a fraction ("0.20" for 20% VAT, "0" for none) applied to
+// this line only - see CLAUDE.md. total is *gross* (net_total +
+// tax_amount) - what this line actually adds to what's owed.
 export interface LineItem {
   id: number
   description: string
   quantity: string
   unit_price: string
+  tax_rate: string
+  net_total: string
+  tax_amount: string
   total: string
 }
 
@@ -42,6 +48,8 @@ export interface Quote {
   expiry_date: string | null
   created_at: string
   line_items: LineItem[]
+  subtotal: string
+  tax_total: string
   total: string
 }
 
@@ -58,6 +66,8 @@ export interface Invoice {
   due_date: string | null
   created_at: string
   line_items: LineItem[]
+  subtotal: string
+  tax_total: string
   total: string
 }
 
@@ -93,4 +103,11 @@ export interface MonthlyInvoiceTotal {
 export interface MonthlyTotalsReport {
   currency: string
   months: MonthlyInvoiceTotal[]
+}
+
+// All-time, system-wide counters for the home dashboard's stats section -
+// see StatsService.get_stats. A small, flat shape that grows one field at
+// a time as new stats are actually asked for.
+export interface Stats {
+  account_count: number
 }

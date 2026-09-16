@@ -13,6 +13,7 @@ from .models import (
     MonthlyInvoiceTotals,
     Quote,
     QuoteStatus,
+    Stats,
 )
 from .repository import Repository
 
@@ -62,6 +63,30 @@ class AccountService:
     def list_accounts(self) -> list[Account]:
         return self._repository.list_accounts()
 
+    def update_account(
+        self,
+        account_id: int,
+        *,
+        business_name: str,
+        email: str,
+        address: str,
+        contact_name: str | None = None,
+        phone: str | None = None,
+    ) -> Account:
+        existing = self.get_account(account_id)
+        if not business_name.strip():
+            raise ValidationFailed("business_name is required")
+        if not email.strip():
+            raise ValidationFailed("email is required")
+        if not address.strip():
+            raise ValidationFailed("address is required")
+        existing.business_name = business_name
+        existing.contact_name = contact_name
+        existing.email = email
+        existing.phone = phone
+        existing.address = address
+        return self._repository.update_account(existing)
+
 
 def _blank_to_none(value: str | None) -> str | None:
     return value.strip() if value and value.strip() else None
@@ -77,6 +102,11 @@ def _month_key(d: date_) -> str:
 
 def _previous_month(d: date_) -> date_:
     return date_(d.year - 1, 12, 1) if d.month == 1 else date_(d.year, d.month - 1, 1)
+
+
+def _validate_tax_rate(tax_rate: Decimal) -> None:
+    if not (Decimal("0") <= tax_rate <= Decimal("1")):
+        raise ValidationFailed("tax_rate must be between 0 and 1")
 
 
 class BusinessProfileService:
@@ -199,16 +229,24 @@ class QuoteService:
         return self._repository.list_quotes(account_id=account_id)
 
     def add_line_item(
-        self, quote_id: int, *, description: str, quantity: Decimal, unit_price: Decimal
+        self,
+        quote_id: int,
+        *,
+        description: str,
+        quantity: Decimal,
+        unit_price: Decimal,
+        tax_rate: Decimal = Decimal("0"),
     ) -> Quote:
         quote = self._get_draft_quote(quote_id)
         if not description.strip():
             raise ValidationFailed("description is required")
+        _validate_tax_rate(tax_rate)
         item = LineItem(
             id=None,
             description=description,
             quantity=quantity,
             unit_price=unit_price,
+            tax_rate=tax_rate,
             position=len(quote.line_items),
         )
         self._repository.add_quote_line_item(quote_id, item)
@@ -257,6 +295,7 @@ class QuoteService:
                     description=item.description,
                     quantity=item.quantity,
                     unit_price=item.unit_price,
+                    tax_rate=item.tax_rate,
                     position=item.position,
                 ),
             )
@@ -299,16 +338,24 @@ class InvoiceService:
         return self._repository.list_invoices(account_id=account_id)
 
     def add_line_item(
-        self, invoice_id: int, *, description: str, quantity: Decimal, unit_price: Decimal
+        self,
+        invoice_id: int,
+        *,
+        description: str,
+        quantity: Decimal,
+        unit_price: Decimal,
+        tax_rate: Decimal = Decimal("0"),
     ) -> Invoice:
         invoice = self._get_draft_invoice(invoice_id)
         if not description.strip():
             raise ValidationFailed("description is required")
+        _validate_tax_rate(tax_rate)
         item = LineItem(
             id=None,
             description=description,
             quantity=quantity,
             unit_price=unit_price,
+            tax_rate=tax_rate,
             position=len(invoice.line_items),
         )
         self._repository.add_invoice_line_item(invoice_id, item)
@@ -394,3 +441,18 @@ class InvoiceService:
         if invoice.status != InvoiceStatus.DRAFT:
             raise InvalidTransition(f"invoice {invoice_id} is not editable (status={invoice.status.value})")
         return invoice
+
+
+class StatsService:
+    """All-time, system-wide counters for the home dashboard's stats
+    section. A separate service rather than a method on AccountService -
+    stats here are expected to grow beyond just accounts (see Stats), so
+    this is the one place to add to rather than spreading counts across
+    whichever entity's service happens to own the underlying data."""
+
+    def __init__(self, repository: Repository, clock: Clock = system_clock) -> None:
+        self._repository = repository
+        self._clock = clock
+
+    def get_stats(self) -> Stats:
+        return Stats(account_count=len(self._repository.list_accounts()))

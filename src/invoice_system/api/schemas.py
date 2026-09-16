@@ -46,9 +46,11 @@ class LineItemIn(BaseModel):
     description: str
     quantity: str
     unit_price: str
+    tax_rate: str = "0"
 
     _validate_quantity = field_validator("quantity")(_validate_decimal_string)
     _validate_unit_price = field_validator("unit_price")(_validate_decimal_string)
+    _validate_tax_rate = field_validator("tax_rate")(_validate_decimal_string)
 
 
 class LineItemOut(BaseModel):
@@ -56,6 +58,9 @@ class LineItemOut(BaseModel):
     description: str
     quantity: str
     unit_price: str
+    tax_rate: str
+    net_total: str
+    tax_amount: str
     total: str
 
     @classmethod
@@ -65,6 +70,9 @@ class LineItemOut(BaseModel):
             description=item.description,
             quantity=str(item.quantity),
             unit_price=str(item.unit_price),
+            tax_rate=str(item.tax_rate),
+            net_total=str(item.net_total),
+            tax_amount=str(item.tax_amount),
             total=str(item.total),
         )
 
@@ -85,6 +93,8 @@ class QuoteOut(BaseModel):
     expiry_date: date | None
     created_at: datetime
     line_items: list[LineItemOut]
+    subtotal: str
+    tax_total: str
     total: str
 
     @classmethod
@@ -99,6 +109,8 @@ class QuoteOut(BaseModel):
             expiry_date=quote.expiry_date,
             created_at=quote.created_at,
             line_items=[LineItemOut.from_model(item) for item in quote.line_items],
+            subtotal=str(quote.subtotal),
+            tax_total=str(quote.tax_total),
             total=str(quote.total),
         )
 
@@ -114,6 +126,8 @@ class InvoiceOut(BaseModel):
     due_date: date | None
     created_at: datetime
     line_items: list[LineItemOut]
+    subtotal: str
+    tax_total: str
     total: str
 
     @classmethod
@@ -129,6 +143,8 @@ class InvoiceOut(BaseModel):
             due_date=invoice.due_date,
             created_at=invoice.created_at,
             line_items=[LineItemOut.from_model(item) for item in invoice.line_items],
+            subtotal=str(invoice.subtotal),
+            tax_total=str(invoice.tax_total),
             total=str(invoice.total),
         )
 
@@ -202,3 +218,11 @@ class MonthlyTotalsReportOut(BaseModel):
     @classmethod
     def from_models(cls, currency: str, entries) -> "MonthlyTotalsReportOut":
         return cls(currency=currency, months=[MonthlyInvoiceTotalOut.from_model(e) for e in entries])
+
+
+class StatsOut(BaseModel):
+    account_count: int
+
+    @classmethod
+    def from_model(cls, stats) -> "StatsOut":
+        return cls(account_count=stats.account_count)

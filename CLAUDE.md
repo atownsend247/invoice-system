@@ -2,13 +2,17 @@
 
 Invoice System: a freelancer/small-business billing tool. Domain shape is
 Account (the business you provide a service to — business name, contact,
-address) → Quote → Invoice, where a Quote converts into an Invoice rather
-than the two being independently created. Quotes and Invoices are each
+address; editable after creation) → Quote → Invoice, where a Quote converts
+into an Invoice rather than the two being independently created. Each line
+item can carry its own UK VAT rate. Quotes and Invoices are each
 independently viewable/exportable as PDFs, and a sent invoice can be marked
 `paid` (a single status flag, not a payment ledger). A `BusinessProfile`
 holds the logged-in user's *own* business details (name/address/payment
 terms/reporting currency/UTR/VAT) — see below for why that's a third,
-deliberately separate thing from both `Account` and sessionkit's `User`.
+deliberately separate thing from both `Account` and sessionkit's `User`. A
+fresh `invoice-system-cli init-db` seeds a year of demo data (accounts,
+quotes, invoices, a demo login) by default — see Commands and
+`demo_data.py`.
 
 ## Where things are
 
@@ -19,15 +23,17 @@ deliberately separate thing from both `Account` and sessionkit's `User`.
   agent reads it as ground truth.
 - `src/invoice_system/` — flat top level holds the load-bearing modules
   (`core.py` all domain logic — `AccountService`, `QuoteService`,
-  `InvoiceService`, `BusinessProfileService`; `models.py`, `errors.py`,
-  `clock.py`, `repository.py` the storage Protocol, `factory.py` wiring,
-  `pdf.py` PDF rendering used by both entry points, `auth.py` wiring for the
-  login/session cross-cutting concern — see below). Subpackages: `storage/`
-  (schema + migrations, the concrete `SqliteRepository`), `api/` (thin
-  FastAPI layer — `app.py` the domain routes, `auth.py` the login/session
-  routes and the `get_current_user` dependency), `cli/` (thin Click layer).
-  `tests/` mirrors the package 1:1 (`tests/{core,api,cli,storage}/`) + a
-  root `conftest.py` with shared fixtures.
+  `InvoiceService`, `BusinessProfileService`, `StatsService`; `models.py`,
+  `errors.py`, `clock.py`, `repository.py` the storage Protocol,
+  `factory.py` wiring, `pdf.py` PDF rendering used by both entry points,
+  `auth.py` wiring for the login/session cross-cutting concern,
+  `demo_data.py` the seed data `init-db` loads by default — see below).
+  Subpackages: `storage/` (schema + migrations, the concrete
+  `SqliteRepository`), `api/` (thin FastAPI layer — `app.py` the domain
+  routes, `auth.py` the login/session routes and the `get_current_user`
+  dependency), `cli/` (thin Click layer). `tests/` mirrors the package 1:1
+  (`tests/{core,api,cli,storage}/`) + a root `conftest.py` with shared
+  fixtures.
 - `web/` — React 19 + TypeScript + Vite SPA, a sibling of `src/`, its own
   test runner (Vitest) and build, its own README (`web/README.md`). Pins its
   own Node version in `web/.node-version` (nodenv-style) — see gotchas.
@@ -77,10 +83,14 @@ Three separate things are easy to conflate here — don't:
 - Lint/format: `uv run ruff check .` / `uv run ruff format .` (CI runs both,
   the latter with `--check`; `ruff format` first if `ruff check` complains
   about a line-length issue a format pass would resolve).
-- First-run / bootstrap: `uv sync && uv run invoice-system-cli init-db &&
-  uv run sessionkit add you@example.com` — creates the domain SQLite file
-  and applies migrations, then creates the first login account (prompts for
-  a password) in `auth.db`.
+- First-run / bootstrap: `uv sync && uv run invoice-system-cli init-db` —
+  creates the domain SQLite file, applies migrations, and (by default)
+  seeds a year of demo data: accounts, quotes/invoices in a mix of statuses,
+  and a demo login (`demo@example.test` / `demo-password-123`, both in
+  `demo_data.py`) — log in with that immediately, no separate signup step.
+  Pass `--no-demo` for an empty database instead, then create your own
+  login with `uv run sessionkit add you@example.com`. Re-running `init-db`
+  is safe either way — demo seeding is a no-op once the demo user exists.
 - Serve: `uv run uvicorn invoice_system.api.app:app --reload` (API on
   `:8000`; `INVOICE_SYSTEM_DB` / `INVOICE_SYSTEM_AUTH_DB` override the
   default db paths).
@@ -154,6 +164,19 @@ Three separate things are easy to conflate here — don't:
   stored alongside every quote/invoice, not assumed globally. `LineItem` is
   shared by both Quote and Invoice — same shape, associated via
   `quote_id`/`invoice_id` at the storage layer, not two separate classes.
+  Each `LineItem` also carries its own `tax_rate` (a fraction, e.g.
+  `Decimal("0.20")` for 20% UK VAT — standard/reduced/zero are the three
+  the web UI's dropdown offers, but the field itself accepts any value in
+  `[0, 1]`, validated in `core.py`, not restricted to just those three).
+  `net_total` (`quantity * unit_price`) and `tax_amount` are separate
+  properties from `total` (`net_total + tax_amount`, **gross** — what this
+  line actually adds to what's owed); `Quote`/`Invoice` mirror this with
+  `subtotal`/`tax_total`/`total`. `tax_amount` is rounded to the minor
+  currency unit (`Decimal.quantize(Decimal("0.01"), ROUND_HALF_UP)`) —
+  without it, `100.00 * Decimal("0.20")` prints as `20.0000`, not real
+  money; `net_total` itself is **not** rounded (unchanged from before VAT
+  existed), so don't assume every money value in this codebase is
+  2dp-clean.
 - Timestamps: timezone-aware, one timezone (UTC) internally, ISO 8601 on the
   wire. `issue_date`/`due_date`/`expiry_date` are calendar dates (`date`, no
   timezone), not timestamps.
@@ -232,6 +255,23 @@ Three separate things are easy to conflate here — don't:
   `getByRole('group', { name: ... })` finds them via the `<legend>`), not
   just a visual one. Add a new field to whichever group it actually belongs
   to, not wherever's convenient.
+- `AccountService.update_account(account_id, ...)` is a full replace, not a
+  partial patch — same required fields (`business_name`/`email`/`address`)
+  and validation as `create_account`, mirroring `save_business_profile`'s
+  PUT semantics rather than inventing PATCH-style partial updates. `PUT
+  /accounts/{id}` and CLI `account update <id>`. The web UI edits a row
+  in place (`AccountsPage.tsx`'s `AccountForm`, shared between "New
+  account" and "Edit") rather than a separate `/accounts/:id` detail/edit
+  route — there's no `AccountDetailPage` at all, unlike quotes/invoices;
+  don't add one without being asked, the inline pattern was a deliberate
+  match for how accounts are already listed (a flat table), not an
+  oversight.
+- `StatsService.get_stats()` is the all-time, system-wide counters behind
+  the home dashboard's "All-time stats" section (`GET /stats`, CLI
+  `stats`) — currently just `account_count`. A separate service, not a
+  method on `AccountService`, because these stats are expected to grow
+  beyond accounts; add a field to `Stats` (models.py) and a line to
+  `get_stats()` when a new one is actually asked for, not speculatively.
 - Two separate exception hierarchies get mapped to HTTP status in `api/app.py`,
   each in its own handler: this app's `AppError` (`handle_app_error`) and
   sessionkit's `AuthError` (`handle_auth_error`). Don't merge them into one
@@ -262,7 +302,10 @@ Three separate things are easy to conflate here — don't:
   no real database had been started against the prior 5-migration history
   yet, so there was nothing any later migration needed to carry forward.
   Don't flatten it again once a real database exists somewhere; that's
-  exactly the scenario forward-only migrations exist to handle instead.)
+  exactly the scenario forward-only migrations exist to handle instead.
+  Migration 2, added the same day, is the current reference example of the
+  "adding a column with a constant default" case above: `quote_line_items`/
+  `invoice_line_items` both get `tax_rate TEXT NOT NULL DEFAULT '0'`.)
 - Storage is a single shared SQLite connection/file — **serialise every
   access on a lock** inside the repository implementation rather than
   assuming the caller will.
@@ -314,6 +357,22 @@ Three separate things are easy to conflate here — don't:
   with `--repeat-each`, not a real bug: `npm run test:e2e` only ever runs
   each test once. Stress-test this file specifically with `--repeat-each
   --workers=1` instead of the bare flag.
+- `demo_data.py` (loaded by `init-db` unless `--no-demo`) must be kept in
+  sync with the rest of the app **by hand** — there's no automated check
+  that it exercises every current feature. When a change adds a field/
+  status/behavior worth showing off (the way VAT rates and account editing
+  should be, and now are), update the seed data in the same change, not as
+  a follow-up. A stale demo dataset is worse than none: it quietly stops
+  being a smoke test for whatever's new. Backdating in there uses a fixed
+  days-ago offset from `now` (`_months_ago`), not calendar-month stepping
+  to a fixed day of the month — the latter can land in the *future* when
+  today is early in the month (e.g. "the 12th of this month" hasn't
+  happened yet if today's the 3rd), which silently produces a
+  not-actually-historical row instead of erroring. Found by actually
+  running the seeder and checking due dates against today, not just by
+  reading the code — a "12 months of history" generator is exactly the
+  kind of date-math code worth a real run, not just unit tests with a
+  fixed clock.
 - **Deliberately not exact**: `web/e2e/home.spec.ts`'s monthly-totals-chart
   test reads `reportingCurrency` (a fixture that `GET`s the current
   business profile's `currency`) once at the start, then asserts the chart

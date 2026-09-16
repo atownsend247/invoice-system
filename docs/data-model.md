@@ -2,26 +2,28 @@
 
 **Status: implemented** (`src/invoice_system/models.py`,
 `storage/schema.py`). Keep this table in sync with the actual schema — this
-doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` is currently
-a single flattened baseline entry (see `CLAUDE.md`'s migrations gotcha) —
+doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` has two
+entries: the flattened baseline (2026-09-16) plus migration 2, which added
+`tax_rate` to both line-item tables (see `CLAUDE.md`'s migrations gotcha) —
 schema changes from here on are new entries appended to that list, not
-edits to it.
+edits to either.
 
 ## Entities
 
 | Entity | Key fields | Notes |
 |---|---|---|
-| `Account` | id, business_name, contact_name, email, phone, address, created_at | A business you provide a service to and bill. Not a login identity — see `CLAUDE.md`. |
+| `Account` | id, business_name, contact_name, email, phone, address, created_at | A business you provide a service to and bill. Editable after creation (`AccountService.update_account`, full replace). Not a login identity — see `CLAUDE.md`. |
 | `Quote` | id, account_id, number, status, currency, issue_date, expiry_date, created_at | `status`: `draft \| sent \| accepted \| rejected \| expired \| converted`. `number` (`Q-0001`, ...) is assigned on `send`, not on creation. |
 | `Invoice` | id, account_id, quote_id, number, status, currency, issue_date, due_date, created_at | `status`: `draft \| sent \| paid \| overdue \| void`. `quote_id` is set when created via conversion, `NULL` otherwise. `number` (`INV-0001`, ...) and `due_date` are assigned on `send`. `paid` is assigned by `InvoiceService.pay()`, only from `sent` — `overdue` is a defined enum value nothing ever actually sets (see "Not yet modelled"). |
-| `LineItem` | id, description, quantity, unit_price, position | One shape, shared by quotes and invoices; associated via `quote_line_items`/`invoice_line_items` join tables (`quote_id`/`invoice_id` + the same columns). `total` (`quantity * unit_price`) is a derived property, never stored. |
+| `LineItem` | id, description, quantity, unit_price, tax_rate, position | One shape, shared by quotes and invoices; associated via `quote_line_items`/`invoice_line_items` join tables (`quote_id`/`invoice_id` + the same columns). `tax_rate` is a fraction (`0.20` = 20% UK VAT; `0` = none), independently set per line. `net_total`/`tax_amount`/`total` (`net_total + tax_amount`, gross) are derived properties, never stored — `tax_amount` is rounded to the minor currency unit, `net_total` is not (see `CLAUDE.md`). |
 | `BusinessProfile` | id, user_id, title, first_name, last_name, business_name, address_line1, address_line2, town_or_city, county, postcode, payment_terms_days, currency, utr, vat_number, created_at, updated_at | The logged-in user's *own* details, in three groups (see `CLAUDE.md`): user settings (`title` optional, `first_name`/`last_name` required), business settings (`business_name` required; `address_line1`/`address_line2`/`town_or_city`/`county`/`postcode` — a UK GOV.UK Design System-style address, each line independently optional), payment and tax settings (`payment_terms_days`, `currency` — the home dashboard's *reporting* currency, defaults `"GBP"`, independent of any quote/invoice's own `currency` — `utr`/`vat_number` optional). Not `Account` (the client being billed). One per `user_id` (`UNIQUE`), which is sessionkit's `User.id` — a plain column, not an enforced FK (see `CLAUDE.md`, "Login accounts" below). Every optional field: blank input is normalised to `NULL`, never stored as `""`. |
 | counters (internal) | name, value | Backs `next_quote_number`/`next_invoice_number`; not a domain entity, not exposed via API/CLI. |
 
-`MonthlyInvoiceTotals` (`month`, `paid_total`, `unpaid_total`) is **not** a
-stored table — it's `InvoiceService.monthly_totals()`'s return shape,
-computed on read from `Invoice` rows for the home dashboard's chart. See
-the invariants below for exactly what it includes/excludes.
+`MonthlyInvoiceTotals` (`month`, `paid_total`, `unpaid_total`) and `Stats`
+(`account_count`) are **not** stored tables — they're
+`InvoiceService.monthly_totals()`/`StatsService.get_stats()`'s return
+shapes, computed on read for the home dashboard. See the invariants below
+for exactly what the former includes/excludes.
 
 ## Relationships
 
@@ -44,13 +46,25 @@ Invoice 1──* LineItem   (via invoice_line_items)
 - A `Quote` converts to an `Invoice` at most once, and only from `sent` or
   `accepted` — `QuoteService.convert_to_invoice` copies its line items and
   flips the quote to `converted`.
-- Money fields (`unit_price`) are `Decimal` end-to-end; `SqliteRepository`
-  stores them as `TEXT`, never `REAL`.
+- Money fields (`unit_price`, `tax_rate`) are `Decimal` end-to-end;
+  `SqliteRepository` stores them as `TEXT`, never `REAL`.
+- `QuoteService.add_line_item`/`InvoiceService.add_line_item` reject a
+  `tax_rate` outside `[0, 1]`. `QuoteService.convert_to_invoice` copies
+  `tax_rate` across to the new `LineItem` along with the other fields — a
+  migration or refactor that adds another `LineItem` field must update that
+  copy too, or it silently reverts to the field's default on every
+  converted invoice.
 - `BusinessProfileService.get_profile` never 404s — it returns a virtual,
   unsaved default (`id=None`, blank name/address, `payment_terms_days=30`)
   when no row exists yet for that `user_id`. `save_profile` upserts: the
   first save for a `user_id` inserts, every save after that updates the
   same row (`created_at` untouched, `updated_at` bumped).
+- `AccountService.update_account` requires the same non-blank
+  `business_name`/`email`/`address` as `create_account` and always replaces
+  the whole record (no partial-field updates) — 404s via `get_account` if
+  the id doesn't exist first.
+- `StatsService.get_stats()` has no `user_id`/`account_id` scoping - it's a
+  single, system-wide snapshot, same as `InvoiceService.monthly_totals`.
 - `InvoiceService.pay()` only transitions `sent → paid` — rejects `draft`
   (never sent, nothing to have been paid for), `void` (cancelled), and an
   already-`paid` invoice. Stricter than `void()`, which also allows `draft`.
@@ -72,6 +86,16 @@ Invoice 1──* LineItem   (via invoice_line_items)
 `sessionkit` package itself — not listed here, not touched by
 `storage/schema.py`. See `CLAUDE.md` for why `User`, `Account`, and
 `BusinessProfile` are three deliberately different things.
+
+## Demo data
+
+`invoice-system-cli init-db` seeds a demo login user, a `BusinessProfile`,
+several `Account`s, and a 12-month spread of `Quote`/`Invoice` statuses
+(`src/invoice_system/demo_data.py`) unless `--no-demo` is passed. It's
+idempotent (a no-op once the demo user exists) and goes through the real
+service layer with a backdated clock, not hand-crafted storage rows — see
+`CLAUDE.md` for why, and the "keep this in sync" convention for updating it
+when a feature changes what these entities can look like.
 
 ## Not yet modelled
 

@@ -52,6 +52,8 @@ export function QuoteDetailPage() {
       <LineItemsTable
         lineItems={quote.line_items}
         currency={quote.currency}
+        subtotal={quote.subtotal}
+        taxTotal={quote.tax_total}
         total={quote.total}
         onAdd={
           quote.status === 'draft'

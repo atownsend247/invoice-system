@@ -77,3 +77,29 @@ test('paying an invoice removes it from Outstanding and the chart reports the re
   await expect(chart).toBeVisible()
   await expect(page.locator('.monthly-chart-column')).toHaveCount(12)
 })
+
+// The account count is global (every account, not per-test), and other
+// specs create accounts concurrently - so this only checks the count went
+// up by *at least* one after creating an account, never an exact value
+// (a concurrent worker creating its own account between the two reads
+// would make an exact-delta assertion flaky, not wrong).
+test('all-time stats reflects a newly created account', async ({ authenticatedPage: page, apiToken }, testInfo) => {
+  await page.goto('/')
+  const statValue = page.locator('.stat', { hasText: 'Accounts registered' }).locator('dd')
+  await expect(statValue).toBeVisible()
+  const before = Number(await statValue.textContent())
+
+  await apiFetch('/accounts', apiToken, {
+    method: 'POST',
+    body: JSON.stringify({
+      business_name: `Stats test ${testInfo.testId}`,
+      email: `stats-${testInfo.testId}@example.test`,
+      address: '1 Test Street',
+    }),
+  })
+
+  await page.reload()
+  await expect(async () => {
+    expect(Number(await statValue.textContent())).toBeGreaterThanOrEqual(before + 1)
+  }).toPass()
+})

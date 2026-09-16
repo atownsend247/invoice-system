@@ -80,6 +80,99 @@ def test_cannot_convert_quote_twice(application, account):
         application.quotes.convert_to_invoice(quote.id)
 
 
+def test_line_item_tax_defaults_to_zero_and_total_is_net(application, account):
+    quote = application.quotes.create_quote(account_id=account.id)
+    quote = application.quotes.add_line_item(
+        quote.id, description="Design work", quantity=Decimal("10"), unit_price=Decimal("50.00")
+    )
+    item = quote.line_items[0]
+    assert item.tax_rate == Decimal("0")
+    assert item.net_total == Decimal("500.00")
+    assert item.tax_amount == Decimal("0")
+    assert item.total == Decimal("500.00")
+    assert quote.subtotal == Decimal("500.00")
+    assert quote.tax_total == Decimal("0")
+    assert quote.total == Decimal("500.00")
+
+
+def test_line_item_tax_rate_is_applied_to_the_line_and_the_quote_totals(application, account):
+    quote = application.quotes.create_quote(account_id=account.id)
+    quote = application.quotes.add_line_item(
+        quote.id,
+        description="Design work",
+        quantity=Decimal("10"),
+        unit_price=Decimal("50.00"),
+        tax_rate=Decimal("0.20"),
+    )
+    item = quote.line_items[0]
+    assert item.net_total == Decimal("500.00")
+    assert item.tax_amount == Decimal("100.00")
+    assert item.total == Decimal("600.00")
+    assert quote.subtotal == Decimal("500.00")
+    assert quote.tax_total == Decimal("100.00")
+    assert quote.total == Decimal("600.00")
+
+
+def test_lines_can_carry_different_tax_rates_on_the_same_quote(application, account):
+    quote = application.quotes.create_quote(account_id=account.id)
+    quote = application.quotes.add_line_item(
+        quote.id,
+        description="Standard-rated",
+        quantity=Decimal("1"),
+        unit_price=Decimal("100"),
+        tax_rate=Decimal("0.20"),
+    )
+    quote = application.quotes.add_line_item(
+        quote.id,
+        description="Zero-rated",
+        quantity=Decimal("1"),
+        unit_price=Decimal("100"),
+        tax_rate=Decimal("0"),
+    )
+    assert quote.subtotal == Decimal("200")
+    assert quote.tax_total == Decimal("20.00")
+    assert quote.total == Decimal("220.00")
+
+
+def test_tax_amount_is_rounded_to_the_nearest_cent(application, account):
+    # 33.33 * 0.20 = 6.6660 exactly - a naive Decimal multiplication would
+    # leave that extra digit rather than rounding to real money.
+    quote = application.quotes.create_quote(account_id=account.id)
+    quote = application.quotes.add_line_item(
+        quote.id,
+        description="Design work",
+        quantity=Decimal("1"),
+        unit_price=Decimal("33.33"),
+        tax_rate=Decimal("0.20"),
+    )
+    assert quote.line_items[0].tax_amount == Decimal("6.67")
+
+
+@pytest.mark.parametrize("tax_rate", [Decimal("-0.01"), Decimal("1.01")])
+def test_add_line_item_rejects_tax_rate_outside_zero_to_one(application, account, tax_rate):
+    quote = application.quotes.create_quote(account_id=account.id)
+    with pytest.raises(ValidationFailed):
+        application.quotes.add_line_item(
+            quote.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1"), tax_rate=tax_rate
+        )
+
+
+def test_converting_a_quote_to_an_invoice_carries_the_tax_rate_across(application, account):
+    quote = application.quotes.create_quote(account_id=account.id)
+    quote = application.quotes.add_line_item(
+        quote.id,
+        description="Design work",
+        quantity=Decimal("10"),
+        unit_price=Decimal("50.00"),
+        tax_rate=Decimal("0.20"),
+    )
+    quote = application.quotes.send(quote.id)
+
+    invoice = application.quotes.convert_to_invoice(quote.id)
+    assert invoice.line_items[0].tax_rate == Decimal("0.20")
+    assert invoice.total == Decimal("600.00")
+
+
 def test_quote_numbers_increment_independently_of_invoice_numbers(application, account):
     first = application.quotes.create_quote(account_id=account.id)
     first = application.quotes.add_line_item(

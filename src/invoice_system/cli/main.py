@@ -1,9 +1,12 @@
+import os
 import sys
 from decimal import Decimal
 from pathlib import Path
 
 import click
 
+from ..auth import DEFAULT_AUTH_DB_PATH, build_auth
+from ..demo_data import DEMO_EMAIL, DEMO_PASSWORD, seed_demo_data
 from ..errors import AppError
 from ..factory import Application, build_application
 from ..pdf import render_invoice_pdf, render_quote_pdf
@@ -23,9 +26,30 @@ def cli(ctx: click.Context, db_path: str) -> None:
 
 
 @cli.command("init-db")
+@click.option(
+    "--demo/--no-demo",
+    default=True,
+    show_default=True,
+    help="Seed a demo login user, business profile, accounts, and a year of quotes/invoices "
+    "in a mix of statuses. Safe to repeat - a no-op once the demo user already exists.",
+)
 @click.pass_obj
-def init_db(application: Application) -> None:
-    click.echo("Database ready")
+def init_db(application: Application, demo: bool) -> None:
+    if not demo:
+        click.echo("Database ready")
+        return
+
+    auth_db_path = os.environ.get("INVOICE_SYSTEM_AUTH_DB", DEFAULT_AUTH_DB_PATH)
+    auth = build_auth(auth_db_path)
+    try:
+        seeded = seed_demo_data(application, auth)
+    finally:
+        auth.close()
+
+    if seeded:
+        click.echo(f"Database ready with demo data (log in as {DEMO_EMAIL} / {DEMO_PASSWORD})")
+    else:
+        click.echo("Database ready (demo data already present)")
 
 
 @cli.group()
@@ -61,6 +85,34 @@ def account_list(application: Application) -> None:
         click.echo(f"{acc.id}\t{acc.business_name}\t{acc.email}")
 
 
+@account.command("update")
+@click.argument("account_id", type=int)
+@click.option("--business-name", required=True)
+@click.option("--email", required=True)
+@click.option("--address", required=True)
+@click.option("--contact-name", default=None)
+@click.option("--phone", default=None)
+@click.pass_obj
+def account_update(
+    application: Application,
+    account_id: int,
+    business_name: str,
+    email: str,
+    address: str,
+    contact_name: str | None,
+    phone: str | None,
+) -> None:
+    updated = application.accounts.update_account(
+        account_id,
+        business_name=business_name,
+        email=email,
+        address=address,
+        contact_name=contact_name,
+        phone=phone,
+    )
+    click.echo(f"Updated account {updated.id}: {updated.business_name}")
+
+
 @cli.group()
 def quote() -> None:
     pass
@@ -80,12 +132,24 @@ def quote_create(application: Application, account_id: int, currency: str) -> No
 @click.option("--description", required=True)
 @click.option("--quantity", required=True, type=Decimal)
 @click.option("--unit-price", required=True, type=Decimal)
+@click.option(
+    "--tax-rate",
+    default="0",
+    type=Decimal,
+    show_default=True,
+    help="VAT/tax rate as a fraction, e.g. 0.20 for 20%.",
+)
 @click.pass_obj
 def quote_add_item(
-    application: Application, quote_id: int, description: str, quantity: Decimal, unit_price: Decimal
+    application: Application,
+    quote_id: int,
+    description: str,
+    quantity: Decimal,
+    unit_price: Decimal,
+    tax_rate: Decimal,
 ) -> None:
     application.quotes.add_line_item(
-        quote_id, description=description, quantity=quantity, unit_price=unit_price
+        quote_id, description=description, quantity=quantity, unit_price=unit_price, tax_rate=tax_rate
     )
     click.echo("Added line item")
 
@@ -283,6 +347,13 @@ def settings_set(
         vat_number=vat_number,
     )
     click.echo(f"Saved business profile for user {user_id}")
+
+
+@cli.command("stats")
+@click.pass_obj
+def stats(application: Application) -> None:
+    result = application.stats.get_stats()
+    click.echo(f"Accounts: {result.account_count}")
 
 
 def main() -> None:

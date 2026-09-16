@@ -96,4 +96,15 @@ MIGRATIONS: list[str] = [
         updated_at TEXT NOT NULL
     );
     """,
+    """
+    -- Per-line VAT/tax rate (a fraction, e.g. '0.20' for 20% - see
+    -- CLAUDE.md and data-model.md). Different lines on the same
+    -- quote/invoice can legitimately carry different UK VAT rates
+    -- (standard/reduced/zero), so this lives on the line item, not the
+    -- quote/invoice as a whole. A constant-default ADD COLUMN is a plain
+    -- ALTER TABLE SQLite supports directly - every existing line item is
+    -- backfilled to '0' (no tax), leaving its total unchanged.
+    ALTER TABLE quote_line_items ADD COLUMN tax_rate TEXT NOT NULL DEFAULT '0';
+    ALTER TABLE invoice_line_items ADD COLUMN tax_rate TEXT NOT NULL DEFAULT '0';
+    """,
 ]

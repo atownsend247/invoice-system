@@ -9,7 +9,7 @@ def test_full_cli_flow(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()
 
-    result = runner.invoke(cli, ["--db", str(db_path), "init-db"])
+    result = runner.invoke(cli, ["--db", str(db_path), "init-db", "--no-demo"])
     assert result.exit_code == 0, result.output
 
     result = runner.invoke(
@@ -85,16 +85,189 @@ def test_full_cli_flow(tmp_path):
 def test_missing_account_returns_nonzero_exit(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()
-    runner.invoke(cli, ["--db", str(db_path), "init-db"])
+    runner.invoke(cli, ["--db", str(db_path), "init-db", "--no-demo"])
 
     result = runner.invoke(cli, ["--db", str(db_path), "quote", "create", "--account-id", "999"])
+    assert result.exit_code != 0
+
+
+def test_quote_add_item_with_tax_rate(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, ["--db", str(db_path), "init-db", "--no-demo"])
+    runner.invoke(
+        cli,
+        [
+            "--db",
+            str(db_path),
+            "account",
+            "create",
+            "--business-name",
+            "Acme",
+            "--email",
+            "a@b.test",
+            "--address",
+            "1 Main St",
+        ],
+    )
+    runner.invoke(cli, ["--db", str(db_path), "quote", "create", "--account-id", "1"])
+
+    result = runner.invoke(
+        cli,
+        [
+            "--db",
+            str(db_path),
+            "quote",
+            "add-item",
+            "1",
+            "--description",
+            "Design work",
+            "--quantity",
+            "1",
+            "--unit-price",
+            "100.00",
+            "--tax-rate",
+            "0.20",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Added line item" in result.output
+
+
+def test_init_db_seeds_demo_data_by_default(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["--db", str(db_path), "init-db"],
+        env={"INVOICE_SYSTEM_AUTH_DB": str(tmp_path / "auth.db")},
+    )
+    assert result.exit_code == 0, result.output
+    assert "demo data" in result.output.lower()
+
+    result = runner.invoke(cli, ["--db", str(db_path), "stats"])
+    assert "Accounts: " in result.output
+    assert "Accounts: 0" not in result.output
+
+
+def test_init_db_no_demo_skips_seeding(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--db", str(db_path), "init-db", "--no-demo"])
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == "Database ready"
+
+    result = runner.invoke(cli, ["--db", str(db_path), "stats"])
+    assert "Accounts: 0" in result.output
+
+
+def test_init_db_demo_is_idempotent(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    env = {"INVOICE_SYSTEM_AUTH_DB": str(tmp_path / "auth.db")}
+    runner.invoke(cli, ["--db", str(db_path), "init-db"], env=env)
+    result = runner.invoke(cli, ["--db", str(db_path), "init-db"], env=env)
+
+    assert result.exit_code == 0, result.output
+    assert "already present" in result.output.lower()
+
+
+def test_stats(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, ["--db", str(db_path), "init-db", "--no-demo"])
+    runner.invoke(
+        cli,
+        [
+            "--db",
+            str(db_path),
+            "account",
+            "create",
+            "--business-name",
+            "Acme",
+            "--email",
+            "a@b.test",
+            "--address",
+            "1 Main St",
+        ],
+    )
+
+    result = runner.invoke(cli, ["--db", str(db_path), "stats"])
+    assert result.exit_code == 0, result.output
+    assert "Accounts: 1" in result.output
+
+
+def test_account_update(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, ["--db", str(db_path), "init-db", "--no-demo"])
+    runner.invoke(
+        cli,
+        [
+            "--db",
+            str(db_path),
+            "account",
+            "create",
+            "--business-name",
+            "Acme",
+            "--email",
+            "a@b.test",
+            "--address",
+            "1 Main St",
+        ],
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            "--db",
+            str(db_path),
+            "account",
+            "update",
+            "1",
+            "--business-name",
+            "Acme Ltd",
+            "--email",
+            "b@b.test",
+            "--address",
+            "2 High St",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Updated account 1: Acme Ltd" in result.output
+
+    result = runner.invoke(cli, ["--db", str(db_path), "account", "list"])
+    assert "Acme Ltd" in result.output
+
+
+def test_account_update_missing_account_returns_nonzero_exit(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, ["--db", str(db_path), "init-db", "--no-demo"])
+
+    result = runner.invoke(
+        cli,
+        [
+            "--db",
+            str(db_path),
+            "account",
+            "update",
+            "999",
+            "--business-name",
+            "Acme",
+            "--email",
+            "a@b.test",
+            "--address",
+            "1 Main St",
+        ],
+    )
     assert result.exit_code != 0
 
 
 def test_settings_show_defaults_then_set_and_show_again(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()
-    runner.invoke(cli, ["--db", str(db_path), "init-db"])
+    runner.invoke(cli, ["--db", str(db_path), "init-db", "--no-demo"])
 
     result = runner.invoke(cli, ["--db", str(db_path), "settings", "show", "--user-id", "1"])
     assert result.exit_code == 0, result.output
@@ -138,7 +311,7 @@ def test_settings_show_defaults_then_set_and_show_again(tmp_path):
 def test_settings_set_requires_first_name(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()
-    runner.invoke(cli, ["--db", str(db_path), "init-db"])
+    runner.invoke(cli, ["--db", str(db_path), "init-db", "--no-demo"])
 
     result = runner.invoke(
         cli,
@@ -163,7 +336,7 @@ def test_settings_set_requires_first_name(tmp_path):
 def test_invoice_send_with_user_id_uses_the_profiles_payment_terms(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()
-    runner.invoke(cli, ["--db", str(db_path), "init-db"])
+    runner.invoke(cli, ["--db", str(db_path), "init-db", "--no-demo"])
     runner.invoke(
         cli,
         [
@@ -227,7 +400,7 @@ def test_invoice_send_with_user_id_uses_the_profiles_payment_terms(tmp_path):
 def test_invoice_pay(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()
-    runner.invoke(cli, ["--db", str(db_path), "init-db"])
+    runner.invoke(cli, ["--db", str(db_path), "init-db", "--no-demo"])
     runner.invoke(
         cli,
         [
@@ -275,7 +448,7 @@ def test_invoice_pay(tmp_path):
 def test_invoice_pay_a_draft_invoice_returns_nonzero_exit(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()
-    runner.invoke(cli, ["--db", str(db_path), "init-db"])
+    runner.invoke(cli, ["--db", str(db_path), "init-db", "--no-demo"])
     runner.invoke(
         cli,
         [
@@ -318,7 +491,7 @@ def test_invoice_pay_a_draft_invoice_returns_nonzero_exit(tmp_path):
 def test_invoice_monthly_totals(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()
-    runner.invoke(cli, ["--db", str(db_path), "init-db"])
+    runner.invoke(cli, ["--db", str(db_path), "init-db", "--no-demo"])
     runner.invoke(
         cli,
         [
@@ -348,7 +521,7 @@ def test_invoice_monthly_totals(tmp_path):
 def test_quote_and_invoice_pdf_accept_a_user_id(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()
-    runner.invoke(cli, ["--db", str(db_path), "init-db"])
+    runner.invoke(cli, ["--db", str(db_path), "init-db", "--no-demo"])
     runner.invoke(
         cli,
         [

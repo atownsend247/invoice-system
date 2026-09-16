@@ -122,6 +122,32 @@ def test_get_missing_invoice_raises_not_found_for_pay(application):
         application.invoices.pay(999)
 
 
+def test_add_line_item_to_a_draft_invoice_applies_tax_rate(application, account, fake_clock):
+    empty = application.repository.create_invoice(
+        Invoice(
+            id=None,
+            account_id=account.id,
+            quote_id=None,
+            number=None,
+            status=InvoiceStatus.DRAFT,
+            currency="USD",
+            issue_date=fake_clock().date(),
+            due_date=None,
+            created_at=fake_clock(),
+        )
+    )
+    invoice = application.invoices.add_line_item(
+        empty.id,
+        description="Work",
+        quantity=Decimal("2"),
+        unit_price=Decimal("100.00"),
+        tax_rate=Decimal("0.20"),
+    )
+    assert invoice.subtotal == Decimal("200.00")
+    assert invoice.tax_total == Decimal("40.00")
+    assert invoice.total == Decimal("240.00")
+
+
 class TestMonthlyTotals:
     """InvoiceService.monthly_totals - see the docstring on the method
     itself for what's included/excluded and why."""

@@ -1,7 +1,9 @@
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
+
+_CENT = Decimal("0.01")
 
 
 class QuoteStatus(StrEnum):
@@ -83,15 +85,34 @@ class BusinessProfile:
 
 @dataclass
 class LineItem:
+    """tax_rate is a fraction (`Decimal("0.20")` for 20% VAT, `Decimal("0")`
+    for none) applied to this line only - there's no invoice-wide rate,
+    since different lines can legitimately carry different UK VAT rates
+    (standard 20%/reduced 5%/zero 0%). `total` is *gross* (`net_total +
+    tax_amount`) - the amount this line actually adds to what's owed; use
+    `net_total`/`tax_amount` for the pre-tax amount and the tax alone."""
+
     id: int | None
     description: str
     quantity: Decimal
     unit_price: Decimal
+    tax_rate: Decimal
     position: int
 
     @property
-    def total(self) -> Decimal:
+    def net_total(self) -> Decimal:
         return self.quantity * self.unit_price
+
+    @property
+    def tax_amount(self) -> Decimal:
+        # Rounded to the minor currency unit (cents/pence) - net_total * a
+        # 2dp tax_rate otherwise carries extra decimal places (e.g.
+        # 100.00 * 0.20 = 20.0000) that don't correspond to real money.
+        return (self.net_total * self.tax_rate).quantize(_CENT, rounding=ROUND_HALF_UP)
+
+    @property
+    def total(self) -> Decimal:
+        return self.net_total + self.tax_amount
 
 
 @dataclass
@@ -105,6 +126,14 @@ class Quote:
     expiry_date: date | None
     created_at: datetime
     line_items: list[LineItem] = field(default_factory=list)
+
+    @property
+    def subtotal(self) -> Decimal:
+        return sum((item.net_total for item in self.line_items), Decimal("0"))
+
+    @property
+    def tax_total(self) -> Decimal:
+        return sum((item.tax_amount for item in self.line_items), Decimal("0"))
 
     @property
     def total(self) -> Decimal:
@@ -125,6 +154,14 @@ class Invoice:
     line_items: list[LineItem] = field(default_factory=list)
 
     @property
+    def subtotal(self) -> Decimal:
+        return sum((item.net_total for item in self.line_items), Decimal("0"))
+
+    @property
+    def tax_total(self) -> Decimal:
+        return sum((item.tax_amount for item in self.line_items), Decimal("0"))
+
+    @property
     def total(self) -> Decimal:
         return sum((item.total for item in self.line_items), Decimal("0"))
 
@@ -137,3 +174,13 @@ class MonthlyInvoiceTotals:
     month: str
     paid_total: Decimal
     unpaid_total: Decimal
+
+
+@dataclass
+class Stats:
+    """All-time, system-wide counters for the home dashboard's stats
+    section - see StatsService.get_stats. Deliberately a small, flat
+    dataclass rather than one field per entity type growing organically -
+    add fields here as new stats are actually asked for, not speculatively."""
+
+    account_count: int

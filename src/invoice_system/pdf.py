@@ -105,27 +105,33 @@ def _render(
     story.append(Paragraph(account.email, styles["Normal"]))
     story.append(Spacer(1, 8 * mm))
 
-    table_data = [["Description", "Qty", "Unit price", "Total"]]
+    table_data = [["Description", "Qty", "Unit price", "VAT", "Total"]]
     for item in line_items:
         table_data.append(
             [
                 item.description,
                 str(item.quantity),
                 f"{item.unit_price} {currency}",
+                f"{item.tax_rate:.0%}",
                 f"{item.total} {currency}",
             ]
         )
-    total = sum((item.total for item in line_items), Decimal("0"))
-    table_data.append(["", "", "Total", f"{total} {currency}"])
+    subtotal = sum((item.net_total for item in line_items), Decimal("0"))
+    tax_total = sum((item.tax_amount for item in line_items), Decimal("0"))
+    total = subtotal + tax_total
+    summary_rows_from = len(table_data)
+    table_data.append(["", "", "", "Subtotal", f"{subtotal} {currency}"])
+    table_data.append(["", "", "", "VAT", f"{tax_total} {currency}"])
+    table_data.append(["", "", "", "Total", f"{total} {currency}"])
 
-    table = Table(table_data, colWidths=[80 * mm, 20 * mm, 35 * mm, 35 * mm])
+    table = Table(table_data, colWidths=[65 * mm, 20 * mm, 30 * mm, 20 * mm, 35 * mm])
     table.setStyle(
         TableStyle(
             [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                 ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-                ("GRID", (0, 0), (-1, -2), 0.25, colors.grey),
+                ("GRID", (0, 0), (-1, summary_rows_from - 1), 0.25, colors.grey),
                 ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
             ]
         )

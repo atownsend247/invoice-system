@@ -52,7 +52,13 @@ export function InvoiceDetailPage() {
         {invoice.quote_id && <> · converted from quote #{invoice.quote_id}</>}
       </p>
 
-      <LineItemsTable lineItems={invoice.line_items} currency={invoice.currency} total={invoice.total} />
+      <LineItemsTable
+        lineItems={invoice.line_items}
+        currency={invoice.currency}
+        subtotal={invoice.subtotal}
+        taxTotal={invoice.tax_total}
+        total={invoice.total}
+      />
 
       {actionError && (
         <p className="form-error" role="alert">

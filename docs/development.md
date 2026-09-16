@@ -4,7 +4,20 @@
 
 ```
 uv sync
-uv run invoice-system-cli init-db          # creates invoice_system.db, applies migrations
+uv run invoice-system-cli init-db
+```
+
+Creates `invoice_system.db`, applies migrations, and (by default) seeds a
+year of demo data — accounts, quotes/invoices in a mix of statuses, and a
+demo login (`demo@example.test` / `demo-password-123`) in `auth.db`. Log in
+with that straight away; there's nothing else to set up. Safe to re-run —
+seeding is a no-op once the demo user exists.
+
+For an empty database instead (e.g. before deploying somewhere real), pass
+`--no-demo` and create your own login:
+
+```
+uv run invoice-system-cli init-db --no-demo
 uv run sessionkit add you@example.com      # creates auth.db, prompts for a password
 ```
 
@@ -38,16 +51,22 @@ curl -s -X POST http://127.0.0.1:8000/auth/login \
 uv run invoice-system-cli --help
 uv run invoice-system-cli account create --business-name "Acme Co" \
     --email billing@acme.test --address "1 Main St"
+uv run invoice-system-cli account update 1 --business-name "Acme Co Ltd" \
+    --email billing@acme.test --address "1 Main St"
 uv run invoice-system-cli quote create --account-id 1
 uv run invoice-system-cli quote add-item 1 --description "Design work" \
-    --quantity 10 --unit-price 50.00
+    --quantity 10 --unit-price 50.00 --tax-rate 0.20
 uv run invoice-system-cli quote send 1
 uv run invoice-system-cli quote pdf 1 -o quote.pdf
 uv run invoice-system-cli quote convert 1
 uv run invoice-system-cli invoice send 1
 uv run invoice-system-cli invoice pay 1
 uv run invoice-system-cli invoice pdf 1 -o invoice.pdf
+uv run invoice-system-cli stats
 ```
+
+`--tax-rate` (default `0`) is a fraction, not a percentage - `0.20` for 20%
+VAT, `0.05` for 5%, valid range `[0, 1]`.
 
 `--db PATH` (before the subcommand) points any command at a different
 SQLite file; default is `invoice_system.db` in the working directory. The
@@ -104,8 +123,9 @@ binds `localhost`, which can resolve to the IPv6 loopback only — use
 `http://localhost:<port>`, not `127.0.0.1`, if a direct request seems to
 hang. It talks to the API at `VITE_API_BASE_URL` (default
 `http://127.0.0.1:8000`) — override in `web/.env.local` (gitignored) if
-your API is elsewhere. Log in with a user created via `sessionkit add`
-above; there is no signup screen.
+your API is elsewhere. Log in with the demo user (`demo@example.test` /
+`demo-password-123`, if `init-db` ran without `--no-demo`) or one created
+via `sessionkit add`; there is no signup screen.
 
 ## Running tests
 
@@ -133,8 +153,9 @@ cd web && npm run lint   # oxlint
   (`api/app.py` lifespan). The CLI takes the same thing as the `--db` flag
   instead.
 - `INVOICE_SYSTEM_AUTH_DB` — path to sessionkit's SQLite file used by the
-  API (default `auth.db`). The `sessionkit` CLI takes the same thing as its
-  own `--db` flag or `$SESSIONKIT_DB` instead.
+  API, and by `invoice-system-cli init-db`'s demo-data seeding (both
+  default `auth.db`). The `sessionkit` CLI takes the same thing as its own
+  `--db` flag or `$SESSIONKIT_DB` instead.
 - `INVOICE_SYSTEM_CORS_ORIGINS` — comma-separated allowed origins for the
   API's CORS policy (default `*` — see `CLAUDE.md`).
 - `VITE_API_BASE_URL` — the web client's API base URL (default

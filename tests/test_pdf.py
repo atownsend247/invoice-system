@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 
-from invoice_system.models import Account, BusinessProfile, Quote, QuoteStatus
+from invoice_system.models import Account, BusinessProfile, LineItem, Quote, QuoteStatus
 from invoice_system.pdf import business_profile_lines, render_quote_pdf
 
 
@@ -95,4 +96,39 @@ def test_rendering_a_quote_pdf_with_a_business_profile_set_does_not_error():
     )
     profile = _profile(business_name="Acme", address_line1="1 Main St", postcode="SW1A 1AA")
     pdf_bytes = render_quote_pdf(account, quote, profile)
+    assert pdf_bytes.startswith(b"%PDF")
+
+
+def test_rendering_a_quote_pdf_with_taxed_line_items_does_not_error():
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    account = Account(
+        id=1,
+        business_name="Client Co",
+        contact_name=None,
+        email="a@b.test",
+        phone=None,
+        address="1 Main St",
+        created_at=now,
+    )
+    quote = Quote(
+        id=1,
+        account_id=1,
+        number="Q-0001",
+        status=QuoteStatus.SENT,
+        currency="USD",
+        issue_date=now.date(),
+        expiry_date=None,
+        created_at=now,
+        line_items=[
+            LineItem(
+                id=1,
+                description="Design work",
+                quantity=Decimal("10"),
+                unit_price=Decimal("50.00"),
+                tax_rate=Decimal("0.20"),
+                position=0,
+            )
+        ],
+    )
+    pdf_bytes = render_quote_pdf(account, quote, None)
     assert pdf_bytes.startswith(b"%PDF")

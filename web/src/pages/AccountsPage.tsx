@@ -1,24 +1,36 @@
 import { type FormEvent, useState } from 'react'
 import { Link } from 'react-router-dom'
 import * as api from '../api'
+import type { CreateAccountInput } from '../api'
 import { errorMessage, useAsync } from '../hooks/useAsync'
+import type { Account } from '../types'
 
 export function AccountsPage() {
   const { data: accounts, loading, error, refetch } = useAsync(() => api.listAccounts(), [])
   const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
 
   return (
     <section>
       <div className="page-header">
         <h1>Accounts</h1>
-        <button type="button" onClick={() => setShowForm((show) => !show)}>
+        <button
+          type="button"
+          onClick={() => {
+            setShowForm((show) => !show)
+            setEditingId(null)
+          }}
+        >
           {showForm ? 'Cancel' : 'New account'}
         </button>
       </div>
 
       {showForm && (
-        <NewAccountForm
-          onCreated={() => {
+        <AccountForm
+          submitLabel="Create account"
+          submittingLabel="Creating…"
+          onSubmit={(input) => api.createAccount(input)}
+          onDone={() => {
             setShowForm(false)
             refetch()
           }}
@@ -44,17 +56,44 @@ export function AccountsPage() {
             </tr>
           </thead>
           <tbody>
-            {accounts.map((account) => (
-              <tr key={account.id}>
-                <td>{account.business_name}</td>
-                <td>{account.contact_name ?? '—'}</td>
-                <td>{account.email}</td>
-                <td>{account.address}</td>
-                <td>
-                  <Link to={`/quotes/new?accountId=${account.id}`}>New quote</Link>
-                </td>
-              </tr>
-            ))}
+            {accounts.map((account) =>
+              editingId === account.id ? (
+                <tr key={account.id}>
+                  <td colSpan={5}>
+                    <AccountForm
+                      initial={account}
+                      submitLabel="Save"
+                      submittingLabel="Saving…"
+                      onSubmit={(input) => api.updateAccount(account.id, input)}
+                      onDone={() => {
+                        setEditingId(null)
+                        refetch()
+                      }}
+                      onCancel={() => setEditingId(null)}
+                    />
+                  </td>
+                </tr>
+              ) : (
+                <tr key={account.id}>
+                  <td>{account.business_name}</td>
+                  <td>{account.contact_name ?? '—'}</td>
+                  <td>{account.email}</td>
+                  <td>{account.address}</td>
+                  <td>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingId(account.id)
+                        setShowForm(false)
+                      }}
+                    >
+                      Edit
+                    </button>{' '}
+                    <Link to={`/quotes/new?accountId=${account.id}`}>New quote</Link>
+                  </td>
+                </tr>
+              ),
+            )}
           </tbody>
         </table>
       )}
@@ -62,12 +101,26 @@ export function AccountsPage() {
   )
 }
 
-function NewAccountForm({ onCreated }: { onCreated: () => void }) {
-  const [businessName, setBusinessName] = useState('')
-  const [email, setEmail] = useState('')
-  const [address, setAddress] = useState('')
-  const [contactName, setContactName] = useState('')
-  const [phone, setPhone] = useState('')
+function AccountForm({
+  initial,
+  submitLabel,
+  submittingLabel,
+  onSubmit,
+  onDone,
+  onCancel,
+}: {
+  initial?: Account
+  submitLabel: string
+  submittingLabel: string
+  onSubmit: (input: CreateAccountInput) => Promise<Account>
+  onDone: () => void
+  onCancel?: () => void
+}) {
+  const [businessName, setBusinessName] = useState(initial?.business_name ?? '')
+  const [email, setEmail] = useState(initial?.email ?? '')
+  const [address, setAddress] = useState(initial?.address ?? '')
+  const [contactName, setContactName] = useState(initial?.contact_name ?? '')
+  const [phone, setPhone] = useState(initial?.phone ?? '')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -76,14 +129,14 @@ function NewAccountForm({ onCreated }: { onCreated: () => void }) {
     setError(null)
     setSubmitting(true)
     try {
-      await api.createAccount({
+      await onSubmit({
         business_name: businessName,
         email,
         address,
         contact_name: contactName || undefined,
         phone: phone || undefined,
       })
-      onCreated()
+      onDone()
     } catch (err) {
       setError(errorMessage(err))
     } finally {
@@ -119,8 +172,13 @@ function NewAccountForm({ onCreated }: { onCreated: () => void }) {
         </p>
       )}
       <button type="submit" disabled={submitting}>
-        {submitting ? 'Creating…' : 'Create account'}
+        {submitting ? submittingLabel : submitLabel}
       </button>
+      {onCancel && (
+        <button type="button" className="secondary" onClick={onCancel} disabled={submitting}>
+          Cancel
+        </button>
+      )}
     </form>
   )
 }

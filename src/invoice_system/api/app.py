@@ -34,6 +34,7 @@ from .schemas import (
     MonthlyTotalsReportOut,
     QuoteCreateIn,
     QuoteOut,
+    StatsOut,
 )
 
 _STATUS_BY_ERROR: list[tuple[type[AppError], int]] = [
@@ -135,6 +136,21 @@ def get_account(account_id: int, application: Application = Depends(get_applicat
     return AccountOut.from_model(application.accounts.get_account(account_id))
 
 
+@domain_router.put("/accounts/{account_id}", response_model=AccountOut)
+def update_account(
+    account_id: int, body: AccountIn, application: Application = Depends(get_application)
+) -> AccountOut:
+    account = application.accounts.update_account(
+        account_id,
+        business_name=body.business_name,
+        contact_name=body.contact_name,
+        email=body.email,
+        phone=body.phone,
+        address=body.address,
+    )
+    return AccountOut.from_model(account)
+
+
 @domain_router.post("/quotes", response_model=QuoteOut, status_code=201)
 def create_quote(body: QuoteCreateIn, application: Application = Depends(get_application)) -> QuoteOut:
     quote = application.quotes.create_quote(
@@ -164,6 +180,7 @@ def add_quote_line_item(
         description=body.description,
         quantity=Decimal(body.quantity),
         unit_price=Decimal(body.unit_price),
+        tax_rate=Decimal(body.tax_rate),
     )
     return QuoteOut.from_model(quote)
 
@@ -278,6 +295,11 @@ def save_business_profile(
         vat_number=body.vat_number,
     )
     return BusinessProfileOut.from_model(profile)
+
+
+@domain_router.get("/stats", response_model=StatsOut)
+def get_stats(application: Application = Depends(get_application)) -> StatsOut:
+    return StatsOut.from_model(application.stats.get_stats())
 
 
 app.include_router(domain_router)

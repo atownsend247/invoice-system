@@ -20,6 +20,40 @@ test('creating a draft quote and adding a line item', async ({ authenticatedPage
   await expect(page.locator('tfoot')).toContainText('2500.00 USD')
 })
 
+test('adding a line item with a VAT rate shows it on the line and in the totals', async ({
+  authenticatedPage: page,
+  draftQuote,
+}) => {
+  await page.goto(`/quotes/${draftQuote.id}`)
+  await page.getByLabel('Description').fill('Design work')
+  await page.getByLabel('Qty').fill('1')
+  await page.getByLabel('Unit price').fill('100.00')
+  await page.getByLabel('VAT rate').selectOption('0.20')
+  await page.getByRole('button', { name: 'Add item' }).click()
+
+  const row = page.locator('tbody tr', { hasText: 'Design work' })
+  await expect(row).toContainText('20%')
+  await expect(row).toContainText('120.00 USD') // gross - net plus VAT
+
+  // Scoped to each footer row individually, not the whole tfoot - "20.00
+  // USD" is a substring of "120.00 USD", so a whole-tfoot text check would
+  // pass even if the VAT row's own amount were wrong.
+  await expect(page.locator('tfoot tr', { hasText: 'Subtotal' })).toContainText('100.00 USD')
+  await expect(page.locator('tfoot tr', { hasText: /^VAT/ })).toContainText('20.00 USD')
+  await expect(page.locator('tfoot tr', { hasText: /^Total/ })).toContainText('120.00 USD')
+})
+
+test('VAT rate defaults to 0% when not changed', async ({ authenticatedPage: page, draftQuote }) => {
+  await page.goto(`/quotes/${draftQuote.id}`)
+  await page.getByLabel('Description').fill('Work')
+  await page.getByLabel('Qty').fill('1')
+  await page.getByLabel('Unit price').fill('50.00')
+  await page.getByRole('button', { name: 'Add item' }).click()
+
+  const row = page.locator('tbody tr', { hasText: 'Work' })
+  await expect(row).toContainText('0%')
+})
+
 test('Send is disabled until the quote has at least one line item', async ({
   authenticatedPage: page,
   draftQuote,

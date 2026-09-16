@@ -2,9 +2,10 @@
 
 React + TypeScript + Vite SPA for the backend in `../src/invoice_system/`.
 A home dashboard (overdue/outstanding invoices, a monthly paid-vs-outstanding
-totals chart), accounts, quotes (draft → sent → convert to invoice),
-invoices (send/void/mark as paid), PDF download, and a settings page for
-your own business profile, behind login.
+totals chart, all-time stats), accounts (create/edit), quotes (draft → sent
+→ convert to invoice, each line item with its own VAT rate), invoices
+(send/void/mark as paid), PDF download, and a settings page for your own
+business profile, behind login.
 
 ## Develop
 
@@ -14,9 +15,9 @@ npm run dev      # http://localhost:5173, talks to the API at http://127.0.0.1:8
 ```
 
 The API base URL is `VITE_API_BASE_URL` (default `http://127.0.0.1:8000`) —
-see `.env.example`. Start the backend first (`../docs/development.md`) and
-create a login account with `uv run sessionkit add you@example.com` from the
-repo root; there is no signup screen.
+see `.env.example`. Start the backend first (`../docs/development.md`),
+which by default seeds a demo login (`demo@example.test` /
+`demo-password-123`) plus a year of demo data; there is no signup screen.
 
 ## Test / build
 
@@ -48,14 +49,21 @@ failure; a failed run's trace/screenshot land in `test-results/` (gitignored).
   loading/error/data" hook every page uses instead of reinventing it.
 - `src/components/` — `Layout` (nav + logout), `ProtectedRoute` (redirects
   to `/login`), `StatusBadge`, `LineItemsTable` (shared by quote/invoice
-  detail pages; the add-item form only renders when its `onAdd` prop is
-  passed, since invoices don't expose that route — see `../docs/api.md`).
+  detail pages; the add-item form, including its VAT-rate `<select>`, only
+  renders when its `onAdd` prop is passed, since invoices don't expose that
+  route — see `../docs/api.md`; also renders the VAT column and
+  Subtotal/VAT/Total footer from the `subtotal`/`taxTotal`/`total` props).
 - `src/pages/` — one file per route (`App.tsx` wires them up).
   `HomePage.tsx` exports its `isOverdue`/`isOutstanding` filters (not just
   the component) specifically so `HomePage.test.ts` can unit-test the
   date logic against fixed dates, without a fake clock reaching the e2e
   layer (see the note below on why e2e can't produce a genuinely overdue
-  invoice). It also renders `MonthlyTotalsChart`.
+  invoice). It also renders `MonthlyTotalsChart` and the "All-time stats"
+  section (currently just accounts registered, from `GET /stats`).
+  `AccountsPage.tsx`'s `AccountForm` is shared between "New account" and
+  per-row "Edit" (a row swaps itself for the form in place on Edit, no
+  separate `/accounts/:id` route) - the same fields, same validation,
+  differing only in initial values and the submit handler.
 - `src/components/MonthlyTotalsChart.tsx` — the home dashboard's paid-vs-
   outstanding bar chart. Plain CSS bars (`<div>`s with a `height: N%`
   inline style), not a charting library — 12 months, two series, doesn't
@@ -75,7 +83,7 @@ failure; a failed run's trace/screenshot land in `test-results/` (gitignored).
   `quotes.spec.ts` isn't the thing that has to create an account first,
   `invoices.spec.ts` isn't the thing that has to drive a quote through
   send-and-convert first, and no spec depends on another one having run —
-  safe to run in parallel (24 tests, 6 workers, under 6s) or in any order.
+  safe to run in parallel (29 tests, 6 workers, under 7s) or in any order.
   `home.spec.ts` only checks that a freshly-sent invoice shows up under
   "Outstanding" (not Overdue) — nothing in the app can backdate a
   `due_date` (always computed server-side as today plus a positive

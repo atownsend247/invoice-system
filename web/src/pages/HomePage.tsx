@@ -32,6 +32,7 @@ export function HomePage() {
     () => api.getMonthlyInvoiceTotals(),
     [],
   )
+  const { data: stats, error: statsError } = useAsync(() => api.getStats(), [])
 
   return (
     <section>
@@ -71,6 +72,23 @@ export function HomePage() {
         )}
         {monthlyTotals && (
           <MonthlyTotalsChart currency={monthlyTotals.currency} months={monthlyTotals.months} />
+        )}
+      </div>
+
+      <div className="dashboard-section">
+        <h2>All-time stats</h2>
+        {statsError && (
+          <p className="form-error" role="alert">
+            {statsError}
+          </p>
+        )}
+        {stats && (
+          <dl className="stats-grid">
+            <div className="stat">
+              <dt>Accounts registered</dt>
+              <dd>{stats.account_count}</dd>
+            </div>
+          </dl>
         )}
       </div>
     </section>

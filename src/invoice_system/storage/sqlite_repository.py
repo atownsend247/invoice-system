@@ -57,6 +57,23 @@ class SqliteRepository:
             rows = self._conn.execute("SELECT * FROM accounts ORDER BY id").fetchall()
         return [self._row_to_account(row) for row in rows]
 
+    def update_account(self, account: Account) -> Account:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE accounts SET business_name = ?, contact_name = ?, email = ?, phone = ?, "
+                "address = ? WHERE id = ?",
+                (
+                    account.business_name,
+                    account.contact_name,
+                    account.email,
+                    account.phone,
+                    account.address,
+                    account.id,
+                ),
+            )
+            self._conn.commit()
+            return account
+
     @staticmethod
     def _row_to_account(row: sqlite3.Row) -> Account:
         return Account(
@@ -214,9 +231,17 @@ class SqliteRepository:
     def add_quote_line_item(self, quote_id: int, item: LineItem) -> LineItem:
         with self._lock:
             cur = self._conn.execute(
-                "INSERT INTO quote_line_items (quote_id, description, quantity, unit_price, position) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (quote_id, item.description, str(item.quantity), str(item.unit_price), item.position),
+                "INSERT INTO quote_line_items "
+                "(quote_id, description, quantity, unit_price, tax_rate, position) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    quote_id,
+                    item.description,
+                    str(item.quantity),
+                    str(item.unit_price),
+                    str(item.tax_rate),
+                    item.position,
+                ),
             )
             self._conn.commit()
             item.id = cur.lastrowid
@@ -307,9 +332,17 @@ class SqliteRepository:
     def add_invoice_line_item(self, invoice_id: int, item: LineItem) -> LineItem:
         with self._lock:
             cur = self._conn.execute(
-                "INSERT INTO invoice_line_items (invoice_id, description, quantity, unit_price, position) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (invoice_id, item.description, str(item.quantity), str(item.unit_price), item.position),
+                "INSERT INTO invoice_line_items "
+                "(invoice_id, description, quantity, unit_price, tax_rate, position) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    invoice_id,
+                    item.description,
+                    str(item.quantity),
+                    str(item.unit_price),
+                    str(item.tax_rate),
+                    item.position,
+                ),
             )
             self._conn.commit()
             item.id = cur.lastrowid
@@ -340,6 +373,7 @@ class SqliteRepository:
             description=row["description"],
             quantity=Decimal(row["quantity"]),
             unit_price=Decimal(row["unit_price"]),
+            tax_rate=Decimal(row["tax_rate"]),
             position=row["position"],
         )
 
