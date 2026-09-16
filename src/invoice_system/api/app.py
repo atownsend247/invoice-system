@@ -11,10 +11,10 @@ from sessionkit import User as SessionUser
 from sessionkit import UserNotFound as AuthUserNotFound
 from sessionkit import ValidationError as AuthValidationError
 
-from ..attachments import DEFAULT_ATTACHMENTS_DIR
 from ..auth import build_auth
 from ..errors import AppError, Duplicate, InvalidTransition, NotFound, ValidationFailed
 from ..factory import Application, build_application
+from ..paths import DEFAULT_STORAGE_DIR, StoragePaths
 from ..pdf import render_expense_pdf, render_invoice_pdf, render_quote_pdf
 from .auth import (
     get_current_user,
@@ -58,9 +58,22 @@ _STATUS_BY_AUTH_ERROR: list[tuple[type[AuthError], int]] = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    db_path = os.environ.get("INVOICE_SYSTEM_DB", "invoice_system.db")
-    auth_db_path = os.environ.get("INVOICE_SYSTEM_AUTH_DB", "auth.db")
-    attachments_dir = os.environ.get("INVOICE_SYSTEM_ATTACHMENTS_DIR", DEFAULT_ATTACHMENTS_DIR)
+    # INVOICE_SYSTEM_STORAGE_DIR (default "storage/") sets where every kind
+    # of persistent file lives by default - see paths.py. The three
+    # per-path env vars below still override individually when set (e.g.
+    # putting attachments on different storage than the databases); they
+    # just no longer hardcode their own bare-CWD-relative defaults.
+    storage_dir = os.environ.get("INVOICE_SYSTEM_STORAGE_DIR", DEFAULT_STORAGE_DIR)
+    paths = StoragePaths(storage_dir)
+    if "INVOICE_SYSTEM_DB" not in os.environ or "INVOICE_SYSTEM_AUTH_DB" not in os.environ:
+        # Only touch disk for whichever derived default actually ends up
+        # used - explicitly overriding both means storage-dir's own db/
+        # subdirectory is never touched, so nothing should create it (see
+        # the matching guard/comment in cli/main.py's cli() group).
+        paths.ensure_db_dir()
+    db_path = os.environ.get("INVOICE_SYSTEM_DB", str(paths.domain_db_path))
+    auth_db_path = os.environ.get("INVOICE_SYSTEM_AUTH_DB", str(paths.auth_db_path))
+    attachments_dir = os.environ.get("INVOICE_SYSTEM_ATTACHMENTS_DIR", str(paths.attachments_dir))
     app.state.application = build_application(db_path, attachments_dir=attachments_dir)
     app.state.auth = build_auth(auth_db_path)
     yield

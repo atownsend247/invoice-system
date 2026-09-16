@@ -61,6 +61,27 @@ def test_healthz_is_public(client):
     assert response.status_code == 200
 
 
+def test_lifespan_derives_db_and_auth_paths_from_storage_dir_env_var(tmp_path, monkeypatch):
+    # Deliberately not the `client` fixture - that one always sets
+    # INVOICE_SYSTEM_DB/AUTH_DB/ATTACHMENTS_DIR explicitly (so its own
+    # lifespan-built app - unused by any route, since dependency_overrides
+    # replaces it - never touches this env var at all). This test exists
+    # specifically to prove the *lifespan itself* derives both db paths
+    # from INVOICE_SYSTEM_STORAGE_DIR when none of the three per-path
+    # overrides are set - see api/app.py's lifespan.
+    storage_dir = tmp_path / "my-storage"
+    monkeypatch.setenv("INVOICE_SYSTEM_STORAGE_DIR", str(storage_dir))
+    monkeypatch.delenv("INVOICE_SYSTEM_DB", raising=False)
+    monkeypatch.delenv("INVOICE_SYSTEM_AUTH_DB", raising=False)
+    monkeypatch.delenv("INVOICE_SYSTEM_ATTACHMENTS_DIR", raising=False)
+
+    with TestClient(app) as test_client:
+        assert test_client.get("/healthz").status_code == 200
+
+    assert (storage_dir / "db" / "invoice_system.db").exists()
+    assert (storage_dir / "db" / "auth.db").exists()
+
+
 def test_protected_route_without_token_is_rejected(client):
     response = client.get("/accounts")
     assert response.status_code == 401

@@ -452,5 +452,46 @@ flow," not a restructuring, whenever it's actually needed.
       tests), and e2e (45 tests, new attachment specs in
       `expenses.spec.ts`) suites updated and passing.
 
+## Phase 20 — Consolidated storage directory (done)
+
+- [x] `paths.py` (new module): `StoragePaths`, deriving every persistent
+      file's location from one base directory (`storage/` by default) -
+      `storage/db/invoice_system.db`, `storage/db/auth.db`,
+      `storage/attachments/`, and `storage/logs/` (reserved for future
+      logging output - nothing writes there yet, kept in the layout so it
+      doesn't need a fifth base path bolted on later). A CLI/API
+      entry-point concern only - `factory.py`/`auth.py` are unchanged,
+      still just taking whatever concrete path they're given.
+- [x] `INVOICE_SYSTEM_STORAGE_DIR` (API env var) / `--storage-dir` (CLI
+      flag, on the top-level `cli` group) move the whole base directory.
+      `INVOICE_SYSTEM_DB`/`INVOICE_SYSTEM_AUTH_DB`/
+      `INVOICE_SYSTEM_ATTACHMENTS_DIR` (API) and `--db`/`--attachments-dir`
+      (CLI) still exist underneath that as individual overrides, always
+      winning over the storage-dir-derived default when set - not a
+      breaking replacement, an additional base default. `init-db`'s CLI
+      command needed `ctx.meta` (not `ctx.obj`, which stays the
+      `Application` every other subcommand already receives via
+      `@click.pass_obj`) to reach the resolved `StoragePaths` for its own
+      `INVOICE_SYSTEM_AUTH_DB` default.
+- [x] Both the `cli` group and the API's `lifespan` only call
+      `StoragePaths.ensure_db_dir()` when a derived (non-overridden) path
+      is actually about to be used - found the hard way, via a test suite
+      that silently littered an empty `storage/db/` into the repo root on
+      every CLI invocation before this guard existed, including ones that
+      override both `--db` and `--attachments-dir` and never touch the
+      derived default at all.
+- [x] `web/e2e/start-backend.sh` demonstrates the consolidated layout for
+      real: one `INVOICE_SYSTEM_STORAGE_DIR` instead of three separate env
+      vars pointed at the same directory by hand.
+- [x] `deploy/invoice-system-api.service` now sets one
+      `INVOICE_SYSTEM_STORAGE_DIR=/opt/invoice-system/storage` instead of
+      three separate `Environment=` lines; `docs/deployment.md`'s "Where
+      persistent data lives" section covers the backup implication (one
+      directory to back up as a unit, still never touched by
+      `deploy.sh`'s rsync).
+- [x] Full backend (235 tests, 98.09% coverage) and e2e (45 tests, still
+      all passing against the new consolidated layout) suites updated;
+      new `tests/test_paths.py` for `StoragePaths` itself.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

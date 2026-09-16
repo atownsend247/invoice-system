@@ -45,7 +45,9 @@ login) by default — see Commands and `demo_data.py`.
   `StatsService`; `models.py`,
   `errors.py`, `clock.py`, `ids.py`, `attachments.py` (filesystem storage
   for uploaded expense-attachment PDFs, see the ExpenseService Conventions
-  bullet below), `repository.py` the storage Protocol,
+  bullet below), `paths.py` (where persistent data lives on disk - a
+  CLI/API entry-point concern, not domain logic - see the Gotchas bullet
+  below), `repository.py` the storage Protocol,
   `factory.py` wiring, `pdf.py` PDF rendering used by both entry points,
   `auth.py` wiring for the login/session cross-cutting concern,
   `demo_data.py` the seed data `init-db` loads by default — see below).
@@ -63,7 +65,8 @@ Login/sessions are [sessionkit](https://github.com/atownsend247/bb-py-sessionkit
 (a separate PyPI-style dependency, pinned by git tag in `pyproject.toml`),
 wired in by `src/invoice_system/auth.py` + `api/auth.py` — **not** a
 hand-rolled module here. Its `User` is a login identity, stored in its own
-SQLite file (`auth.db` by default, `INVOICE_SYSTEM_AUTH_DB` to override) —
+SQLite file (`storage/db/auth.db` by default, `INVOICE_SYSTEM_AUTH_DB` to
+override - see `paths.py`) —
 do not confuse it with this app's own `Account` (a client business being
 billed). `core.py` never imports `sessionkit` — see architecture rules.
 Manage users with the bundled `sessionkit` CLI (`uv run sessionkit add ...`),
@@ -136,9 +139,12 @@ Four separate things are easy to conflate here — don't:
   login with `uv run sessionkit add you@example.com`. Re-running `init-db`
   is safe either way — demo seeding is a no-op once the demo user exists.
 - Serve: `uv run uvicorn invoice_system.api.app:app --reload` (API on
-  `:8000`; `INVOICE_SYSTEM_DB` / `INVOICE_SYSTEM_AUTH_DB` override the
-  default db paths, `INVOICE_SYSTEM_ATTACHMENTS_DIR` the uploaded
-  expense-attachment directory, default `attachments/`).
+  `:8000`; everything persistent defaults under `storage/` -
+  `INVOICE_SYSTEM_STORAGE_DIR` moves that whole base directory,
+  `INVOICE_SYSTEM_DB` / `INVOICE_SYSTEM_AUTH_DB` /
+  `INVOICE_SYSTEM_ATTACHMENTS_DIR` override an individual path within it -
+  see `paths.py` and `docs/development.md`'s "Where persistent data
+  lives").
 - CLI: `uv run invoice-system-cli --help` (or the installed
   `invoice-system-cli` entry point) — mirrors the API one-for-one over the
   same storage. **Not** behind login — it's a local, trusted tool; only the
@@ -430,10 +436,12 @@ Four separate things are easy to conflate here — don't:
   10MB) and a PDF-only check (`content_type == "application/pdf"` or a
   `.pdf` filename extension — a browser's own `Content-Type` guess isn't
   always trustworthy) are enforced in `ExpenseService.add_attachment`,
-  not at the API/CLI layer. `INVOICE_SYSTEM_ATTACHMENTS_DIR` (API env var,
-  default `attachments/`) / `--attachments-dir` (CLI flag, same default)
-  point at the storage directory — see `docs/deployment.md` for why it
-  needs its own backup story and why the nginx example config's
+  not at the API/CLI layer. Bytes live under `<storage-dir>/attachments`
+  by default (`paths.py`'s `StoragePaths`) — `INVOICE_SYSTEM_ATTACHMENTS_DIR`
+  (API env var) / `--attachments-dir` (CLI flag) still override that one
+  path individually, same as `INVOICE_SYSTEM_DB`/`--db` do for the domain
+  database — see `docs/deployment.md` for why the whole `storage/`
+  directory needs its own backup story and why the nginx example config's
   `client_max_body_size` has to match `MAX_ATTACHMENT_SIZE`. Routes: `POST
   /expenses/{id}/attachments` (multipart upload — needs `python-multipart`
   installed, FastAPI's own requirement for `UploadFile`), `GET
@@ -481,6 +489,27 @@ Four separate things are easy to conflate here — don't:
   cleaning up again, `git filter-branch --msg-filter` stripping any line
   starting with `Co-Authored-By:` is what was used last time (see
   `git log`).
+- **Every kind of persistent data lives under one base directory**
+  (`storage/` by default — `db/`, `attachments/`, and `logs/` reserved for
+  future use — see `paths.py`'s `StoragePaths` and `docs/development.md`'s
+  "Where persistent data lives"). This is a CLI/API entry-point concern
+  only — `factory.py`/`auth.py` still just take whatever concrete path
+  they're given, same as always; only `cli/main.py`'s `cli` group and
+  `api/app.py`'s `lifespan` know the storage-dir convention exists,
+  resolving `INVOICE_SYSTEM_STORAGE_DIR`/`--storage-dir` into concrete
+  paths before calling `build_application`/`build_auth`.
+  `INVOICE_SYSTEM_DB`/`INVOICE_SYSTEM_AUTH_DB`/`INVOICE_SYSTEM_ATTACHMENTS_DIR`
+  (API) and `--db`/`--attachments-dir` (CLI) still exist underneath that as
+  individual overrides and always win over the storage-dir-derived default
+  when set — deliberately not a breaking replacement of those three, just
+  a new base they default from. **Only create `<storage-dir>/db/` when a
+  derived (non-overridden) path is actually about to be used** — both the
+  `cli` group and `lifespan` guard `paths.ensure_db_dir()` behind "is
+  `--db`/`INVOICE_SYSTEM_DB` (or the auth-db equivalent) actually unset,"
+  not an unconditional call — found the hard way, by a test suite silently
+  littering an empty `storage/db/` into the repo root on every single CLI
+  invocation, including ones that override both `--db` and
+  `--attachments-dir` and never touch the derived default at all.
 - **Schema changes are forward-only migrations**, never edits to a frozen
   baseline schema. Append a numbered entry to a `MIGRATIONS` list; a
   migration runner applies whatever's pending and tracks progress via

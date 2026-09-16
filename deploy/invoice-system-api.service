@@ -16,13 +16,15 @@ Type=simple
 User=deploy
 Group=deploy
 WorkingDirectory=/opt/invoice-system
-Environment=INVOICE_SYSTEM_DB=/opt/invoice-system/invoice_system.db
-Environment=INVOICE_SYSTEM_AUTH_DB=/opt/invoice-system/auth.db
-# Uploaded expense-attachment PDFs (see docs/api.md) - a sibling of the two
-# db files above, not inside src/, so deploy.sh's rsync (which only ever
-# touches src/pyproject.toml/uv.lock) never deletes it on redeploy, same
-# as the .db files already rely on.
-Environment=INVOICE_SYSTEM_ATTACHMENTS_DIR=/opt/invoice-system/attachments
+# Every kind of persistent data (both SQLite databases, uploaded
+# expense-attachment PDFs, and - reserved for future use - logs) lives
+# under this one directory (see paths.py) - a sibling of src/, not inside
+# it, so deploy.sh's rsync (which only ever touches
+# src/pyproject.toml/uv.lock) never deletes any of it on redeploy.
+# INVOICE_SYSTEM_DB/INVOICE_SYSTEM_AUTH_DB/INVOICE_SYSTEM_ATTACHMENTS_DIR
+# still exist to override an individual path if it's ever needed (e.g.
+# putting attachments on different storage) - see docs/api.md.
+Environment=INVOICE_SYSTEM_STORAGE_DIR=/opt/invoice-system/storage
 # Same-origin via the nginx reverse proxy (see nginx-invoice-system.conf),
 # so this can be tightened from the wide-open default - see CLAUDE.md.
 Environment=INVOICE_SYSTEM_CORS_ORIGINS=https://invoice.example.com

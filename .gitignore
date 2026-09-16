@@ -8,6 +8,7 @@ htmlcov/
 *.db
 *.db-shm
 *.db-wal
+/storage/
 /attachments/
 web/node_modules/
 web/dist/

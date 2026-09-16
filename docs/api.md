@@ -14,7 +14,8 @@ public. A missing/invalid/expired token gets `401`.
 There is no signup route — create the first (and any further) login account
 with the bundled `sessionkit` CLI: `uv run sessionkit add you@example.com`
 (prompts for a password), against the file `INVOICE_SYSTEM_AUTH_DB` points
-at (default `auth.db`).
+at (default `storage/db/auth.db` — see `docs/development.md`'s "Where
+persistent data lives").
 
 ## CORS
 

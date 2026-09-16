@@ -5,6 +5,11 @@
 # db are separate files. E2E_BACKEND_PORT / E2E_EMAIL / E2E_PASSWORD come
 # from constants.ts via playwright.config.ts's webServer env, not defaulted
 # here, so there's one source of truth for the test credentials.
+#
+# Everything persistent lives under one INVOICE_SYSTEM_STORAGE_DIR (see
+# paths.py) - db/invoice_system.db, db/auth.db, and attachments/ all under
+# $DATA_DIR - rather than three separate env vars pointed at the same
+# directory by hand.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,7 +21,7 @@ DATA_DIR="$SCRIPT_DIR/.tmp"
 : "${E2E_PASSWORD:?E2E_PASSWORD must be set}"
 
 rm -rf "$DATA_DIR"
-mkdir -p "$DATA_DIR"
+mkdir -p "$DATA_DIR/db"
 
 cd "$REPO_ROOT"
 
@@ -25,11 +30,9 @@ cd "$REPO_ROOT"
 # inside the API's own startup below.
 uv run python -c "
 from sessionkit import AuthService, SqliteAuthStore
-AuthService(SqliteAuthStore.open('$DATA_DIR/auth.db')).create_user('$E2E_EMAIL', '$E2E_PASSWORD')
+AuthService(SqliteAuthStore.open('$DATA_DIR/db/auth.db')).create_user('$E2E_EMAIL', '$E2E_PASSWORD')
 "
 
 exec env \
-  INVOICE_SYSTEM_DB="$DATA_DIR/app.db" \
-  INVOICE_SYSTEM_AUTH_DB="$DATA_DIR/auth.db" \
-  INVOICE_SYSTEM_ATTACHMENTS_DIR="$DATA_DIR/attachments" \
+  INVOICE_SYSTEM_STORAGE_DIR="$DATA_DIR" \
   uv run uvicorn invoice_system.api.app:app --host 127.0.0.1 --port "$E2E_BACKEND_PORT"

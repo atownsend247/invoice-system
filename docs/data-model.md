@@ -225,7 +225,8 @@ Every `Account`/`Quote`/`Invoice`/`Expense` create/get/list call takes an
 
 `sessionkit`'s `User` (email, name, password hash, TOTP state) and its
 `sessions`/`recovery_codes` tables live in a **separate** SQLite file
-(`auth.db` by default) with their own schema, owned and migrated by the
+(`storage/db/auth.db` by default — see `docs/development.md`'s "Where
+persistent data lives") with their own schema, owned and migrated by the
 `sessionkit` package itself — not listed here, not touched by
 `storage/schema.py`. See `CLAUDE.md` for why `User`, `Account`, and
 `BusinessProfile` are three deliberately different things.

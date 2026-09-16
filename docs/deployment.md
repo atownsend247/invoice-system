@@ -92,19 +92,26 @@ fresh dev clone and exactly wrong for a real deployment. See CLAUDE.md and
 either way — migrations are forward-only and idempotent regardless of
 `--no-demo`, only the seeding step is skipped.
 
-## Where uploaded expense attachments live
+## Where persistent data lives
 
-Supplementary PDFs uploaded against an expense (see `docs/api.md`,
-`CLAUDE.md`) are stored on the filesystem, not in SQLite —
-`INVOICE_SYSTEM_ATTACHMENTS_DIR` (`invoice-system-api.service` points it at
-`/opt/invoice-system/attachments`, a sibling of the two `.db` files, not
-inside `src/`). `deploy.sh`'s rsync only ever syncs `src/`/`pyproject.toml`/
-`uv.lock` with `--delete`, so — same as the database files — this directory
-is never touched by a redeploy; it's something to back up alongside the
-`.db` files, not something the pipeline manages. The nginx config's
-`client_max_body_size` (`deploy/nginx-invoice-system.conf`) is set to match
-the API's own per-file upload cap (`core.py`'s `MAX_ATTACHMENT_SIZE`, 10MB)
-— raise both together if that limit ever changes.
+Both SQLite databases and uploaded expense-attachment PDFs (supplementary
+files uploaded against an expense — see `docs/api.md`, `CLAUDE.md`) live
+under one directory, `INVOICE_SYSTEM_STORAGE_DIR` (see `paths.py`) —
+`invoice-system-api.service` points it at `/opt/invoice-system/storage`, a
+sibling of `src/`, not inside it: `storage/db/invoice_system.db`,
+`storage/db/auth.db`, `storage/attachments/`, and (reserved for future
+logging output, unused today) `storage/logs/`. `deploy.sh`'s rsync only
+ever syncs `src/`/`pyproject.toml`/`uv.lock` with `--delete`, so this whole
+directory is never touched by a redeploy — it's something to back up as a
+unit, not something the pipeline manages.
+`INVOICE_SYSTEM_DB`/`INVOICE_SYSTEM_AUTH_DB`/`INVOICE_SYSTEM_ATTACHMENTS_DIR`
+still exist as individual overrides (e.g. putting attachments on different
+storage than the databases) if `INVOICE_SYSTEM_STORAGE_DIR`'s one-directory
+default isn't the right shape for a particular deployment. The nginx
+config's `client_max_body_size` (`deploy/nginx-invoice-system.conf`) is set
+to match the API's own per-file upload cap (`core.py`'s
+`MAX_ATTACHMENT_SIZE`, 10MB) — raise both together if that limit ever
+changes.
 
 ## Not done yet
 

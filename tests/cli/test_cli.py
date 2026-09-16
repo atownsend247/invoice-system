@@ -37,6 +37,116 @@ def _demo_user_id(auth_db_path) -> str:
         store.close()
 
 
+def test_storage_dir_alone_lays_out_db_and_attachments_subdirectories(tmp_path):
+    # No --db/--attachments-dir override here, unlike every other test in
+    # this file (see _base_args) - this is the one test that exercises
+    # --storage-dir's own derivation logic end to end.
+    storage_dir = tmp_path / "my-storage"
+    runner = CliRunner()
+
+    # --no-demo never touches the auth db (see init_db's early return) -
+    # this just proves the domain db lands under storage_dir/db/.
+    result = runner.invoke(cli, ["--storage-dir", str(storage_dir), "init-db", "--no-demo"])
+    assert result.exit_code == 0, result.output
+    assert (storage_dir / "db" / "invoice_system.db").exists()
+
+    result = runner.invoke(
+        cli,
+        [
+            "--storage-dir",
+            str(storage_dir),
+            "account",
+            "create",
+            "--user-id",
+            "1",
+            "--business-name",
+            "Acme",
+            "--email",
+            "a@b.test",
+            "--address-line1",
+            "1 Main St",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    account_id = _id_from(result.output, r"Created account (\S+):")
+
+    result = runner.invoke(
+        cli,
+        [
+            "--storage-dir",
+            str(storage_dir),
+            "expense",
+            "create",
+            "--user-id",
+            "1",
+            "--account-id",
+            account_id,
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    expense_id = _id_from(result.output, r"Created expense (\S+) \(")
+
+    receipt_path = tmp_path / "receipt.pdf"
+    receipt_path.write_bytes(b"%PDF-1.4 fake receipt")
+    result = runner.invoke(
+        cli,
+        [
+            "--storage-dir",
+            str(storage_dir),
+            "expense",
+            "attachment",
+            "add",
+            expense_id,
+            "--file",
+            str(receipt_path),
+            "--user-id",
+            "1",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    assert (storage_dir / "db" / "invoice_system.db").exists()
+    assert (storage_dir / "attachments").is_dir()
+    assert list((storage_dir / "attachments").glob("*.pdf")), "expected an uploaded receipt on disk"
+
+
+def test_storage_dir_init_db_seeds_demo_auth_db_under_it_by_default(tmp_path):
+    storage_dir = tmp_path / "my-storage"
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["--storage-dir", str(storage_dir), "init-db"])
+    assert result.exit_code == 0, result.output
+    assert "demo data" in result.output.lower()
+    assert (storage_dir / "db" / "auth.db").exists()
+    assert (storage_dir / "db" / "invoice_system.db").exists()
+
+
+def test_explicit_db_and_attachments_dir_override_storage_dir(tmp_path):
+    storage_dir = tmp_path / "unused-storage"
+    real_db = tmp_path / "elsewhere.db"
+    real_attachments = tmp_path / "elsewhere-attachments"
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        [
+            "--storage-dir",
+            str(storage_dir),
+            "--db",
+            str(real_db),
+            "--attachments-dir",
+            str(real_attachments),
+            "init-db",
+            "--no-demo",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert real_db.exists()
+    # storage_dir's own db/ subdirectory is never created when both --db
+    # and --attachments-dir are given explicitly (see cli()'s guard).
+    assert not storage_dir.exists()
+
+
 def test_full_cli_flow(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()

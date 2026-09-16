@@ -6,14 +6,12 @@ from pathlib import Path
 
 import click
 
-from ..attachments import DEFAULT_ATTACHMENTS_DIR
-from ..auth import DEFAULT_AUTH_DB_PATH, build_auth
+from ..auth import build_auth
 from ..demo_data import DEMO_EMAIL, DEMO_PASSWORD, seed_demo_data
 from ..errors import AppError
 from ..factory import Application, build_application
+from ..paths import DEFAULT_STORAGE_DIR, StoragePaths
 from ..pdf import render_expense_pdf, render_invoice_pdf, render_quote_pdf
-
-DEFAULT_DB_PATH = "invoice_system.db"
 
 _USER_ID_HELP = (
     "sessionkit's User.id (see 'sessionkit list') - resolves which organisation's data to use "
@@ -28,19 +26,49 @@ def _organisation_id(application: Application, user_id: str) -> str:
 
 @click.group()
 @click.option(
-    "--db", "db_path", default=DEFAULT_DB_PATH, show_default=True, help="Path to the SQLite database file."
+    "--storage-dir",
+    default=DEFAULT_STORAGE_DIR,
+    show_default=True,
+    help="Base directory for all persistent data (databases, uploaded expense-attachment PDFs, and - "
+    "reserved for future use - logs), grouped under db/ and attachments/ subdirectories - see "
+    "CLAUDE.md. --db/--attachments-dir below override individual paths within it.",
+)
+@click.option(
+    "--db",
+    "db_path",
+    default=None,
+    help="Path to the domain SQLite database file. Defaults to <storage-dir>/db/invoice_system.db.",
 )
 @click.option(
     "--attachments-dir",
-    default=DEFAULT_ATTACHMENTS_DIR,
-    show_default=True,
-    help="Directory uploaded expense-attachment PDFs are stored in (see 'expense attachment add').",
+    default=None,
+    help="Directory uploaded expense-attachment PDFs are stored in (see 'expense attachment add'). "
+    "Defaults to <storage-dir>/attachments.",
 )
 @click.pass_context
-def cli(ctx: click.Context, db_path: str, attachments_dir: str) -> None:
-    application = build_application(db_path, attachments_dir=attachments_dir)
+def cli(ctx: click.Context, storage_dir: str, db_path: str | None, attachments_dir: str | None) -> None:
+    paths = StoragePaths(storage_dir)
+    if db_path is None:
+        # Only touch disk for the derived default - an explicit --db
+        # override means storage-dir's own db/ subdirectory is never
+        # actually used, so nothing should create it (found the hard way:
+        # doing this unconditionally left a stray empty storage/db/ in
+        # every test run, even ones that override both --db and
+        # --attachments-dir - see the matching guard in api/app.py's
+        # lifespan and this repo's test fixtures).
+        paths.ensure_db_dir()
+    application = build_application(
+        db_path or str(paths.domain_db_path),
+        attachments_dir=attachments_dir or str(paths.attachments_dir),
+    )
     ctx.call_on_close(application.close)
     ctx.obj = application
+    # Click's `meta` dict, not `obj` - `obj` is the Application every
+    # subcommand already receives via @click.pass_obj (100+ call sites);
+    # only init-db additionally needs the resolved storage paths (to
+    # default INVOICE_SYSTEM_AUTH_DB's own fallback), so that one command
+    # alone reaches into `meta` via @click.pass_context instead.
+    ctx.meta["storage_paths"] = paths
 
 
 @cli.command("init-db")
@@ -51,13 +79,17 @@ def cli(ctx: click.Context, db_path: str, attachments_dir: str) -> None:
     help="Seed a demo login user, business profile, accounts, and a year of quotes/invoices "
     "in a mix of statuses. Safe to repeat - a no-op once the demo user already exists.",
 )
-@click.pass_obj
-def init_db(application: Application, demo: bool) -> None:
+@click.pass_context
+def init_db(ctx: click.Context, demo: bool) -> None:
+    application: Application = ctx.obj
     if not demo:
         click.echo("Database ready")
         return
 
-    auth_db_path = os.environ.get("INVOICE_SYSTEM_AUTH_DB", DEFAULT_AUTH_DB_PATH)
+    paths: StoragePaths = ctx.meta["storage_paths"]
+    if "INVOICE_SYSTEM_AUTH_DB" not in os.environ:
+        paths.ensure_db_dir()  # idempotent - a no-op if the cli() group already created it
+    auth_db_path = os.environ.get("INVOICE_SYSTEM_AUTH_DB", str(paths.auth_db_path))
     auth = build_auth(auth_db_path)
     try:
         seeded = seed_demo_data(application, auth)

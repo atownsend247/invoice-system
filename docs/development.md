@@ -7,18 +7,22 @@ uv sync
 uv run invoice-system-cli init-db
 ```
 
-Creates `invoice_system.db`, applies migrations, and (by default) seeds a
-year of demo data — accounts, quotes/invoices in a mix of statuses, and a
-demo login (`demo@example.test` / `demo-password-123`) in `auth.db`. Log in
-with that straight away; there's nothing else to set up. Safe to re-run —
-seeding is a no-op once the demo user exists.
+Creates `storage/db/invoice_system.db`, applies migrations, and (by
+default) seeds a year of demo data — accounts, quotes/invoices in a mix of
+statuses, and a demo login (`demo@example.test` / `demo-password-123`) in
+`storage/db/auth.db`. Log in with that straight away; there's nothing else
+to set up. Safe to re-run — seeding is a no-op once the demo user exists.
+Everything persistent this app writes (both databases, uploaded
+expense-attachment PDFs, and — reserved for future use — logs) lives under
+that one `storage/` directory by default — see "Where persistent data
+lives" below.
 
 For an empty database instead (e.g. before deploying somewhere real), pass
 `--no-demo` and create your own login:
 
 ```
 uv run invoice-system-cli init-db --no-demo
-uv run sessionkit add you@example.com      # creates auth.db, prompts for a password
+uv run sessionkit add you@example.com --db storage/db/auth.db   # prompts for a password
 ```
 
 The domain data (accounts/quotes/invoices) and login accounts live in two
@@ -26,15 +30,43 @@ separate SQLite files — see `CLAUDE.md`. No signup route; manage login
 accounts with the `sessionkit` CLI (`add`, `list`, `passwd`, `delete`,
 `2fa-disable` — `uv run sessionkit --help`), not through this app.
 
+## Where persistent data lives
+
+Every kind of persistent data this app writes lives under one base
+directory (`storage/` by default, in the working directory) — see
+`src/invoice_system/paths.py`'s `StoragePaths`:
+
+```
+storage/
+├── db/
+│   ├── invoice_system.db   # domain data - accounts, quotes, invoices, expenses
+│   └── auth.db             # sessionkit's login/session data
+├── attachments/            # uploaded expense-attachment PDFs (see docs/api.md)
+└── logs/                   # reserved for future use - nothing writes here yet
+```
+
+`--storage-dir PATH` (CLI, before the subcommand) / `INVOICE_SYSTEM_STORAGE_DIR`
+(API) move the whole thing elsewhere at once. `--db`/`--attachments-dir`
+(CLI) and `INVOICE_SYSTEM_DB`/`INVOICE_SYSTEM_AUTH_DB`/
+`INVOICE_SYSTEM_ATTACHMENTS_DIR` (API) still exist underneath that as
+individual overrides — for the rare case a specific file/directory needs
+to live somewhere else entirely (e.g. attachments on different storage
+than the databases) — and always win over the storage-dir-derived default
+when set. `storage/` is gitignored; back it up as a unit (see
+`docs/deployment.md`'s "Where persistent data lives" for the deployed
+equivalent).
+
 ## Serve the API
 
 ```
 uv run uvicorn invoice_system.api.app:app --reload
 ```
 
-Defaults to `invoice_system.db` / `auth.db` in the working directory;
-override with `INVOICE_SYSTEM_DB=/path/to/db.sqlite3` /
-`INVOICE_SYSTEM_AUTH_DB=/path/to/auth.sqlite3`. Interactive docs at
+Defaults to `storage/db/invoice_system.db` / `storage/db/auth.db` in the
+working directory (see "Where persistent data lives" below); override the
+whole `storage/` location with `INVOICE_SYSTEM_STORAGE_DIR=/path/to/dir`,
+or an individual file/directory with `INVOICE_SYSTEM_DB=/path/to/db.sqlite3`
+/ `INVOICE_SYSTEM_AUTH_DB=/path/to/auth.sqlite3`. Interactive docs at
 `http://127.0.0.1:8000/docs`. Every route except `/healthz` and
 `POST /auth/login` needs `Authorization: Bearer <token>` — log in first:
 
@@ -135,11 +167,11 @@ to a UUID4.)
 `--tax-rate` (default `0`) is a fraction, not a percentage - `0.20` for 20%
 VAT, `0.05` for 5%, valid range `[0, 1]`.
 
-`--db PATH` (before the subcommand) points any command at a different
-SQLite file; default is `invoice_system.db` in the working directory.
-`--attachments-dir PATH` (also before the subcommand) does the same for
-uploaded expense-attachment PDFs; default is `attachments/` in the working
-directory. The
+`--storage-dir PATH` (before the subcommand) points every command at a
+different base storage directory (default `storage/` in the working
+directory — see "Where persistent data lives" above); `--db PATH`/
+`--attachments-dir PATH` (also before the subcommand) individually
+override the domain database/attachments location within it. The
 CLI is a local, trusted tool and is **not** behind login (unlike the API) —
 see `CLAUDE.md`.
 
@@ -241,16 +273,22 @@ cd web && npm run lint   # oxlint
 
 ## Environment
 
+- `INVOICE_SYSTEM_STORAGE_DIR` — base directory for all persistent data
+  (default `storage/`) used by the API (`api/app.py` lifespan) — see
+  "Where persistent data lives" above. The CLI takes the same thing as the
+  `--storage-dir` flag instead. The three vars below still override an
+  individual path/directory within it, same as `--db`/`--attachments-dir`
+  do for the CLI.
 - `INVOICE_SYSTEM_DB` — path to the domain SQLite file used by the API
-  (`api/app.py` lifespan). The CLI takes the same thing as the `--db` flag
-  instead.
+  (`api/app.py` lifespan; defaults to `<storage-dir>/db/invoice_system.db`).
+  The CLI takes the same thing as the `--db` flag instead.
 - `INVOICE_SYSTEM_AUTH_DB` — path to sessionkit's SQLite file used by the
   API, and by `invoice-system-cli init-db`'s demo-data seeding (both
-  default `auth.db`). The `sessionkit` CLI takes the same thing as its own
-  `--db` flag or `$SESSIONKIT_DB` instead.
+  default `<storage-dir>/db/auth.db`). The `sessionkit` CLI takes the same
+  thing as its own `--db` flag or `$SESSIONKIT_DB` instead.
 - `INVOICE_SYSTEM_ATTACHMENTS_DIR` — directory uploaded expense-attachment
-  PDFs are stored in (default `attachments/`). The CLI takes the same thing
-  as the `--attachments-dir` flag instead.
+  PDFs are stored in (default `<storage-dir>/attachments`). The CLI takes
+  the same thing as the `--attachments-dir` flag instead.
 - `INVOICE_SYSTEM_CORS_ORIGINS` — comma-separated allowed origins for the
   API's CORS policy (default `*` — see `CLAUDE.md`).
 - `VITE_API_BASE_URL` — the web client's API base URL, read at
