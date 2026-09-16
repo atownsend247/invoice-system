@@ -37,6 +37,12 @@ pipeline {
     }
 
     stages {
+        stage('Prereq') {
+            steps {
+                sh 'nodenv versions'
+            }
+        }
+
         stage('Checkout') {
             steps {
                 checkout scm
