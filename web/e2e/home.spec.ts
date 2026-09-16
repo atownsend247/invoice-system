@@ -94,7 +94,7 @@ test('all-time stats reflects a newly created account', async ({ authenticatedPa
     body: JSON.stringify({
       business_name: `Stats test ${testInfo.testId}`,
       email: `stats-${testInfo.testId}@example.test`,
-      address: '1 Test Street',
+      address_line1: '1 Test Street',
     }),
   })
 

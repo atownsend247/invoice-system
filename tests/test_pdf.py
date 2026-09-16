@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from invoice_system.models import Account, BusinessProfile, LineItem, Quote, QuoteStatus
-from invoice_system.pdf import business_profile_lines, render_quote_pdf
+from invoice_system.pdf import account_address_lines, business_profile_lines, render_quote_pdf
 
 
 def _profile(**overrides: object) -> BusinessProfile:
@@ -28,6 +28,25 @@ def _profile(**overrides: object) -> BusinessProfile:
     }
     defaults.update(overrides)
     return BusinessProfile(**defaults)
+
+
+def _account(**overrides: object) -> Account:
+    defaults: dict = {
+        "id": 1,
+        "organisation_id": 1,
+        "business_name": "Client Co",
+        "contact_name": None,
+        "email": "a@b.test",
+        "phone": None,
+        "address_line1": "1 Main St",
+        "address_line2": None,
+        "town_or_city": None,
+        "county": None,
+        "postcode": None,
+        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+    }
+    defaults.update(overrides)
+    return Account(**defaults)
 
 
 def test_no_profile_shows_nothing():
@@ -73,18 +92,31 @@ def test_personal_name_never_appears_in_the_from_lines():
     assert "Lovelace" not in lines
 
 
+def test_account_address_line1_only_when_nothing_else_set():
+    assert account_address_lines(_account(address_line1="1 Main St")) == ["1 Main St"]
+
+
+def test_account_address_full_address_in_the_standard_uk_order():
+    lines = account_address_lines(
+        _account(
+            address_line1="1 Main St",
+            address_line2="Suite 4",
+            town_or_city="London",
+            county="Greater London",
+            postcode="SW1A 1AA",
+        )
+    )
+    assert lines == ["1 Main St", "Suite 4", "London", "Greater London", "SW1A 1AA"]
+
+
+def test_account_address_only_the_lines_that_are_set_appear():
+    lines = account_address_lines(_account(address_line1="1 Main St", postcode="SW1A 1AA"))
+    assert lines == ["1 Main St", "SW1A 1AA"]
+
+
 def test_rendering_a_quote_pdf_with_a_business_profile_set_does_not_error():
     now = datetime(2026, 1, 1, tzinfo=UTC)
-    account = Account(
-        id=1,
-        organisation_id=1,
-        business_name="Client Co",
-        contact_name=None,
-        email="a@b.test",
-        phone=None,
-        address="1 Main St",
-        created_at=now,
-    )
+    account = _account(created_at=now)
     quote = Quote(
         id=1,
         organisation_id=1,
@@ -103,16 +135,7 @@ def test_rendering_a_quote_pdf_with_a_business_profile_set_does_not_error():
 
 def test_rendering_a_quote_pdf_with_taxed_line_items_does_not_error():
     now = datetime(2026, 1, 1, tzinfo=UTC)
-    account = Account(
-        id=1,
-        organisation_id=1,
-        business_name="Client Co",
-        contact_name=None,
-        email="a@b.test",
-        phone=None,
-        address="1 Main St",
-        created_at=now,
-    )
+    account = _account(created_at=now)
     quote = Quote(
         id=1,
         organisation_id=1,

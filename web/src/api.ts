@@ -121,9 +121,13 @@ export function getAccount(id: number): Promise<Account> {
 export interface CreateAccountInput {
   business_name: string
   email: string
-  address: string
+  address_line1: string
   contact_name?: string
   phone?: string
+  address_line2?: string
+  town_or_city?: string
+  county?: string
+  postcode?: string
 }
 
 export function createAccount(input: CreateAccountInput): Promise<Account> {

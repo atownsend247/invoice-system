@@ -12,13 +12,21 @@ export interface LoginResult {
   user: User
 }
 
+// Address fields follow the same UK GOV.UK Design System pattern as
+// BusinessProfile's - see CLAUDE.md. address_line1 is required (an Account
+// is a real client being billed); the rest are each independently
+// optional.
 export interface Account {
   id: number
   business_name: string
   contact_name: string | null
   email: string
   phone: string | null
-  address: string
+  address_line1: string
+  address_line2: string | null
+  town_or_city: string | null
+  county: string | null
+  postcode: string | null
   created_at: string
 }
 

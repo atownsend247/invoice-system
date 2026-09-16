@@ -87,6 +87,42 @@ def test_migration_4_rescopes_number_uniqueness_to_per_organisation_and_preserve
     repository.close()
 
 
+def test_migration_5_splits_account_address_into_structured_fields_and_preserves_data(tmp_path):
+    # Freeze a database at migration 4 (before accounts.address was split
+    # into address_line1/address_line2/town_or_city/county/postcode - see
+    # schema.py) with an existing account, then confirm migration 5 moves
+    # the old free-text value into address_line1 wholesale (never
+    # discarded, never guessed-at-split) and leaves the rest NULL.
+    db_path = tmp_path / "frozen.db"
+    conn = sqlite3.connect(str(db_path))
+    for version, script in enumerate(MIGRATIONS[:4], start=1):
+        conn.executescript(script)
+        conn.execute(f"PRAGMA user_version = {version}")
+    conn.commit()
+
+    now = datetime(2026, 1, 1, tzinfo=UTC).isoformat()
+    conn.execute("INSERT INTO organisations (id, name, created_at) VALUES (1, 'Org A', ?)", (now,))
+    conn.execute(
+        "INSERT INTO accounts (id, organisation_id, business_name, email, address, created_at) "
+        "VALUES (1, 1, 'Acme', 'a@b.test', '12 Kings Road, London, SW1A 1AA', ?)",
+        (now,),
+    )
+    conn.commit()
+    conn.close()
+
+    repository = SqliteRepository(db_path)
+    repository.migrate()
+
+    fetched = repository.get_account(1, 1)
+    assert fetched is not None
+    assert fetched.address_line1 == "12 Kings Road, London, SW1A 1AA"
+    assert fetched.address_line2 is None
+    assert fetched.town_or_city is None
+    assert fetched.county is None
+    assert fetched.postcode is None
+    repository.close()
+
+
 def test_get_organisation_id_for_user_returns_none_when_unset(repo):
     assert repo.get_organisation_id_for_user(1) is None
 
@@ -124,18 +160,27 @@ def test_add_organisation_member_is_idempotent_for_a_racing_second_organisation(
     assert repo.get_organisation_id_for_user(1) == first.id
 
 
+def _account(organisation_id: int, **overrides: object) -> Account:
+    defaults: dict = {
+        "id": None,
+        "organisation_id": organisation_id,
+        "business_name": "Acme",
+        "contact_name": None,
+        "email": "a@b.test",
+        "phone": None,
+        "address_line1": "1 Main St",
+        "address_line2": None,
+        "town_or_city": None,
+        "county": None,
+        "postcode": None,
+        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+    }
+    defaults.update(overrides)
+    return Account(**defaults)
+
+
 def test_account_round_trip_preserves_fields_and_tz(repo, organisation_id):
-    account = Account(
-        id=None,
-        organisation_id=organisation_id,
-        business_name="Acme",
-        contact_name=None,
-        email="a@b.test",
-        phone=None,
-        address="1 Main St",
-        created_at=datetime(2026, 1, 1, tzinfo=UTC),
-    )
-    created = repo.create_account(account)
+    created = repo.create_account(_account(organisation_id))
     assert created.id is not None
 
     fetched = repo.get_account(organisation_id, created.id)
@@ -143,23 +188,32 @@ def test_account_round_trip_preserves_fields_and_tz(repo, organisation_id):
     assert fetched.created_at.tzinfo is not None
 
 
+def test_account_round_trip_preserves_the_full_address(repo, organisation_id):
+    created = repo.create_account(
+        _account(
+            organisation_id,
+            address_line1="1 Main St",
+            address_line2="Suite 4",
+            town_or_city="London",
+            county="Greater London",
+            postcode="SW1A 1AA",
+        )
+    )
+
+    fetched = repo.get_account(organisation_id, created.id)
+    assert fetched.address_line1 == "1 Main St"
+    assert fetched.address_line2 == "Suite 4"
+    assert fetched.town_or_city == "London"
+    assert fetched.county == "Greater London"
+    assert fetched.postcode == "SW1A 1AA"
+
+
 def test_get_missing_account_returns_none(repo, organisation_id):
     assert repo.get_account(organisation_id, 999) is None
 
 
 def test_get_account_from_another_organisation_returns_none(repo, organisation_id):
-    created = repo.create_account(
-        Account(
-            id=None,
-            organisation_id=organisation_id,
-            business_name="Acme",
-            contact_name=None,
-            email="a@b.test",
-            phone=None,
-            address="1 Main St",
-            created_at=datetime(2026, 1, 1, tzinfo=UTC),
-        )
-    )
+    created = repo.create_account(_account(organisation_id))
 
     other = repo.create_organisation(
         Organisation(id=None, name="Other Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
@@ -168,23 +222,13 @@ def test_get_account_from_another_organisation_returns_none(repo, organisation_i
 
 
 def test_update_account_round_trip(repo, organisation_id):
-    created = repo.create_account(
-        Account(
-            id=None,
-            organisation_id=organisation_id,
-            business_name="Acme",
-            contact_name=None,
-            email="a@b.test",
-            phone=None,
-            address="1 Main St",
-            created_at=datetime(2026, 1, 1, tzinfo=UTC),
-        )
-    )
+    created = repo.create_account(_account(organisation_id))
 
     created.business_name = "Acme Ltd"
     created.contact_name = "Jane Doe"
     created.phone = "555-1234"
-    created.address = "2 High St"
+    created.address_line1 = "2 High St"
+    created.town_or_city = "Bristol"
     updated = repo.update_account(created)
     assert updated.business_name == "Acme Ltd"
 
@@ -192,7 +236,8 @@ def test_update_account_round_trip(repo, organisation_id):
     assert fetched.business_name == "Acme Ltd"
     assert fetched.contact_name == "Jane Doe"
     assert fetched.phone == "555-1234"
-    assert fetched.address == "2 High St"
+    assert fetched.address_line1 == "2 High St"
+    assert fetched.town_or_city == "Bristol"
 
 
 def test_next_number_increments_and_is_scoped_by_name(repo, organisation_id):

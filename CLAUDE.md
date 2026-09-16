@@ -294,19 +294,29 @@ Four separate things are easy to conflate here — don't:
   just a visual one. Add a new field to whichever group it actually belongs
   to, not wherever's convenient.
 - `AccountService.update_account(account_id, ...)` is a full replace, not a
-  partial patch — same required fields (`business_name`/`email`/`address`)
-  and validation as `create_account`, mirroring `save_business_profile`'s
-  PUT semantics rather than inventing PATCH-style partial updates. `PUT
-  /accounts/{id}` and CLI `account update <id>`. The web UI has a
-  `/accounts/:id` detail page (`AccountDetailPage.tsx`), like quotes/
-  invoices: it shows the account's own fields (an inline "Edit" toggle
-  reveals the same `AccountForm` used for "New account" on
-  `AccountsPage.tsx`, extracted to `components/AccountForm.tsx` so both
-  pages share it) plus that account's quotes and invoices, both listed
-  newest-issued-first. `AccountsPage.tsx`'s list-row "Edit" is a `Link` to
-  this page, not an inline row-editing form; creating a new account there
-  also navigates straight to its detail page on success, rather than
-  staying on the list.
+  partial patch — same required fields (`business_name`/`email`/
+  `address_line1`) and validation as `create_account`, mirroring
+  `save_business_profile`'s PUT semantics rather than inventing
+  PATCH-style partial updates. `PUT /accounts/{id}` and CLI `account update
+  <id>`. `Account`'s address follows the same UK GOV.UK Design System
+  structure as `BusinessProfile`'s (`address_line1`/`address_line2`/
+  `town_or_city`/`county`/`postcode`), except `address_line1` stays
+  required here (a real client being billed, not the user's own
+  optionally-published details) — see the `Account` row in
+  `docs/data-model.md`'s entity table. The web UI has a `/accounts/:id`
+  detail page (`AccountDetailPage.tsx`), like quotes/invoices: it shows
+  the account's own fields (an inline "Edit" toggle reveals the same
+  `AccountForm` used for "New account" on `AccountsPage.tsx`, extracted to
+  `components/AccountForm.tsx` so both pages share it) plus that account's
+  quotes and invoices, both listed newest-issued-first. `AccountsPage.tsx`
+  also has a search box (`accountMatchesQuery` in that file, unit-tested
+  in `AccountsPage.test.ts`) that filters client-side against every shown
+  field, and each row is clickable (`role="link"`, keyboard-operable via
+  Enter/Space, not just the mouse) navigating to that account's detail
+  page — the per-row "New quote" link stops click/keydown propagation so
+  it doesn't also trigger the row's own navigation. Creating a new account
+  navigates straight to its detail page on success, rather than staying on
+  the list.
 - `StatsService.get_stats(organisation_id)` is the all-time counters,
   scoped to one organisation, behind the home dashboard's "All-time stats"
   section (`GET /stats`, CLI `stats`) — currently just `account_count`. A
@@ -371,7 +381,16 @@ Four separate things are easy to conflate here — don't:
   one, so this rebuilds both tables and replaces it with a composite
   `UNIQUE INDEX` on `(organisation_id, number)` instead, carrying row ids
   across explicitly so `quote_line_items`/`invoice_line_items` and
-  `invoices.quote_id` keep pointing at the right rows.)
+  `invoices.quote_id` keep pointing at the right rows. Migration 5 split
+  `accounts.address` into `address_line1`/`address_line2`/`town_or_city`/
+  `county`/`postcode` (same structure as `business_profiles`' - see
+  data-model.md) — this one's a plain `ADD COLUMN` × 5 + `UPDATE ... SET
+  address_line1 = address` + `DROP COLUMN address`, no rebuild needed
+  (SQLite supports dropping a column directly, including a `NOT NULL`
+  one, as long as it isn't part of an index/constraint or the table's last
+  column); the old free-text value moves into `address_line1` wholesale,
+  not guessed-at-split, same reasoning as `business_profiles`' own
+  historical address split.)
 - Storage is a single shared SQLite connection/file — **serialise every
   access on a lock** inside the repository implementation rather than
   assuming the caller will. That lock is per-*call*, not across a sequence

@@ -31,7 +31,7 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | POST | `/auth/login` | public | `{email, password, otp?}` → `{token, expires_at, user}`. `401` on bad credentials or a missing/invalid TOTP code. |
 | GET | `/auth/me` | required | The current user for this token. |
 | POST | `/auth/logout` | required | Revoke the current token. `204`. |
-| POST | `/accounts` | required | Create an account in the current user's organisation (business_name, email, address required; contact_name, phone optional). |
+| POST | `/accounts` | required | Create an account in the current user's organisation (business_name, email, address_line1 required; contact_name, phone, address_line2, town_or_city, county, postcode optional). |
 | GET | `/accounts` | required | List accounts in the current user's organisation. |
 | GET | `/accounts/{id}` | required | Fetch one account. 404 if missing *or* it belongs to a different organisation (see `docs/data-model.md`'s "Multi-tenancy"). |
 | PUT | `/accounts/{id}` | required | Replace it (same required/optional fields as create — a full replace, not a partial patch). 404 if missing, 422 on a blank required field. |

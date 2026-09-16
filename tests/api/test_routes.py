@@ -87,7 +87,7 @@ def test_logout_revokes_token(client, auth_headers):
 def test_account_quote_invoice_flow(client, auth_headers):
     response = client.post(
         "/accounts",
-        json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"},
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
         headers=auth_headers,
     )
     assert response.status_code == 201
@@ -134,12 +134,12 @@ def test_accounts_are_isolated_between_login_users(client, auth_headers, other_a
     # use.
     client.post(
         "/accounts",
-        json={"business_name": "Owner's Client", "email": "a@b.test", "address": "1 Main St"},
+        json={"business_name": "Owner's Client", "email": "a@b.test", "address_line1": "1 Main St"},
         headers=auth_headers,
     )
     client.post(
         "/accounts",
-        json={"business_name": "Other's Client", "email": "b@b.test", "address": "2 High St"},
+        json={"business_name": "Other's Client", "email": "b@b.test", "address_line1": "2 High St"},
         headers=other_auth_headers,
     )
 
@@ -152,7 +152,7 @@ def test_accounts_are_isolated_between_login_users(client, auth_headers, other_a
 def test_account_from_another_login_user_returns_404(client, auth_headers, other_auth_headers):
     account_id = client.post(
         "/accounts",
-        json={"business_name": "Owner's Client", "email": "a@b.test", "address": "1 Main St"},
+        json={"business_name": "Owner's Client", "email": "a@b.test", "address_line1": "1 Main St"},
         headers=auth_headers,
     ).json()["id"]
 
@@ -168,7 +168,7 @@ def test_get_missing_account_returns_404(client, auth_headers):
 def test_update_account_persists_and_is_returned_on_refetch(client, auth_headers):
     account_id = client.post(
         "/accounts",
-        json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"},
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
         headers=auth_headers,
     ).json()["id"]
 
@@ -177,7 +177,7 @@ def test_update_account_persists_and_is_returned_on_refetch(client, auth_headers
         json={
             "business_name": "Acme Ltd",
             "email": "b@b.test",
-            "address": "2 High St",
+            "address_line1": "2 High St",
             "contact_name": "Jane Doe",
             "phone": "555-1234",
         },
@@ -190,13 +190,45 @@ def test_update_account_persists_and_is_returned_on_refetch(client, auth_headers
     assert response.json()["business_name"] == "Acme Ltd"
     assert response.json()["contact_name"] == "Jane Doe"
     assert response.json()["phone"] == "555-1234"
-    assert response.json()["address"] == "2 High St"
+    assert response.json()["address_line1"] == "2 High St"
+
+
+def test_account_stores_the_full_structured_address(client, auth_headers):
+    response = client.post(
+        "/accounts",
+        json={
+            "business_name": "Acme",
+            "email": "a@b.test",
+            "address_line1": "1 Main St",
+            "address_line2": "Suite 4",
+            "town_or_city": "London",
+            "county": "Greater London",
+            "postcode": "SW1A 1AA",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["address_line1"] == "1 Main St"
+    assert body["address_line2"] == "Suite 4"
+    assert body["town_or_city"] == "London"
+    assert body["county"] == "Greater London"
+    assert body["postcode"] == "SW1A 1AA"
+
+
+def test_account_address_line1_is_required(client, auth_headers):
+    response = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "   "},
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
 
 
 def test_update_missing_account_returns_404(client, auth_headers):
     response = client.put(
         "/accounts/999",
-        json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"},
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
         headers=auth_headers,
     )
     assert response.status_code == 404
@@ -205,13 +237,13 @@ def test_update_missing_account_returns_404(client, auth_headers):
 def test_update_account_without_a_name_returns_422(client, auth_headers):
     account_id = client.post(
         "/accounts",
-        json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"},
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
         headers=auth_headers,
     ).json()["id"]
 
     response = client.put(
         f"/accounts/{account_id}",
-        json={"business_name": "", "email": "a@b.test", "address": "1 Main St"},
+        json={"business_name": "", "email": "a@b.test", "address_line1": "1 Main St"},
         headers=auth_headers,
     )
     assert response.status_code == 422
@@ -220,7 +252,7 @@ def test_update_account_without_a_name_returns_422(client, auth_headers):
 def test_line_item_rejects_non_decimal_quantity(client, auth_headers):
     response = client.post(
         "/accounts",
-        json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"},
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
         headers=auth_headers,
     )
     account_id = response.json()["id"]
@@ -237,7 +269,7 @@ def test_line_item_rejects_non_decimal_quantity(client, auth_headers):
 def test_line_item_applies_tax_rate_to_the_line_and_quote_totals(client, auth_headers):
     account_id = client.post(
         "/accounts",
-        json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"},
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
         headers=auth_headers,
     ).json()["id"]
     quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
@@ -261,7 +293,7 @@ def test_line_item_applies_tax_rate_to_the_line_and_quote_totals(client, auth_he
 def test_line_item_tax_rate_defaults_to_zero(client, auth_headers):
     account_id = client.post(
         "/accounts",
-        json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"},
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
         headers=auth_headers,
     ).json()["id"]
     quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
@@ -277,7 +309,7 @@ def test_line_item_tax_rate_defaults_to_zero(client, auth_headers):
 def test_line_item_rejects_tax_rate_above_one(client, auth_headers):
     account_id = client.post(
         "/accounts",
-        json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"},
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
         headers=auth_headers,
     ).json()["id"]
     quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
@@ -293,7 +325,7 @@ def test_line_item_rejects_tax_rate_above_one(client, auth_headers):
 def test_sending_quote_with_no_line_items_returns_422(client, auth_headers):
     response = client.post(
         "/accounts",
-        json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"},
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
         headers=auth_headers,
     )
     account_id = response.json()["id"]
@@ -315,7 +347,7 @@ def test_stats_counts_accounts(client, auth_headers):
 
     client.post(
         "/accounts",
-        json={"business_name": "Acme", "email": "a@b.test", "address": "1 Main St"},
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
         headers=auth_headers,
     )
 
@@ -431,7 +463,7 @@ def test_payment_terms_from_profile_drive_the_invoice_due_date(client, auth_head
 
     account_id = client.post(
         "/accounts",
-        json={"business_name": "Client Co", "email": "a@b.test", "address": "1 Main St"},
+        json={"business_name": "Client Co", "email": "a@b.test", "address_line1": "1 Main St"},
         headers=auth_headers,
     ).json()["id"]
     quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
@@ -452,7 +484,7 @@ def test_payment_terms_from_profile_drive_the_invoice_due_date(client, auth_head
 def test_pdf_still_renders_with_no_business_profile_set(client, auth_headers):
     account_id = client.post(
         "/accounts",
-        json={"business_name": "Client Co", "email": "a@b.test", "address": "1 Main St"},
+        json={"business_name": "Client Co", "email": "a@b.test", "address_line1": "1 Main St"},
         headers=auth_headers,
     ).json()["id"]
     quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
@@ -463,7 +495,7 @@ def test_pdf_still_renders_with_no_business_profile_set(client, auth_headers):
 
 
 def _send_invoice(client, auth_headers, *, currency=None):
-    body = {"business_name": "Client Co", "email": "a@b.test", "address": "1 Main St"}
+    body = {"business_name": "Client Co", "email": "a@b.test", "address_line1": "1 Main St"}
     account_id = client.post("/accounts", json=body, headers=auth_headers).json()["id"]
     quote_body = {"account_id": account_id, **({"currency": currency} if currency else {})}
     quote_id = client.post("/quotes", json=quote_body, headers=auth_headers).json()["id"]
@@ -487,7 +519,7 @@ def test_pay_invoice_marks_it_paid(client, auth_headers):
 def test_cannot_pay_a_draft_invoice(client, auth_headers):
     account_id = client.post(
         "/accounts",
-        json={"business_name": "Client Co", "email": "a@b.test", "address": "1 Main St"},
+        json={"business_name": "Client Co", "email": "a@b.test", "address_line1": "1 Main St"},
         headers=auth_headers,
     ).json()["id"]
     quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]

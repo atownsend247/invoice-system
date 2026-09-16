@@ -86,14 +86,19 @@ class SqliteRepository:
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO accounts (organisation_id, business_name, contact_name, email, phone, "
-                "address, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "address_line1, address_line2, town_or_city, county, postcode, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     account.organisation_id,
                     account.business_name,
                     account.contact_name,
                     account.email,
                     account.phone,
-                    account.address,
+                    account.address_line1,
+                    account.address_line2,
+                    account.town_or_city,
+                    account.county,
+                    account.postcode,
                     account.created_at.isoformat(),
                 ),
             )
@@ -119,13 +124,18 @@ class SqliteRepository:
         with self._lock:
             self._conn.execute(
                 "UPDATE accounts SET business_name = ?, contact_name = ?, email = ?, phone = ?, "
-                "address = ? WHERE id = ? AND organisation_id = ?",
+                "address_line1 = ?, address_line2 = ?, town_or_city = ?, county = ?, postcode = ? "
+                "WHERE id = ? AND organisation_id = ?",
                 (
                     account.business_name,
                     account.contact_name,
                     account.email,
                     account.phone,
-                    account.address,
+                    account.address_line1,
+                    account.address_line2,
+                    account.town_or_city,
+                    account.county,
+                    account.postcode,
                     account.id,
                     account.organisation_id,
                 ),
@@ -142,7 +152,11 @@ class SqliteRepository:
             contact_name=row["contact_name"],
             email=row["email"],
             phone=row["phone"],
-            address=row["address"],
+            address_line1=row["address_line1"],
+            address_line2=row["address_line2"],
+            town_or_city=row["town_or_city"],
+            county=row["county"],
+            postcode=row["postcode"],
             created_at=datetime.fromisoformat(row["created_at"]),
         )
 

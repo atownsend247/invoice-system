@@ -71,26 +71,38 @@ def account() -> None:
 @click.option("--user-id", type=int, required=True, help=_USER_ID_HELP)
 @click.option("--business-name", required=True)
 @click.option("--email", required=True)
-@click.option("--address", required=True)
+@click.option("--address-line1", required=True)
 @click.option("--contact-name", default=None)
 @click.option("--phone", default=None)
+@click.option("--address-line2", default=None)
+@click.option("--town-or-city", default=None)
+@click.option("--county", default=None)
+@click.option("--postcode", default=None)
 @click.pass_obj
 def account_create(
     application: Application,
     user_id: int,
     business_name: str,
     email: str,
-    address: str,
+    address_line1: str,
     contact_name: str | None,
     phone: str | None,
+    address_line2: str | None,
+    town_or_city: str | None,
+    county: str | None,
+    postcode: str | None,
 ) -> None:
     created = application.accounts.create_account(
         organisation_id=_organisation_id(application, user_id),
         business_name=business_name,
         email=email,
-        address=address,
+        address_line1=address_line1,
         contact_name=contact_name,
         phone=phone,
+        address_line2=address_line2,
+        town_or_city=town_or_city,
+        county=county,
+        postcode=postcode,
     )
     click.echo(f"Created account {created.id}: {created.business_name}")
 
@@ -108,9 +120,13 @@ def account_list(application: Application, user_id: int) -> None:
 @click.option("--user-id", type=int, required=True, help=_USER_ID_HELP)
 @click.option("--business-name", required=True)
 @click.option("--email", required=True)
-@click.option("--address", required=True)
+@click.option("--address-line1", required=True)
 @click.option("--contact-name", default=None)
 @click.option("--phone", default=None)
+@click.option("--address-line2", default=None)
+@click.option("--town-or-city", default=None)
+@click.option("--county", default=None)
+@click.option("--postcode", default=None)
 @click.pass_obj
 def account_update(
     application: Application,
@@ -118,18 +134,26 @@ def account_update(
     user_id: int,
     business_name: str,
     email: str,
-    address: str,
+    address_line1: str,
     contact_name: str | None,
     phone: str | None,
+    address_line2: str | None,
+    town_or_city: str | None,
+    county: str | None,
+    postcode: str | None,
 ) -> None:
     updated = application.accounts.update_account(
         _organisation_id(application, user_id),
         account_id,
         business_name=business_name,
         email=email,
-        address=address,
+        address_line1=address_line1,
         contact_name=contact_name,
         phone=phone,
+        address_line2=address_line2,
+        town_or_city=town_or_city,
+        county=county,
+        postcode=postcode,
     )
     click.echo(f"Updated account {updated.id}: {updated.business_name}")
 

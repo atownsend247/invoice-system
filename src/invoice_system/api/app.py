@@ -138,7 +138,11 @@ def create_account(
         contact_name=body.contact_name,
         email=body.email,
         phone=body.phone,
-        address=body.address,
+        address_line1=body.address_line1,
+        address_line2=body.address_line2,
+        town_or_city=body.town_or_city,
+        county=body.county,
+        postcode=body.postcode,
     )
     return AccountOut.from_model(account)
 
@@ -174,7 +178,11 @@ def update_account(
         contact_name=body.contact_name,
         email=body.email,
         phone=body.phone,
-        address=body.address,
+        address_line1=body.address_line1,
+        address_line2=body.address_line2,
+        town_or_city=body.town_or_city,
+        county=body.county,
+        postcode=body.postcode,
     )
     return AccountOut.from_model(account)
 

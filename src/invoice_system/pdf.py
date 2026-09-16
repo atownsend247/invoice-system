@@ -64,6 +64,14 @@ def business_profile_lines(profile: BusinessProfile | None) -> list[str]:
     return [profile.business_name, *(field for field in address_fields if field and field.strip())]
 
 
+def account_address_lines(account: Account) -> list[str]:
+    """The "Bill to" section's address lines - `address_line1` is always
+    present (required, see models.Account), the rest each independently
+    optional, same filtering as `business_profile_lines` above."""
+    address_fields = (account.address_line2, account.town_or_city, account.county, account.postcode)
+    return [account.address_line1, *(field for field in address_fields if field and field.strip())]
+
+
 def _render(
     *,
     title: str,
@@ -101,7 +109,8 @@ def _render(
     story.append(Paragraph(account.business_name, styles["Normal"]))
     if account.contact_name:
         story.append(Paragraph(account.contact_name, styles["Normal"]))
-    story.append(Paragraph(account.address, styles["Normal"]))
+    for line in account_address_lines(account):
+        story.append(Paragraph(line, styles["Normal"]))
     story.append(Paragraph(account.email, styles["Normal"]))
     story.append(Spacer(1, 8 * mm))
 

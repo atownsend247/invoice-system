@@ -91,7 +91,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       body: JSON.stringify({
         business_name: `${suffix} ${testInfo.title}`,
         email: `e2e-${suffix}@example.test`,
-        address: '1 Test Street',
+        address_line1: '1 Test Street',
       }),
     })
     await use(account)

@@ -198,4 +198,26 @@ MIGRATIONS: list[str] = [
     ALTER TABLE invoices_new RENAME TO invoices;
     CREATE UNIQUE INDEX idx_invoices_organisation_number ON invoices (organisation_id, number);
     """,
+    """
+    -- Account addresses now follow the same UK GOV.UK Design System
+    -- structure as BusinessProfile's (address_line1/address_line2/
+    -- town_or_city/county/postcode) instead of one free-text field - see
+    -- CLAUDE.md and data-model.md. address_line1 stays required (mirrors
+    -- the old `address` NOT NULL column - an Account is a real client
+    -- being billed, unlike BusinessProfile's fully-optional address);
+    -- the rest are independently optional, same as BusinessProfile.
+    -- Adding nullable columns, backfilling, and dropping the old one are
+    -- all directly supported by SQLite's ALTER TABLE - no rebuild needed
+    -- (see CLAUDE.md gotchas). The old free-text value moves into
+    -- address_line1 wholesale, same as the historical business_profiles
+    -- address split - a single string can't be reliably parsed into
+    -- structured fields, so this doesn't guess at a split.
+    ALTER TABLE accounts ADD COLUMN address_line1 TEXT NOT NULL DEFAULT '';
+    ALTER TABLE accounts ADD COLUMN address_line2 TEXT;
+    ALTER TABLE accounts ADD COLUMN town_or_city TEXT;
+    ALTER TABLE accounts ADD COLUMN county TEXT;
+    ALTER TABLE accounts ADD COLUMN postcode TEXT;
+    UPDATE accounts SET address_line1 = address;
+    ALTER TABLE accounts DROP COLUMN address;
+    """,
 ]

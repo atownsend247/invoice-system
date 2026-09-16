@@ -42,7 +42,17 @@ class Organisation:
 
 @dataclass
 class Account:
-    """A business we provide a service to and bill via quotes/invoices."""
+    """A business we provide a service to and bill via quotes/invoices.
+
+    Address fields follow the same UK GOV.UK Design System pattern as
+    `BusinessProfile` (`address_line1`/`address_line2`/`town_or_city`/
+    `county`/`postcode`) rather than one free-text field - see CLAUDE.md and
+    data-model.md. Unlike `BusinessProfile`'s fully-optional address,
+    `address_line1` here is required (enforced non-blank in
+    `AccountService`, never in storage) - an `Account` is a real client
+    being billed, not the user's own optionally-published details; the
+    remaining lines are each independently optional, same "no all or
+    nothing" rule."""
 
     id: int | None
     organisation_id: int
@@ -50,7 +60,11 @@ class Account:
     contact_name: str | None
     email: str
     phone: str | None
-    address: str
+    address_line1: str
+    address_line2: str | None
+    town_or_city: str | None
+    county: str | None
+    postcode: str | None
     created_at: datetime
 
 

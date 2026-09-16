@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { accountAddressLines } from '../accountAddress'
 import * as api from '../api'
 import { AccountForm } from '../components/AccountForm'
 import { StatusBadge } from '../components/StatusBadge'
@@ -70,7 +71,16 @@ export function AccountDetailPage() {
           </div>
           <div>
             <dt>Address</dt>
-            <dd>{account.address}</dd>
+            <dd>
+              {accountAddressLines(account).map((line) => (
+                // Address lines have no stable id of their own and never
+                // reorder within a render - the line text is a safe key.
+                <span key={line}>
+                  {line}
+                  <br />
+                </span>
+              ))}
+            </dd>
           </div>
         </dl>
       )}

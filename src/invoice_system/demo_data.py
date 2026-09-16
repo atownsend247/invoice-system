@@ -47,8 +47,12 @@ class _DemoAccount:
     business_name: str
     contact_name: str | None
     email: str
-    address: str
+    address_line1: str
     phone: str | None
+    address_line2: str | None = None
+    town_or_city: str | None = None
+    county: str | None = None
+    postcode: str | None = None
 
 
 _ACCOUNTS = [
@@ -56,30 +60,48 @@ _ACCOUNTS = [
         "Northwind Traders",
         "Priya Patel",
         "billing@northwindtraders.test",
-        "12 Kings Road, London, SW1A 1AA",
+        "12 Kings Road",
         "020 7946 0958",
+        town_or_city="London",
+        postcode="SW1A 1AA",
     ),
     _DemoAccount(
         "Blue Harbour Consulting",
         "Tom Ellery",
         "accounts@blueharbour.test",
-        "4 Harbour View, Bristol, BS1 4ST",
+        "4 Harbour View",
         None,
+        address_line2="Floor 2",
+        town_or_city="Bristol",
+        postcode="BS1 4ST",
     ),
     _DemoAccount(
         "Fenwick & Vale",
         "Sarah Chen",
         "sarah@fenwickvale.test",
-        "88 Mill Lane, Manchester, M1 2WD",
+        "88 Mill Lane",
         "0161 496 0123",
+        town_or_city="Manchester",
+        county="Greater Manchester",
+        postcode="M1 2WD",
     ),
-    _DemoAccount("Orchard Studio", None, "hello@orchardstudio.test", "3 Orchard Court, Leeds, LS1 4DY", None),
+    _DemoAccount(
+        "Orchard Studio",
+        None,
+        "hello@orchardstudio.test",
+        "3 Orchard Court",
+        None,
+        town_or_city="Leeds",
+        postcode="LS1 4DY",
+    ),
     _DemoAccount(
         "Camden Digital",
         "Michael Osei",
         "michael@camdendigital.test",
-        "27 Camden High St, London, NW1 7JR",
+        "27 Camden High St",
         "020 7946 0111",
+        town_or_city="London",
+        postcode="NW1 7JR",
     ),
 ]
 
@@ -264,9 +286,13 @@ def seed_demo_data(application: Application, auth: Auth, *, now: datetime | None
             organisation_id=organisation_id,
             business_name=a.business_name,
             email=a.email,
-            address=a.address,
+            address_line1=a.address_line1,
             contact_name=a.contact_name,
             phone=a.phone,
+            address_line2=a.address_line2,
+            town_or_city=a.town_or_city,
+            county=a.county,
+            postcode=a.postcode,
         ).id
         for a in _ACCOUNTS
     ]

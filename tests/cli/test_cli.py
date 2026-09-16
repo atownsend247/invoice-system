@@ -25,7 +25,7 @@ def test_full_cli_flow(tmp_path):
             "Acme",
             "--email",
             "a@b.test",
-            "--address",
+            "--address-line1",
             "1 Main St",
         ],
     )
@@ -120,7 +120,7 @@ def test_quote_add_item_with_tax_rate(tmp_path):
             "Acme",
             "--email",
             "a@b.test",
-            "--address",
+            "--address-line1",
             "1 Main St",
         ],
     )
@@ -205,7 +205,7 @@ def test_stats(tmp_path):
             "Acme",
             "--email",
             "a@b.test",
-            "--address",
+            "--address-line1",
             "1 Main St",
         ],
     )
@@ -232,7 +232,7 @@ def test_stats_is_isolated_per_user(tmp_path):
             "Acme",
             "--email",
             "a@b.test",
-            "--address",
+            "--address-line1",
             "1 Main St",
         ],
     )
@@ -259,7 +259,7 @@ def test_account_update(tmp_path):
             "Acme",
             "--email",
             "a@b.test",
-            "--address",
+            "--address-line1",
             "1 Main St",
         ],
     )
@@ -278,7 +278,7 @@ def test_account_update(tmp_path):
             "Acme Ltd",
             "--email",
             "b@b.test",
-            "--address",
+            "--address-line1",
             "2 High St",
         ],
     )
@@ -308,7 +308,7 @@ def test_account_update_missing_account_returns_nonzero_exit(tmp_path):
             "Acme",
             "--email",
             "a@b.test",
-            "--address",
+            "--address-line1",
             "1 Main St",
         ],
     )
@@ -420,7 +420,7 @@ def test_invoice_send_with_user_id_uses_the_profiles_payment_terms(tmp_path):
             "Client Co",
             "--email",
             "a@b.test",
-            "--address",
+            "--address-line1",
             "1 Main St",
         ],
     )
@@ -469,7 +469,7 @@ def test_invoice_pay(tmp_path):
             "Client Co",
             "--email",
             "a@b.test",
-            "--address",
+            "--address-line1",
             "1 Main St",
         ],
     )
@@ -521,7 +521,7 @@ def test_invoice_pay_a_draft_invoice_returns_nonzero_exit(tmp_path):
             "Client Co",
             "--email",
             "a@b.test",
-            "--address",
+            "--address-line1",
             "1 Main St",
         ],
     )
@@ -621,7 +621,7 @@ def test_quote_and_invoice_pdf_accept_a_user_id(tmp_path):
             "Client Co",
             "--email",
             "a@b.test",
-            "--address",
+            "--address-line1",
             "1 Main St",
         ],
     )
@@ -652,7 +652,7 @@ def test_accounts_are_isolated_per_user(tmp_path):
             "User 1's Client",
             "--email",
             "a@b.test",
-            "--address",
+            "--address-line1",
             "1 Main St",
         ],
     )
@@ -669,7 +669,7 @@ def test_accounts_are_isolated_per_user(tmp_path):
             "User 2's Client",
             "--email",
             "b@b.test",
-            "--address",
+            "--address-line1",
             "2 High St",
         ],
     )

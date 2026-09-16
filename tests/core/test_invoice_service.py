@@ -10,7 +10,10 @@ from invoice_system.models import Invoice, InvoiceStatus
 @pytest.fixture
 def account(application, organisation_id):
     return application.accounts.create_account(
-        organisation_id=organisation_id, business_name="Acme Co", email="jane@acme.test", address="1 Main St"
+        organisation_id=organisation_id,
+        business_name="Acme Co",
+        email="jane@acme.test",
+        address_line1="1 Main St",
     )
 
 
@@ -276,5 +279,5 @@ class TestMonthlyTotals:
             organisation_id=organisation_id,
             business_name="Acme Co",
             email="jane@acme.test",
-            address="1 Main St",
+            address_line1="1 Main St",
         )

@@ -72,9 +72,10 @@ of accounts/quotes/invoices:
 ```
 uv run invoice-system-cli --help
 uv run invoice-system-cli account create --user-id 1 --business-name "Acme Co" \
-    --email billing@acme.test --address "1 Main St"
+    --email billing@acme.test --address-line1 "1 Main St" --town-or-city London \
+    --postcode "SW1A 1AA"
 uv run invoice-system-cli account update 1 --user-id 1 --business-name "Acme Co Ltd" \
-    --email billing@acme.test --address "1 Main St"
+    --email billing@acme.test --address-line1 "1 Main St"
 uv run invoice-system-cli quote create --user-id 1 --account-id 1
 uv run invoice-system-cli quote add-item 1 --user-id 1 --description "Design work" \
     --quantity 10 --unit-price 50.00 --tax-rate 0.20

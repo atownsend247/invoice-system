@@ -60,16 +60,20 @@ class AccountService:
         organisation_id: int,
         business_name: str,
         email: str,
-        address: str,
+        address_line1: str,
         contact_name: str | None = None,
         phone: str | None = None,
+        address_line2: str | None = None,
+        town_or_city: str | None = None,
+        county: str | None = None,
+        postcode: str | None = None,
     ) -> Account:
         if not business_name.strip():
             raise ValidationFailed("business_name is required")
         if not email.strip():
             raise ValidationFailed("email is required")
-        if not address.strip():
-            raise ValidationFailed("address is required")
+        if not address_line1.strip():
+            raise ValidationFailed("address_line1 is required")
         account = Account(
             id=None,
             organisation_id=organisation_id,
@@ -77,7 +81,11 @@ class AccountService:
             contact_name=contact_name,
             email=email,
             phone=phone,
-            address=address,
+            address_line1=address_line1,
+            address_line2=_blank_to_none(address_line2),
+            town_or_city=_blank_to_none(town_or_city),
+            county=_blank_to_none(county),
+            postcode=_blank_to_none(postcode),
             created_at=self._clock(),
         )
         return self._repository.create_account(account)
@@ -98,22 +106,30 @@ class AccountService:
         *,
         business_name: str,
         email: str,
-        address: str,
+        address_line1: str,
         contact_name: str | None = None,
         phone: str | None = None,
+        address_line2: str | None = None,
+        town_or_city: str | None = None,
+        county: str | None = None,
+        postcode: str | None = None,
     ) -> Account:
         existing = self.get_account(organisation_id, account_id)
         if not business_name.strip():
             raise ValidationFailed("business_name is required")
         if not email.strip():
             raise ValidationFailed("email is required")
-        if not address.strip():
-            raise ValidationFailed("address is required")
+        if not address_line1.strip():
+            raise ValidationFailed("address_line1 is required")
         existing.business_name = business_name
         existing.contact_name = contact_name
         existing.email = email
         existing.phone = phone
-        existing.address = address
+        existing.address_line1 = address_line1
+        existing.address_line2 = _blank_to_none(address_line2)
+        existing.town_or_city = _blank_to_none(town_or_city)
+        existing.county = _blank_to_none(county)
+        existing.postcode = _blank_to_none(postcode)
         return self._repository.update_account(existing)
 
 

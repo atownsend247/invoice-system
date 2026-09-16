@@ -15,9 +15,13 @@ def _validate_decimal_string(value: str) -> str:
 class AccountIn(BaseModel):
     business_name: str
     email: str
-    address: str
+    address_line1: str
     contact_name: str | None = None
     phone: str | None = None
+    address_line2: str | None = None
+    town_or_city: str | None = None
+    county: str | None = None
+    postcode: str | None = None
 
 
 class AccountOut(BaseModel):
@@ -26,7 +30,11 @@ class AccountOut(BaseModel):
     contact_name: str | None
     email: str
     phone: str | None
-    address: str
+    address_line1: str
+    address_line2: str | None
+    town_or_city: str | None
+    county: str | None
+    postcode: str | None
     created_at: datetime
 
     @classmethod
@@ -37,7 +45,11 @@ class AccountOut(BaseModel):
             contact_name=account.contact_name,
             email=account.email,
             phone=account.phone,
-            address=account.address,
+            address_line1=account.address_line1,
+            address_line2=account.address_line2,
+            town_or_city=account.town_or_city,
+            county=account.county,
+            postcode=account.postcode,
             created_at=account.created_at,
         )
 

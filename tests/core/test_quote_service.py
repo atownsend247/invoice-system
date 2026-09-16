@@ -9,7 +9,10 @@ from invoice_system.models import QuoteStatus
 @pytest.fixture
 def account(application, organisation_id):
     return application.accounts.create_account(
-        organisation_id=organisation_id, business_name="Acme Co", email="jane@acme.test", address="1 Main St"
+        organisation_id=organisation_id,
+        business_name="Acme Co",
+        email="jane@acme.test",
+        address_line1="1 Main St",
     )
 
 
@@ -232,7 +235,7 @@ def test_quote_numbers_are_independent_per_organisation(application, organisatio
 
     other_organisation_id = application.organisations.get_or_create_for_user(2)
     other_account = application.accounts.create_account(
-        organisation_id=other_organisation_id, business_name="Other Co", email="b@b.test", address="y"
+        organisation_id=other_organisation_id, business_name="Other Co", email="b@b.test", address_line1="y"
     )
     second = application.quotes.create_quote(
         organisation_id=other_organisation_id, account_id=other_account.id

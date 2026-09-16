@@ -71,10 +71,13 @@ failure; a failed run's trace/screenshot land in `test-results/` (gitignored).
   layer (see the note below on why e2e can't produce a genuinely overdue
   invoice). It also renders `MonthlyTotalsChart` and the "All-time stats"
   section (currently just accounts registered, from `GET /stats`).
-  `AccountsPage.tsx`'s `AccountForm` is shared between "New account" and
-  per-row "Edit" (a row swaps itself for the form in place on Edit, no
-  separate `/accounts/:id` route) - the same fields, same validation,
-  differing only in initial values and the submit handler.
+  `components/AccountForm.tsx` is shared between `AccountsPage.tsx`'s "New
+  account" and `AccountDetailPage.tsx`'s (`/accounts/:id`) "Edit" toggle -
+  the same fields, same validation, differing only in initial values and
+  the submit handler. `AccountsPage.tsx`'s list rows are clickable
+  (keyboard-operable too) straight to that detail page, and its search box
+  (`accountMatchesQuery`, unit-tested in `AccountsPage.test.ts`) filters
+  client-side against every field shown, including the address.
 - `src/components/MonthlyTotalsChart.tsx` — the home dashboard's paid-vs-
   outstanding bar chart. Plain CSS bars (`<div>`s with a `height: N%`
   inline style), not a charting library — 12 months, two series, doesn't

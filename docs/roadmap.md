@@ -254,5 +254,29 @@ flow," not a restructuring, whenever it's actually needed.
       navigates straight to its detail page on success rather than staying
       on the list.
 
+## Phase 15 — Structured account addresses, account search, clickable rows (done)
+
+- [x] `Account.address` split into `address_line1`/`address_line2`/
+      `town_or_city`/`county`/`postcode`, matching `BusinessProfile`'s UK
+      GOV.UK Design System structure (`address_line1` required, the rest
+      independently optional) — migration 5, threaded through
+      `AccountService`, `api/schemas.py`, `cli/main.py`'s `account
+      create`/`update` (now `--address-line1` + optional `--address-line2`/
+      `--town-or-city`/`--county`/`--postcode`), `pdf.py`'s new
+      `account_address_lines()` (the "Bill to" section), and
+      `demo_data.py`'s seed accounts. See `data-model.md`'s entity table
+      and CLAUDE.md's migrations gotcha.
+- [x] `web/`: `AccountForm.tsx` grew the same five address fields (labels
+      matching `SettingsPage.tsx`'s); `AccountDetailPage.tsx`'s read-only
+      view and `AccountsPage.tsx`'s list column both render them via a new
+      shared `accountAddressLines()` (`src/accountAddress.ts`).
+- [x] `web/`: a search box on `AccountsPage.tsx` (`accountMatchesQuery`,
+      unit-tested) filters the list client-side against business/contact
+      name, email, phone, and every set address line.
+- [x] `web/`: each row in the accounts list is now clickable (and
+      keyboard-operable via Enter/Space) to open that account's detail
+      page — the per-row "New quote" link stops click/keydown propagation
+      so it isn't swallowed by the row's own navigation.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.
