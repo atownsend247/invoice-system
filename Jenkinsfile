@@ -19,7 +19,7 @@ pipeline {
     }
 
     environment {
-        PATH = "${env.HOME}/.local/bin:${env.PATH}"
+        PATH = "${env.HOME}/.nodenv/bin:${env.HOME}/.nodenv/shims:${env.HOME}/.local/bin:${env.PATH}"
 
         // -- Proxmox LXC deploy target - fill in for your environment,
         // see docs/deployment.md --
@@ -39,7 +39,7 @@ pipeline {
     stages {
         stage('Prereq') {
             steps {
-                sh 'nodenv versions'
+                sh 'eval "$(nodenv init -)" && nodenv versions'
             }
         }
 
@@ -103,7 +103,6 @@ pipeline {
             steps {
                 dir('web') {
                     sh '''
-                        npx playwright install --with-deps chromium
                         npm run test:e2e
                     '''
                 }
