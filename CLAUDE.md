@@ -106,12 +106,14 @@ Three separate things are easy to conflate here — don't:
   port it lands on if that one's taken — it logs the actual one; note it
   binds `localhost`, which may resolve to the IPv6 loopback only, so prefer
   `localhost` over `127.0.0.1` when hitting it directly). `VITE_API_BASE_URL`
-  points it at the API (default `http://127.0.0.1:8000`). `npm test` /
+  points it at the API if set; unset, `api.ts`'s `defaultApiBaseUrl()`
+  derives it from whatever host the page itself was loaded from instead of
+  a hardcoded one (see the `npm run dev:lan` gotcha below). `npm test` /
   `npm run test:e2e` (Playwright; spins up its own throwaway backend + this
   app, see `web/README.md`) / `npm run build` in `web/`. `npm run dev:lan`
-  (`vite --host`) plus `uvicorn ... --host 0.0.0.0` and a LAN
-  `VITE_API_BASE_URL` serves both to other devices on the same network —
-  opt-in, not the default; see `docs/development.md`.
+  (`vite --host`) plus `uvicorn ... --host 0.0.0.0` serves both to other
+  devices on the same network — opt-in, not the default; see
+  `docs/development.md`.
 - CI: `.github/workflows/ci.yml` — `backend`, `frontend`, `e2e` (the last
   gated on the first two passing), on every push/PR. See
   `docs/testing-and-ci.md`.
@@ -341,6 +343,17 @@ Three separate things are easy to conflate here — don't:
   install --list` doesn't show a version you know exists, `node-build`'s
   version definitions are stale — `git -C "$(nodenv root)/plugins/node-build"
   pull` refreshes them.
+- `web/src/api.ts`'s `BASE_URL` is **not** a hardcoded `127.0.0.1:8000`
+  fallback — `defaultApiBaseUrl()` derives it from `window.location`
+  (same host the page itself was loaded from, port 8000), literal
+  `127.0.0.1` only when that host is `localhost`/`127.0.0.1`. This is what
+  makes `npm run dev:lan` (see Commands above) work without also having to
+  set `VITE_API_BASE_URL` by hand — found the hard way, by shipping
+  `dev:lan` with the old hardcoded default first and having a real LAN
+  device's requests silently go to its own loopback instead of the dev
+  machine. Don't revert this to a plain string literal without also
+  re-breaking LAN access; `VITE_API_BASE_URL` still overrides it for the
+  genuinely-elsewhere case.
 - `sessionkit` is pinned by git tag (`@v0.1.2` in `pyproject.toml`), not a
   PyPI version — bump the tag deliberately, re-run `uv lock`, and check its
   own CHANGELOG/README for breaking changes; there's no semver guarantee

@@ -135,27 +135,27 @@ picks it up automatically in that directory) — see `CLAUDE.md` gotchas if
 the actual port (defaults to `:5173`, picks another if that's taken) and
 binds `localhost`, which can resolve to the IPv6 loopback only — use
 `http://localhost:<port>`, not `127.0.0.1`, if a direct request seems to
-hang. It talks to the API at `VITE_API_BASE_URL` (default
-`http://127.0.0.1:8000`) — override in `web/.env.local` (gitignored) if
-your API is elsewhere. Log in with the demo user (`demo@example.test` /
-`demo-password-123`, if `init-db` ran without `--no-demo`) or one created
-via `sessionkit add`; there is no signup screen.
+hang. It talks to the API at `VITE_API_BASE_URL` if set, otherwise a
+default derived from whatever host the page itself was loaded from
+(`defaultApiBaseUrl()` in `api.ts`) — `http://127.0.0.1:8000` when that's
+`localhost`/`127.0.0.1`, or the same host on port 8000 otherwise. Override
+with `VITE_API_BASE_URL` in `web/.env.local` (gitignored) if your API is
+genuinely elsewhere (a different port, a different machine). Log in with
+the demo user (`demo@example.test` / `demo-password-123`, if `init-db` ran
+without `--no-demo`) or one created via `sessionkit add`; there is no
+signup screen.
 
 To reach the web client from another device on the same network, use
 `npm run dev:lan` instead of `npm run dev` (it's the same `vite` command
 with `--host` added, which binds every interface instead of just
-`localhost` — Vite then prints both the `Local` and `Network` URLs to use).
-You also need `VITE_API_BASE_URL` set to this machine's LAN address, not
-`127.0.0.1` — another device resolves `127.0.0.1` to itself, not to your
-machine:
-
-```
-VITE_API_BASE_URL=http://192.168.1.23:8000 npm run dev:lan
-```
-
-(with the backend also started with `--host 0.0.0.0`, see above). Same
-caveat: anyone on the network can reach it while it's running, so only do
-this somewhere you trust.
+`localhost` — Vite then prints both the `Local` and `Network` URLs to use),
+with the backend also started with `--host 0.0.0.0` (see above). That's
+it — you don't need to set `VITE_API_BASE_URL` yourself: loading the page
+from `http://192.168.1.23:5173` makes it default to
+`http://192.168.1.23:8000` for the API automatically, following whatever
+host the page itself was loaded from. Same caveat as the API: anyone on
+the network can reach it while it's running, so only do this somewhere you
+trust.
 
 ## Running tests
 
@@ -188,5 +188,8 @@ cd web && npm run lint   # oxlint
   `--db` flag or `$SESSIONKIT_DB` instead.
 - `INVOICE_SYSTEM_CORS_ORIGINS` — comma-separated allowed origins for the
   API's CORS policy (default `*` — see `CLAUDE.md`).
-- `VITE_API_BASE_URL` — the web client's API base URL (default
-  `http://127.0.0.1:8000`), read at build/dev-server time.
+- `VITE_API_BASE_URL` — the web client's API base URL, read at
+  build/dev-server time. Optional — unset, it defaults to whatever host the
+  page was loaded from, on port 8000 (`defaultApiBaseUrl()` in `api.ts`;
+  `127.0.0.1` specifically for `localhost`/`127.0.0.1`, so `npm run dev:lan`
+  works without this needing to be set at all).

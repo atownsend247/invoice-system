@@ -9,7 +9,26 @@ import type {
   User,
 } from './types'
 
-const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://127.0.0.1:8000'
+const DEFAULT_API_PORT = 8000
+
+/** Same host the page itself was loaded from, not a hardcoded loopback -
+ * so `npm run dev:lan` (see CLAUDE.md) works from another device on the
+ * network without also having to set VITE_API_BASE_URL by hand: loading
+ * the app from http://192.168.1.23:5173 talks to the API at
+ * http://192.168.1.23:8000 automatically (as long as the API was also
+ * started with --host 0.0.0.0). localhost/127.0.0.1 keep the literal
+ * 127.0.0.1 default rather than window.location.hostname, since
+ * "localhost" can resolve to the IPv6 loopback first on some systems (see
+ * CLAUDE.md gotchas) and uvicorn's own default only binds the IPv4 one. */
+export function defaultApiBaseUrl(): string {
+  const { hostname, protocol } = window.location
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return `http://127.0.0.1:${DEFAULT_API_PORT}`
+  }
+  return `${protocol}//${hostname}:${DEFAULT_API_PORT}`
+}
+
+const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? defaultApiBaseUrl()
 
 export class ApiError extends Error {
   status: number

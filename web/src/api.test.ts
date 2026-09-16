@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, getAccount, login, setAuthToken, setUnauthorizedHandler } from './api'
+import { ApiError, defaultApiBaseUrl, getAccount, login, setAuthToken, setUnauthorizedHandler } from './api'
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -67,5 +67,26 @@ describe('api', () => {
 
     await expect(login('a@b.test', 'wrong')).rejects.toBeInstanceOf(ApiError)
     expect(handler).not.toHaveBeenCalled()
+  })
+})
+
+describe('defaultApiBaseUrl', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('defaults to 127.0.0.1 when the page itself was loaded from localhost', () => {
+    vi.stubGlobal('location', { hostname: 'localhost', protocol: 'http:' })
+    expect(defaultApiBaseUrl()).toBe('http://127.0.0.1:8000')
+  })
+
+  it('defaults to 127.0.0.1 when the page itself was loaded from 127.0.0.1', () => {
+    vi.stubGlobal('location', { hostname: '127.0.0.1', protocol: 'http:' })
+    expect(defaultApiBaseUrl()).toBe('http://127.0.0.1:8000')
+  })
+
+  it('follows the page onto a LAN host instead, for npm run dev:lan', () => {
+    vi.stubGlobal('location', { hostname: '192.168.1.23', protocol: 'http:' })
+    expect(defaultApiBaseUrl()).toBe('http://192.168.1.23:8000')
   })
 })

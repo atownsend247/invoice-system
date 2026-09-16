@@ -14,16 +14,21 @@ npm install
 npm run dev      # http://localhost:5173, talks to the API at http://127.0.0.1:8000
 ```
 
-The API base URL is `VITE_API_BASE_URL` (default `http://127.0.0.1:8000`) —
-see `.env.example`. Start the backend first (`../docs/development.md`),
-which by default seeds a demo login (`demo@example.test` /
-`demo-password-123`) plus a year of demo data; there is no signup screen.
+The API base URL is `VITE_API_BASE_URL` if set (see `.env.example`),
+otherwise `api.ts`'s `defaultApiBaseUrl()` derives it from whatever host
+the page itself was loaded from — `http://127.0.0.1:8000` for
+`localhost`/`127.0.0.1`, or that same host on port 8000 otherwise. Start
+the backend first (`../docs/development.md`), which by default seeds a
+demo login (`demo@example.test` / `demo-password-123`) plus a year of demo
+data; there is no signup screen.
 
 `npm run dev:lan` (same as `dev`, plus Vite's `--host`) binds every network
 interface instead of just `localhost`, so another device on the same
-network can reach it — set `VITE_API_BASE_URL` to this machine's LAN
-address first and start the API with `--host 0.0.0.0` too. See
-`../docs/development.md` for the full walkthrough and the security caveat.
+network can reach it — start the API with `--host 0.0.0.0` too. No need to
+set `VITE_API_BASE_URL` yourself: loading the page from
+`http://192.168.1.23:5173` makes the default above resolve to
+`http://192.168.1.23:8000` automatically. See `../docs/development.md` for
+the full walkthrough and the security caveat.
 
 ## Test / build
 
