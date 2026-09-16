@@ -45,9 +45,11 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                def scmVars = checkout scm 
-                echo "Branch: ${scmVars.GIT_BRANCH}"
-                env.GIT_LOCAL_BRANCH = scmVars.GIT_BRANCH.replaceFirst('^origin/', '')
+                script {
+                    def scmVars = checkout scm 
+                    echo "Branch: ${scmVars.GIT_BRANCH}"
+                    env.GIT_LOCAL_BRANCH = scmVars.GIT_BRANCH.replaceFirst('^origin/', '')
+                }
             }
         }
 
