@@ -446,7 +446,8 @@ button.secondary {
   color: var(--text-muted);
 }
 
-.form-section-fields input {
+.form-section-fields input,
+.form-section-fields textarea {
   padding: 0.4rem 0.5rem;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -454,6 +455,20 @@ button.secondary {
   color: var(--text);
   font-size: 0.92rem;
   min-width: 10rem;
+}
+
+.form-section-fields textarea {
+  font-family: inherit;
+  resize: vertical;
+}
+
+.form-field-wide {
+  flex-basis: 100%;
+}
+
+.form-field-wide textarea {
+  width: 100%;
+  min-width: 0;
 }
 
 .line-items {
@@ -534,4 +549,42 @@ button.secondary {
   background: var(--bg);
   color: var(--text);
   font-size: 0.95rem;
+}
+
+.pdf-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 55%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  z-index: 100;
+}
+
+.pdf-modal {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 56rem;
+  height: 100%;
+  background: var(--surface);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.pdf-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.pdf-modal-frame {
+  flex: 1;
+  border: none;
+  width: 100%;
 }

@@ -278,5 +278,46 @@ flow," not a restructuring, whenever it's actually needed.
       page — the per-row "New quote" link stops click/keydown propagation
       so it isn't swallowed by the row's own navigation.
 
+## Phase 16 — PDF preview, bank details, document header/footer (done)
+
+- [x] Quote/invoice detail pages now have two PDF actions instead of one:
+      "Download PDF" (unchanged) and "View PDF", an in-page preview
+      (`web/src/components/PdfViewerModal.tsx`, an `<iframe>` over an
+      overlay). **Not** a new browser tab — the first approach tried, but
+      modern Chromium refuses to top-level-navigate a different browsing
+      context to a `blob:` URL created by another one (confirmed several
+      ways: `window.open` with a synchronous reservation + deferred
+      `location.href`, with and without `'noopener'`, and a synthetic
+      `<a target="_blank">` click all left the new tab stuck on
+      `about:blank`/blank forever). A `blob:` URL works fine as an
+      `<iframe src>` in the *same* document, which the modal relies on. No
+      new API route — same `GET /quotes|invoices/{id}/pdf`, just a second
+      way of handling the response client-side. See CLAUDE.md and
+      `web/README.md`.
+- [x] `BusinessProfile` gained three optional, purely-informational bank
+      fields in the existing "payment and tax settings" group —
+      `bank_account_name`/`bank_sort_code`/`bank_account_number` — and a
+      new "document settings" group with `document_header`/
+      `document_footer` (free text, multi-line). Migration 6. Threaded
+      through `BusinessProfileService.save_profile`, `api/schemas.py`,
+      `cli/main.py`'s `settings set`/`show`, and `demo_data.py`'s seed
+      profile.
+- [x] `document_header`/`document_footer` are the one part of this phase
+      that actually changes generated PDFs: `pdf.py`'s new
+      `document_header_lines()`/`document_footer_lines()` (mirroring
+      `business_profile_lines()`'s pattern) insert the header above the
+      title and the footer below the totals table on every quote/invoice
+      PDF this user generates. Deliberately not a per-page running
+      header/footer (reportlab page templates/canvas callbacks — a bigger
+      lift than asked for) — fixed text once at the top and bottom, which
+      is enough for the short, mostly-single-page documents this app
+      generates. Bank details are **not** currently rendered on any PDF —
+      settings-only for now.
+- [x] `web/`: `SettingsPage.tsx` gained the three bank inputs in its
+      existing "Payment and tax settings" `<fieldset>`, and a new
+      "Document settings" `<fieldset>` with two `<textarea>` fields
+      (`.form-field-wide`, spanning the full form width rather than the
+      narrow single-line-input column).
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

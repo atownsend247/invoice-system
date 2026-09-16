@@ -96,6 +96,13 @@ export interface BusinessProfile {
   currency: string
   utr: string | null
   vat_number: string | null
+  bank_account_name: string | null
+  bank_sort_code: string | null
+  bank_account_number: string | null
+  // Free text (multi-line) shown on every quote/invoice PDF this user
+  // generates - header before the title, footer after the totals table.
+  document_header: string | null
+  document_footer: string | null
   updated_at: string
 }
 

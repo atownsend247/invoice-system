@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import * as api from '../api'
 import { LineItemsTable } from '../components/LineItemsTable'
+import { PdfViewerModal } from '../components/PdfViewerModal'
 import { StatusBadge } from '../components/StatusBadge'
 import { errorMessage, useAsync } from '../hooks/useAsync'
 
@@ -15,6 +16,12 @@ export function InvoiceDetailPage() {
   )
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+
+  function closePdfPreview() {
+    if (pdfUrl) URL.revokeObjectURL(pdfUrl)
+    setPdfUrl(null)
+  }
 
   if (loading) return <p>Loading…</p>
   if (error)
@@ -67,6 +74,17 @@ export function InvoiceDetailPage() {
       )}
 
       <div className="actions">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            run(async () => {
+              setPdfUrl(await api.getInvoicePdfUrl(invoice))
+            })
+          }
+        >
+          View PDF
+        </button>
         <button type="button" disabled={busy} onClick={() => run(() => api.downloadInvoicePdf(invoice))}>
           Download PDF
         </button>
@@ -113,6 +131,12 @@ export function InvoiceDetailPage() {
           </button>
         )}
       </div>
+
+      <PdfViewerModal
+        url={pdfUrl}
+        title={invoice.number ?? `Draft invoice #${invoice.id}`}
+        onClose={closePdfPreview}
+      />
     </section>
   )
 }

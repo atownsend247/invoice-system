@@ -220,4 +220,17 @@ MIGRATIONS: list[str] = [
     UPDATE accounts SET address_line1 = address;
     ALTER TABLE accounts DROP COLUMN address;
     """,
+    """
+    -- Bank details (payment and tax settings group) and document
+    -- header/footer (a new "document settings" group) - see
+    -- CLAUDE.md/data-model.md and models.BusinessProfile's docstring. All
+    -- five are nullable, no default: each is independently optional, same
+    -- as utr/vat_number, and there's no sensible non-blank default for any
+    -- of them. Plain ADD COLUMN, no rebuild needed.
+    ALTER TABLE business_profiles ADD COLUMN bank_account_name TEXT;
+    ALTER TABLE business_profiles ADD COLUMN bank_sort_code TEXT;
+    ALTER TABLE business_profiles ADD COLUMN bank_account_number TEXT;
+    ALTER TABLE business_profiles ADD COLUMN document_header TEXT;
+    ALTER TABLE business_profiles ADD COLUMN document_footer TEXT;
+    """,
 ]

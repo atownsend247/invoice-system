@@ -97,9 +97,11 @@ CLI is a local, trusted tool and is **not** behind login (unlike the API) —
 see `CLAUDE.md`.
 
 Your own business profile (shown as "From" on PDFs, drives the invoice due
-date) is managed with `settings`, keyed by an explicit `--user-id` (find it
-via `uv run sessionkit list`) since the CLI has no login session to resolve
-it from:
+date, and — via `--document-header`/`--document-footer` — gets inserted
+into every quote/invoice PDF you generate, above the title and below the
+totals table respectively) is managed with `settings`, keyed by an
+explicit `--user-id` (find it via `uv run sessionkit list`) since the CLI
+has no login session to resolve it from:
 
 ```
 uv run invoice-system-cli settings set --user-id 1 \
@@ -107,7 +109,11 @@ uv run invoice-system-cli settings set --user-id 1 \
     --business-name "Acme Consulting" --address-line1 "1 Main St" \
     --town-or-city London --postcode "SW1A 1AA" \
     --payment-terms-days 14 --currency GBP \
-    --utr 1234567890 --vat-number GB123456789
+    --utr 1234567890 --vat-number GB123456789 \
+    --bank-account-name "Acme Consulting Ltd" \
+    --bank-sort-code "12-34-56" --bank-account-number 12345678 \
+    --document-header "Acme Consulting" \
+    --document-footer "Thank you for your business!"
 uv run invoice-system-cli settings show --user-id 1
 ```
 

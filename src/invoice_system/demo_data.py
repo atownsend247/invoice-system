@@ -278,6 +278,11 @@ def seed_demo_data(application: Application, auth: Auth, *, now: datetime | None
         currency=DEMO_CURRENCY,
         utr="1234567890",
         vat_number="GB123456789",
+        bank_account_name="Blake Freelance Design",
+        bank_sort_code="12-34-56",
+        bank_account_number="12345678",
+        document_header="Blake Freelance Design\nRegistered in England & Wales, company no. 12345678",
+        document_footer="Thank you for your business!\nPayment is due within the stated terms.",
     )
 
     accounts = AccountService(application.repository, clock=lambda: now)

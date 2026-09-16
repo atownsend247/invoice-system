@@ -93,3 +93,18 @@ test('converting a sent quote creates a matching draft invoice', async ({
   await expect(page.getByRole('heading', { name: /Draft invoice/ })).toBeVisible()
   await expect(page.getByText(`converted from quote #${sentQuote.id}`)).toBeVisible()
 })
+
+test('viewing the PDF opens an in-page preview instead of downloading it', async ({
+  authenticatedPage: page,
+  draftQuote,
+}) => {
+  await page.goto(`/quotes/${draftQuote.id}`)
+  await page.getByRole('button', { name: 'View PDF' }).click()
+
+  const frame = page.locator('.pdf-modal-frame')
+  await expect(frame).toBeVisible()
+  await expect(frame).toHaveAttribute('src', /^blob:/)
+
+  await page.getByRole('button', { name: 'Close' }).click()
+  await expect(frame).toHaveCount(0)
+})

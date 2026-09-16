@@ -41,16 +41,16 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | POST | `/quotes/{id}/line-items` | required | Add a line item to a draft quote (`description`, `quantity`, `unit_price` required; `tax_rate` defaults `"0"`, must be within `[0, 1]`). 409 if not draft, 422 on an out-of-range `tax_rate`. |
 | POST | `/quotes/{id}/send` | required | Assign a quote number, transition `draft → sent`. 422 if no line items. |
 | POST | `/quotes/{id}/convert` | required | Convert a `sent`/`accepted` quote into a new draft invoice, copying line items. 409 otherwise. |
-| GET | `/quotes/{id}/pdf` | required | Render the quote as a PDF (`application/pdf`). |
+| GET | `/quotes/{id}/pdf` | required | Render the quote as a PDF (`application/pdf`) - the web UI offers this both as a download and as an in-page preview (see Conventions below), the route itself is the same either way. |
 | GET | `/invoices` | required | List invoices, optionally filtered by `?account_id=`. |
 | GET | `/invoices/{id}` | required | Fetch one invoice with its line items, `subtotal`, `tax_total`, and (gross) `total`. |
 | POST | `/invoices/{id}/send` | required | Assign an invoice number and due date (issue date + the current user's `payment_terms_days`, default 30), transition `draft → sent`. 422 if no line items. |
 | POST | `/invoices/{id}/void` | required | Transition to `void`. 409 if already `paid`. |
 | POST | `/invoices/{id}/pay` | required | Transition `sent → paid`. 409 if not currently `sent` (covers `draft`, `void`, and already-`paid`). |
 | GET | `/invoices/monthly-totals` | required | Registered *before* `/invoices/{id}` (see `CLAUDE.md`'s architecture rules on route ordering). `{currency, months: [{month, paid_total, unpaid_total}]}` for the trailing 12 months, scoped to the current user's organisation, in the current user's business profile `currency`. An invoice in any other currency isn't counted. |
-| GET | `/invoices/{id}/pdf` | required | Render the invoice as a PDF (`application/pdf`), with a "From" section for the current user's business name/address if set. |
+| GET | `/invoices/{id}/pdf` | required | Render the invoice as a PDF (`application/pdf`), with a "From" section for the current user's business name/address if set, and their `document_header`/`document_footer` (if set) above the title/below the totals table. |
 | GET | `/settings/business-profile` | required | The current user's own profile. Never 404s — returns sensible defaults (`payment_terms_days: 30`, `currency: "GBP"`, everything else blank/`null`) if nothing's been saved yet. |
-| PUT | `/settings/business-profile` | required | Upsert it (`first_name`, `last_name`, `business_name`, `payment_terms_days` required; `currency` defaults `"GBP"`; `title`, `address_line1`, `address_line2`, `town_or_city`, `county`, `postcode`, `utr`, `vat_number` optional — each address line independently optional). 422 on a blank required field, `payment_terms_days <= 0`, or a blank `currency`. |
+| PUT | `/settings/business-profile` | required | Upsert it (`first_name`, `last_name`, `business_name`, `payment_terms_days` required; `currency` defaults `"GBP"`; `title`, `address_line1`, `address_line2`, `town_or_city`, `county`, `postcode`, `utr`, `vat_number`, `bank_account_name`, `bank_sort_code`, `bank_account_number`, `document_header`, `document_footer` optional — each address line independently optional). 422 on a blank required field, `payment_terms_days <= 0`, or a blank `currency`. |
 | GET | `/stats` | required | Counters for the home dashboard, scoped to the current user's organisation (currently `{account_count}`). |
 
 Every account/quote/invoice route above resolves the caller's
@@ -99,6 +99,14 @@ stays per-user, not per-organisation (see `docs/data-model.md`'s
   everywhere except `POST /auth/login`, where the route maps it to `401`
   itself (see `api/auth.py`) since a bad TOTP code at login is
   indistinguishable from bad credentials to the caller.
+- `GET /quotes/{id}/pdf`/`GET /invoices/{id}/pdf` are a single route each,
+  not one per "view" vs "download" - that distinction is purely a web UI
+  concern (`web/src/pages/QuoteDetailPage.tsx`/`InvoiceDetailPage.tsx`
+  offer both as separate buttons over the same response bytes: "Download
+  PDF" forces a browser download, "View PDF" shows an in-page preview via
+  `components/PdfViewerModal.tsx` - **not** a new browser tab, see
+  `CLAUDE.md`'s conventions for why that doesn't work against modern
+  Chromium's `blob:` URL restrictions). No new route, no query param.
 
 ## Not yet implemented
 

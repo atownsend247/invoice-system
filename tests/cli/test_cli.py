@@ -325,6 +325,8 @@ def test_settings_show_defaults_then_set_and_show_again(tmp_path):
     assert "Payment terms (days): 30" in result.output
     assert "Currency: GBP" in result.output
     assert "Business name: -" in result.output
+    assert "Bank account name: -" in result.output
+    assert "Document header: -" in result.output
 
     result = runner.invoke(
         cli,
@@ -345,6 +347,16 @@ def test_settings_show_defaults_then_set_and_show_again(tmp_path):
             "5",
             "--currency",
             "usd",
+            "--bank-account-name",
+            "Acme Consulting Ltd",
+            "--bank-sort-code",
+            "12-34-56",
+            "--bank-account-number",
+            "12345678",
+            "--document-header",
+            "Acme Consulting",
+            "--document-footer",
+            "Thank you!",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -357,6 +369,11 @@ def test_settings_show_defaults_then_set_and_show_again(tmp_path):
     assert "Address line 1: -" in result.output
     assert "Payment terms (days): 5" in result.output
     assert "Currency: USD" in result.output
+    assert "Bank account name: Acme Consulting Ltd" in result.output
+    assert "Bank sort code: 12-34-56" in result.output
+    assert "Bank account number: 12345678" in result.output
+    assert "Document header: Acme Consulting" in result.output
+    assert "Document footer: Thank you!" in result.output
 
 
 def test_settings_set_requires_first_name(tmp_path):

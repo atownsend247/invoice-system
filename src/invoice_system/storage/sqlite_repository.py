@@ -174,8 +174,9 @@ class SqliteRepository:
             self._conn.execute(
                 "INSERT INTO business_profiles (user_id, title, first_name, last_name, "
                 "business_name, address_line1, address_line2, town_or_city, county, postcode, "
-                "payment_terms_days, currency, utr, vat_number, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "payment_terms_days, currency, utr, vat_number, bank_account_name, bank_sort_code, "
+                "bank_account_number, document_header, document_footer, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(user_id) DO UPDATE SET "
                 "title = excluded.title, "
                 "first_name = excluded.first_name, "
@@ -190,6 +191,11 @@ class SqliteRepository:
                 "currency = excluded.currency, "
                 "utr = excluded.utr, "
                 "vat_number = excluded.vat_number, "
+                "bank_account_name = excluded.bank_account_name, "
+                "bank_sort_code = excluded.bank_sort_code, "
+                "bank_account_number = excluded.bank_account_number, "
+                "document_header = excluded.document_header, "
+                "document_footer = excluded.document_footer, "
                 "updated_at = excluded.updated_at",
                 (
                     profile.user_id,
@@ -206,6 +212,11 @@ class SqliteRepository:
                     profile.currency,
                     profile.utr,
                     profile.vat_number,
+                    profile.bank_account_name,
+                    profile.bank_sort_code,
+                    profile.bank_account_number,
+                    profile.document_header,
+                    profile.document_footer,
                     profile.created_at.isoformat(),
                     profile.updated_at.isoformat(),
                 ),
@@ -234,6 +245,11 @@ class SqliteRepository:
             currency=row["currency"],
             utr=row["utr"],
             vat_number=row["vat_number"],
+            bank_account_name=row["bank_account_name"],
+            bank_sort_code=row["bank_sort_code"],
+            bank_account_number=row["bank_account_number"],
+            document_header=row["document_header"],
+            document_footer=row["document_footer"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )

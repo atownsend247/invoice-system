@@ -21,6 +21,7 @@ test('shows the three settings sections and loads the current profile on visit',
   await expect(page.getByRole('group', { name: 'User settings' })).toBeVisible()
   await expect(page.getByRole('group', { name: 'Business settings' })).toBeVisible()
   await expect(page.getByRole('group', { name: 'Payment and tax settings' })).toBeVisible()
+  await expect(page.getByRole('group', { name: 'Document settings' })).toBeVisible()
 
   // Not asserting a specific "default" value here - a business profile is a
   // singleton per user (see CLAUDE.md), and this spec shares its login user
@@ -49,6 +50,11 @@ test('saving all fields persists them across a reload', async ({ authenticatedPa
   await page.getByLabel('Currency').fill('usd')
   await page.getByLabel('UTR (optional)').fill('1234567890')
   await page.getByLabel('VAT number (optional)').fill('GB123456789')
+  await page.getByLabel('Bank account name (optional)').fill('Contoso Consulting Ltd')
+  await page.getByLabel('Bank sort code (optional)').fill('12-34-56')
+  await page.getByLabel('Bank account number (optional)').fill('12345678')
+  await page.getByLabel('Document header (optional)').fill('Contoso Consulting\nCompany no. 12345678')
+  await page.getByLabel('Document footer (optional)').fill('Thank you for your business!')
   await page.getByRole('button', { name: 'Save settings' }).click()
 
   await expect(page.getByText('Saved.')).toBeVisible()
@@ -67,6 +73,13 @@ test('saving all fields persists them across a reload', async ({ authenticatedPa
   await expect(page.getByLabel('Currency')).toHaveValue('USD') // normalised to uppercase
   await expect(page.getByLabel('UTR (optional)')).toHaveValue('1234567890')
   await expect(page.getByLabel('VAT number (optional)')).toHaveValue('GB123456789')
+  await expect(page.getByLabel('Bank account name (optional)')).toHaveValue('Contoso Consulting Ltd')
+  await expect(page.getByLabel('Bank sort code (optional)')).toHaveValue('12-34-56')
+  await expect(page.getByLabel('Bank account number (optional)')).toHaveValue('12345678')
+  await expect(page.getByLabel('Document header (optional)')).toHaveValue(
+    'Contoso Consulting\nCompany no. 12345678',
+  )
+  await expect(page.getByLabel('Document footer (optional)')).toHaveValue('Thank you for your business!')
 })
 
 test('title, every address line, UTR and VAT number can all be left blank', async ({
@@ -85,6 +98,11 @@ test('title, every address line, UTR and VAT number can all be left blank', asyn
   await page.getByLabel('Postcode (optional)').fill('')
   await page.getByLabel('UTR (optional)').fill('')
   await page.getByLabel('VAT number (optional)').fill('')
+  await page.getByLabel('Bank account name (optional)').fill('')
+  await page.getByLabel('Bank sort code (optional)').fill('')
+  await page.getByLabel('Bank account number (optional)').fill('')
+  await page.getByLabel('Document header (optional)').fill('')
+  await page.getByLabel('Document footer (optional)').fill('')
   await page.getByRole('button', { name: 'Save settings' }).click()
 
   await expect(page.getByText('Saved.')).toBeVisible()
@@ -93,6 +111,8 @@ test('title, every address line, UTR and VAT number can all be left blank', asyn
   await expect(page.getByLabel('Postcode (optional)')).toHaveValue('')
   await expect(page.getByLabel('UTR (optional)')).toHaveValue('')
   await expect(page.getByLabel('VAT number (optional)')).toHaveValue('')
+  await expect(page.getByLabel('Bank account name (optional)')).toHaveValue('')
+  await expect(page.getByLabel('Document header (optional)')).toHaveValue('')
 })
 
 test('an address can be saved with only some lines filled in', async ({ authenticatedPage: page }) => {

@@ -5,11 +5,13 @@ Account (the business you provide a service to — business name, contact,
 address; editable after creation) → Quote → Invoice, where a Quote converts
 into an Invoice rather than the two being independently created. Each line
 item can carry its own UK VAT rate. Quotes and Invoices are each
-independently viewable/exportable as PDFs, and a sent invoice can be marked
-`paid` (a single status flag, not a payment ledger). A `BusinessProfile`
-holds the logged-in user's *own* business details (name/address/payment
-terms/reporting currency/UTR/VAT) — see below for why that's a third,
-deliberately separate thing from both `Account` and sessionkit's `User`.
+independently viewable (an in-page preview) or downloadable as PDFs, and a
+sent invoice can be marked `paid` (a single status flag, not a payment
+ledger). A `BusinessProfile` holds the logged-in user's *own* business
+details (name/address/payment terms/reporting currency/UTR/VAT/bank
+details/a document header & footer shown on every PDF they generate) — see
+below for why that's a third, deliberately separate thing from both
+`Account` and sessionkit's `User`.
 Every `Account`/`Quote`/`Invoice` also belongs to exactly one
 `Organisation` — the tenant boundary, auto-created per login user, so one
 user's data is never visible to another (see below and
@@ -74,7 +76,7 @@ Four separate things are easy to conflate here — don't:
   data only." See `docs/data-model.md`'s "Multi-tenancy" for the "multiple
   users per organisation" future work this is already shaped for.
 - **`BusinessProfile`** (this app's own domain table, `business_profiles`) —
-  the logged-in user's *own* details, in three groups (also how the
+  the logged-in user's *own* details, in four groups (also how the
   settings page presents them - see Conventions): **user settings**
   (`title` optional, `first_name`, `last_name` — the account holder's
   personal name, **never shown on a PDF**); **business settings**
@@ -83,8 +85,15 @@ Four separate things are easy to conflate here — don't:
   independently optional, no "all or nothing" rule); **payment and tax
   settings** (`payment_terms_days`, `currency` - the *reporting* currency
   the home dashboard's monthly-totals chart sums in, defaults `"GBP"`,
-  independent of the currency chosen per quote/invoice - `utr`/`vat_number`
-  optional). One per
+  independent of the currency chosen per quote/invoice - `utr`/`vat_number`/
+  `bank_account_name`/`bank_sort_code`/`bank_account_number` all optional,
+  all purely informational - nothing validates a sort code's format or
+  checks an account exists, and none of them currently render on a PDF);
+  **document settings** (`document_header`/`document_footer`, free text,
+  each independently optional - the one place free text actually gets
+  injected into every quote/invoice PDF this user generates, see
+  Conventions below for where and why it's not a per-page running
+  header/footer). One per
   user, keyed by `user_id` = sessionkit's `User.id` — deliberately still
   per-*user*, not per-`Organisation`, even after `Organisation` was
   introduced (see `docs/data-model.md`'s "Multi-tenancy": today it's a
@@ -246,7 +255,40 @@ Four separate things are easy to conflate here — don't:
   (`payment_terms_days: int | None`, `from_profile: BusinessProfile | None`),
   keeping the "whose profile" question entirely at the entry-point layer.
   **Deliberately not shown on a PDF**: `title`/`first_name`/`last_name` —
-  only `business_name` and the address were asked for.
+  only `business_name` and the address were asked for. Bank details
+  (`bank_account_name`/`bank_sort_code`/`bank_account_number`) are also not
+  currently rendered anywhere - they're settings-only for now, see the
+  "Four separate things" section above.
+- `BusinessProfile.document_header`/`document_footer` (see "Four separate
+  things" above) get inserted into every quote/invoice PDF this user
+  generates - `pdf.py`'s `document_header_lines()`/`document_footer_lines()`
+  split the free text into its non-blank lines (each individually
+  stripped), the header rendered above the title, the footer below the
+  totals table. Deliberately **not** a per-page running header/footer
+  (that needs reportlab page templates/canvas callbacks - a bigger lift
+  than asked for) - just fixed text once at the top and bottom of the
+  document, which is enough on the short, mostly-single-page documents
+  this app generates. Uses the same `from_profile: BusinessProfile | None`
+  parameter `business_profile_lines()` already takes, not a separate one -
+  `pdf.py` still doesn't import `BusinessProfileService` or know what a
+  "user" is, same reasoning as the paragraph above.
+- Quote/invoice detail pages (`QuoteDetailPage.tsx`/`InvoiceDetailPage.tsx`)
+  have two separate PDF actions: "Download PDF" (unchanged, forces a
+  browser download via a throwaway `<a download>`) and "View PDF" (opens
+  an in-page preview, `components/PdfViewerModal.tsx`, rendering the PDF
+  in an `<iframe>` over the current page). **Not** a new browser tab -
+  that was the first approach tried, but modern Chromium refuses to
+  top-level-navigate a *different* browsing context (a new tab/window, via
+  `window.open` or a `target="_blank"` click, with or without `'noopener'`)
+  to a `blob:` URL created by another one; confirmed by testing multiple
+  approaches, all left the new tab stuck on `about:blank` forever, not a
+  popup-blocker or timing issue. A `blob:` URL works fine as an `<iframe
+  src>` *within the same document* that created it, which is what the
+  modal relies on - `api.ts`'s `getPdfObjectUrl()`/`getQuotePdfUrl()`/
+  `getInvoicePdfUrl()` fetch the PDF (same Authorization-header problem a
+  plain `<a href>` can't solve, same as the download path) and return the
+  object URL for the modal to render and the caller to revoke
+  (`URL.revokeObjectURL`) once closed.
 - The home page (`web/src/pages/HomePage.tsx`, route `/`) shows two
   sections of `sent` invoices — "Overdue" (`due_date` before today) and
   "Outstanding" (not overdue) — computed client-side by `isOverdue`/
@@ -287,12 +329,16 @@ Four separate things are easy to conflate here — don't:
   `currency: str` and has no idea whose profile it came from, same pattern
   as `payment_terms_days`.
 - The settings page (`web/src/pages/SettingsPage.tsx`) groups
-  `BusinessProfile` fields into three `<fieldset>`/`<legend>` sections
-  matching the model's own three groups (user settings, business settings,
-  payment and tax settings) — a real semantic/accessible grouping (Playwright's
-  `getByRole('group', { name: ... })` finds them via the `<legend>`), not
-  just a visual one. Add a new field to whichever group it actually belongs
-  to, not wherever's convenient.
+  `BusinessProfile` fields into four `<fieldset>`/`<legend>` sections
+  matching the model's own four groups (user settings, business settings,
+  payment and tax settings, document settings) — a real semantic/accessible
+  grouping (Playwright's `getByRole('group', { name: ... })` finds them via
+  the `<legend>`), not just a visual one. Add a new field to whichever
+  group it actually belongs to, not wherever's convenient. Document
+  header/footer use `<textarea>` (the only multi-line fields in this form)
+  with a `.form-field-wide` class (`flex-basis: 100%`) so they span the
+  full form width rather than squeezing into the same narrow column as the
+  single-line inputs around them.
 - `AccountService.update_account(account_id, ...)` is a full replace, not a
   partial patch — same required fields (`business_name`/`email`/
   `address_line1`) and validation as `create_account`, mirroring
@@ -390,7 +436,10 @@ Four separate things are easy to conflate here — don't:
   one, as long as it isn't part of an index/constraint or the table's last
   column); the old free-text value moves into `address_line1` wholesale,
   not guessed-at-split, same reasoning as `business_profiles`' own
-  historical address split.)
+  historical address split. Migration 6 added five more nullable columns
+  to `business_profiles` — `bank_account_name`/`bank_sort_code`/
+  `bank_account_number`/`document_header`/`document_footer`, plain `ADD
+  COLUMN` × 5, no rebuild needed, same as migration 2.)
 - Storage is a single shared SQLite connection/file — **serialise every
   access on a lock** inside the repository implementation rather than
   assuming the caller will. That lock is per-*call*, not across a sequence

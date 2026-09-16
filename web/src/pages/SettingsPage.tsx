@@ -36,6 +36,11 @@ function BusinessProfileForm({ profile }: { profile: BusinessProfile }) {
   const [currency, setCurrency] = useState(profile.currency)
   const [utr, setUtr] = useState(profile.utr ?? '')
   const [vatNumber, setVatNumber] = useState(profile.vat_number ?? '')
+  const [bankAccountName, setBankAccountName] = useState(profile.bank_account_name ?? '')
+  const [bankSortCode, setBankSortCode] = useState(profile.bank_sort_code ?? '')
+  const [bankAccountNumber, setBankAccountNumber] = useState(profile.bank_account_number ?? '')
+  const [documentHeader, setDocumentHeader] = useState(profile.document_header ?? '')
+  const [documentFooter, setDocumentFooter] = useState(profile.document_footer ?? '')
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -60,6 +65,11 @@ function BusinessProfileForm({ profile }: { profile: BusinessProfile }) {
         currency,
         utr: utr || undefined,
         vat_number: vatNumber || undefined,
+        bank_account_name: bankAccountName || undefined,
+        bank_sort_code: bankSortCode || undefined,
+        bank_account_number: bankAccountNumber || undefined,
+        document_header: documentHeader || undefined,
+        document_footer: documentFooter || undefined,
       })
       // Reflect what the server actually stored (e.g. a blank UTR is
       // normalised to null) rather than trusting the pre-submit input back.
@@ -76,6 +86,11 @@ function BusinessProfileForm({ profile }: { profile: BusinessProfile }) {
       setCurrency(updated.currency)
       setUtr(updated.utr ?? '')
       setVatNumber(updated.vat_number ?? '')
+      setBankAccountName(updated.bank_account_name ?? '')
+      setBankSortCode(updated.bank_sort_code ?? '')
+      setBankAccountNumber(updated.bank_account_number ?? '')
+      setDocumentHeader(updated.document_header ?? '')
+      setDocumentFooter(updated.document_footer ?? '')
       setSaved(true)
     } catch (err) {
       setError(errorMessage(err))
@@ -164,6 +179,45 @@ function BusinessProfileForm({ profile }: { profile: BusinessProfile }) {
           <label>
             VAT number (optional)
             <input value={vatNumber} onChange={(event) => setVatNumber(event.target.value)} />
+          </label>
+          <label>
+            Bank account name (optional)
+            <input value={bankAccountName} onChange={(event) => setBankAccountName(event.target.value)} />
+          </label>
+          <label>
+            Bank sort code (optional)
+            <input value={bankSortCode} onChange={(event) => setBankSortCode(event.target.value)} />
+          </label>
+          <label>
+            Bank account number (optional)
+            <input
+              value={bankAccountNumber}
+              onChange={(event) => setBankAccountNumber(event.target.value)}
+            />
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset className="form-section">
+        <legend>Document settings</legend>
+        <div className="form-section-fields">
+          <label className="form-field-wide">
+            Document header (optional)
+            <textarea
+              rows={3}
+              value={documentHeader}
+              onChange={(event) => setDocumentHeader(event.target.value)}
+              placeholder="Shown above the title on every quote and invoice PDF you generate."
+            />
+          </label>
+          <label className="form-field-wide">
+            Document footer (optional)
+            <textarea
+              rows={3}
+              value={documentFooter}
+              onChange={(event) => setDocumentFooter(event.target.value)}
+              placeholder="Shown below the totals table on every quote and invoice PDF you generate."
+            />
           </label>
         </div>
       </fieldset>

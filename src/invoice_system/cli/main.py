@@ -355,6 +355,11 @@ def settings_show(application: Application, user_id: int) -> None:
     click.echo(f"Currency: {profile.currency}")
     click.echo(f"UTR: {profile.utr or '-'}")
     click.echo(f"VAT number: {profile.vat_number or '-'}")
+    click.echo(f"Bank account name: {profile.bank_account_name or '-'}")
+    click.echo(f"Bank sort code: {profile.bank_sort_code or '-'}")
+    click.echo(f"Bank account number: {profile.bank_account_number or '-'}")
+    click.echo(f"Document header: {profile.document_header or '-'}")
+    click.echo(f"Document footer: {profile.document_footer or '-'}")
 
 
 @settings.command("set")
@@ -372,6 +377,15 @@ def settings_show(application: Application, user_id: int) -> None:
 @click.option("--currency", default="GBP", show_default=True, help="Reporting currency, e.g. GBP/USD/EUR.")
 @click.option("--utr", default=None)
 @click.option("--vat-number", default=None)
+@click.option("--bank-account-name", default=None)
+@click.option("--bank-sort-code", default=None)
+@click.option("--bank-account-number", default=None)
+@click.option(
+    "--document-header", default=None, help="Free text (multi-line OK) shown above every quote/invoice PDF."
+)
+@click.option(
+    "--document-footer", default=None, help="Free text (multi-line OK) shown below every quote/invoice PDF."
+)
 @click.pass_obj
 def settings_set(
     application: Application,
@@ -389,6 +403,11 @@ def settings_set(
     currency: str,
     utr: str | None,
     vat_number: str | None,
+    bank_account_name: str | None,
+    bank_sort_code: str | None,
+    bank_account_number: str | None,
+    document_header: str | None,
+    document_footer: str | None,
 ) -> None:
     application.business_profiles.save_profile(
         user_id,
@@ -405,6 +424,11 @@ def settings_set(
         currency=currency,
         utr=utr,
         vat_number=vat_number,
+        bank_account_name=bank_account_name,
+        bank_sort_code=bank_sort_code,
+        bank_account_number=bank_account_number,
+        document_header=document_header,
+        document_footer=document_footer,
     )
     click.echo(f"Saved business profile for user {user_id}")
 

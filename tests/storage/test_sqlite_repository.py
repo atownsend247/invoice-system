@@ -278,6 +278,11 @@ def test_upsert_business_profile_round_trip_and_update(repo):
         currency="USD",
         utr="1234567890",
         vat_number=None,
+        bank_account_name="Acme Ltd",
+        bank_sort_code="12-34-56",
+        bank_account_number="12345678",
+        document_header="Acme Ltd",
+        document_footer="Thank you!",
         created_at=created_at,
         updated_at=created_at,
     )
@@ -297,6 +302,11 @@ def test_upsert_business_profile_round_trip_and_update(repo):
     assert fetched.currency == "USD"
     assert fetched.utr == "1234567890"
     assert fetched.vat_number is None
+    assert fetched.bank_account_name == "Acme Ltd"
+    assert fetched.bank_sort_code == "12-34-56"
+    assert fetched.bank_account_number == "12345678"
+    assert fetched.document_header == "Acme Ltd"
+    assert fetched.document_footer == "Thank you!"
 
     updated_at = datetime(2026, 1, 2, tzinfo=UTC)
     second = BusinessProfile(
@@ -315,6 +325,11 @@ def test_upsert_business_profile_round_trip_and_update(repo):
         currency="EUR",
         utr=None,
         vat_number="GB123456789",
+        bank_account_name=None,
+        bank_sort_code=None,
+        bank_account_number=None,
+        document_header=None,
+        document_footer=None,
         created_at=created_at,
         updated_at=updated_at,
     )
@@ -329,3 +344,5 @@ def test_upsert_business_profile_round_trip_and_update(repo):
     assert updated.currency == "EUR"
     assert updated.utr is None
     assert updated.vat_number == "GB123456789"
+    assert updated.bank_account_name is None
+    assert updated.document_header is None

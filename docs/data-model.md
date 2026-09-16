@@ -2,18 +2,20 @@
 
 **Status: implemented** (`src/invoice_system/models.py`,
 `storage/schema.py`). Keep this table in sync with the actual schema — this
-doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` has five
+doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` has six
 entries: the flattened baseline (2026-09-16), migration 2 (added `tax_rate`
 to both line-item tables), migration 3 (added `Organisation` — the tenant
 boundary — plus nullable `organisation_id` columns on `accounts`/`quotes`/
 `invoices`), migration 4 (rescoped `Quote.number`/`Invoice.number`
 uniqueness from a single global column constraint to a composite
 `(organisation_id, number)` index, since numbering is now per-organisation),
-and migration 5 (split `accounts.address` into `address_line1`/
+migration 5 (split `accounts.address` into `address_line1`/
 `address_line2`/`town_or_city`/`county`/`postcode`, same UK GOV.UK Design
-System structure as `BusinessProfile`'s — see `CLAUDE.md`'s migrations
-gotcha). Schema changes from here on are new entries appended to that list,
-not edits to any of these five.
+System structure as `BusinessProfile`'s), and migration 6 (added
+`bank_account_name`/`bank_sort_code`/`bank_account_number`/
+`document_header`/`document_footer` to `business_profiles` — see
+`CLAUDE.md`'s migrations gotcha). Schema changes from here on are new
+entries appended to that list, not edits to any of these six.
 
 ## Entities
 
@@ -24,7 +26,7 @@ not edits to any of these five.
 | `Quote` | id, organisation_id, account_id, number, status, currency, issue_date, expiry_date, created_at | `status`: `draft \| sent \| accepted \| rejected \| expired \| converted`. `number` (`Q-0001`, ...) is assigned on `send`, not on creation, and is unique per-`organisation_id`, not globally (see migration 4 above) — two organisations' first quotes can both be `Q-0001`. |
 | `Invoice` | id, organisation_id, account_id, quote_id, number, status, currency, issue_date, due_date, created_at | `status`: `draft \| sent \| paid \| overdue \| void`. `quote_id` is set when created via conversion, `NULL` otherwise. `number` (`INV-0001`, ...) and `due_date` are assigned on `send`, and — same as `Quote.number` — unique per-`organisation_id`, not globally. `paid` is assigned by `InvoiceService.pay()`, only from `sent` — `overdue` is a defined enum value nothing ever actually sets (see "Not yet modelled"). |
 | `LineItem` | id, description, quantity, unit_price, tax_rate, position | One shape, shared by quotes and invoices; associated via `quote_line_items`/`invoice_line_items` join tables (`quote_id`/`invoice_id` + the same columns). `tax_rate` is a fraction (`0.20` = 20% UK VAT; `0` = none), independently set per line. `net_total`/`tax_amount`/`total` (`net_total + tax_amount`, gross) are derived properties, never stored — `tax_amount` is rounded to the minor currency unit, `net_total` is not (see `CLAUDE.md`). |
-| `BusinessProfile` | id, user_id, title, first_name, last_name, business_name, address_line1, address_line2, town_or_city, county, postcode, payment_terms_days, currency, utr, vat_number, created_at, updated_at | The logged-in user's *own* details, in three groups (see `CLAUDE.md`): user settings (`title` optional, `first_name`/`last_name` required), business settings (`business_name` required; `address_line1`/`address_line2`/`town_or_city`/`county`/`postcode` — a UK GOV.UK Design System-style address, each line independently optional), payment and tax settings (`payment_terms_days`, `currency` — the home dashboard's *reporting* currency, defaults `"GBP"`, independent of any quote/invoice's own `currency` — `utr`/`vat_number` optional). Not `Account` (the client being billed). One per `user_id` (`UNIQUE`), which is sessionkit's `User.id` — a plain column, not an enforced FK (see `CLAUDE.md`, "Login accounts" below). Deliberately still per-*user*, not per-`Organisation` — see "Multi-tenancy" below. Every optional field: blank input is normalised to `NULL`, never stored as `""`. |
+| `BusinessProfile` | id, user_id, title, first_name, last_name, business_name, address_line1, address_line2, town_or_city, county, postcode, payment_terms_days, currency, utr, vat_number, bank_account_name, bank_sort_code, bank_account_number, document_header, document_footer, created_at, updated_at | The logged-in user's *own* details, in four groups (see `CLAUDE.md`): user settings (`title` optional, `first_name`/`last_name` required), business settings (`business_name` required; `address_line1`/`address_line2`/`town_or_city`/`county`/`postcode` — a UK GOV.UK Design System-style address, each line independently optional), payment and tax settings (`payment_terms_days`, `currency` — the home dashboard's *reporting* currency, defaults `"GBP"`, independent of any quote/invoice's own `currency` — `utr`/`vat_number`/`bank_account_name`/`bank_sort_code`/`bank_account_number` all optional and purely informational, not currently rendered on a PDF), document settings (`document_header`/`document_footer`, free text, each independently optional — inserted into every quote/invoice PDF this user generates, see `pdf.py`'s `document_header_lines()`/`document_footer_lines()` and the invariants below). Not `Account` (the client being billed). One per `user_id` (`UNIQUE`), which is sessionkit's `User.id` — a plain column, not an enforced FK (see `CLAUDE.md`, "Login accounts" below). Deliberately still per-*user*, not per-`Organisation` — see "Multi-tenancy" below. Every optional field: blank input is normalised to `NULL`, never stored as `""`. |
 | counters (internal) | name, value | Backs `next_quote_number`/`next_invoice_number`; not a domain entity, not exposed via API/CLI. `name` is `"<organisation_id>:quote"`/`"<organisation_id>:invoice"`, not a bare `"quote"`/`"invoice"` — each organisation gets its own independent sequence starting from one. |
 
 `MonthlyInvoiceTotals` (`month`, `paid_total`, `unpaid_total`) and `Stats`
@@ -97,6 +99,14 @@ Invoice 1──* LineItem   (via invoice_line_items)
   storage layer, not just by id) — the same error as "doesn't exist",
   deliberately, so a cross-tenant lookup never reveals *that* a given id
   belongs to someone else, only that it isn't visible to you.
+- `BusinessProfile.document_header`/`document_footer` are rendered into
+  every quote/invoice PDF this user generates (`pdf.py`'s
+  `document_header_lines()`/`document_footer_lines()`, called from `_render`
+  with the same `from_profile` parameter `business_profile_lines()`
+  already uses) — the header above the title, the footer below the totals
+  table, each split into its non-blank lines. Deliberately not a per-page
+  running header/footer (that needs reportlab page templates/canvas
+  callbacks); just fixed text once at the top and bottom of the document.
 
 ## Multi-tenancy
 

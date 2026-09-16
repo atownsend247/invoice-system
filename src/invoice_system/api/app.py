@@ -379,6 +379,11 @@ def save_business_profile(
         currency=body.currency,
         utr=body.utr,
         vat_number=body.vat_number,
+        bank_account_name=body.bank_account_name,
+        bank_sort_code=body.bank_sort_code,
+        bank_account_number=body.bank_account_number,
+        document_header=body.document_header,
+        document_footer=body.document_footer,
     )
     return BusinessProfileOut.from_model(profile)
 

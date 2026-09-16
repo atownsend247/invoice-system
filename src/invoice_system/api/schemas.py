@@ -175,6 +175,11 @@ class BusinessProfileIn(BaseModel):
     currency: str = "GBP"
     utr: str | None = None
     vat_number: str | None = None
+    bank_account_name: str | None = None
+    bank_sort_code: str | None = None
+    bank_account_number: str | None = None
+    document_header: str | None = None
+    document_footer: str | None = None
 
 
 class BusinessProfileOut(BaseModel):
@@ -191,6 +196,11 @@ class BusinessProfileOut(BaseModel):
     currency: str
     utr: str | None
     vat_number: str | None
+    bank_account_name: str | None
+    bank_sort_code: str | None
+    bank_account_number: str | None
+    document_header: str | None
+    document_footer: str | None
     updated_at: datetime
 
     @classmethod
@@ -209,6 +219,11 @@ class BusinessProfileOut(BaseModel):
             currency=profile.currency,
             utr=profile.utr,
             vat_number=profile.vat_number,
+            bank_account_name=profile.bank_account_name,
+            bank_sort_code=profile.bank_sort_code,
+            bank_account_number=profile.bank_account_number,
+            document_header=profile.document_header,
+            document_footer=profile.document_footer,
             updated_at=profile.updated_at,
         )
 

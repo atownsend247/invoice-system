@@ -155,11 +155,12 @@ def _validate_tax_rate(tax_rate: Decimal) -> None:
 
 
 class BusinessProfileService:
-    """The logged-in user's own details (name/address/payment terms/UTR/VAT),
-    one per user - see CLAUDE.md for why this is deliberately not an
-    `Account` (that's the client being billed) and not part of sessionkit.
-    Deliberately still per-*user*, not per-Organisation, even after
-    Organisation was introduced - see CLAUDE.md."""
+    """The logged-in user's own details (name/address/payment terms/UTR/VAT/
+    bank details/document header & footer), one per user - see CLAUDE.md
+    for why this is deliberately not an `Account` (that's the client being
+    billed) and not part of sessionkit. Deliberately still per-*user*, not
+    per-Organisation, even after Organisation was introduced - see
+    CLAUDE.md."""
 
     def __init__(self, repository: Repository, clock: Clock = system_clock) -> None:
         self._repository = repository
@@ -186,6 +187,11 @@ class BusinessProfileService:
             currency=DEFAULT_CURRENCY,
             utr=None,
             vat_number=None,
+            bank_account_name=None,
+            bank_sort_code=None,
+            bank_account_number=None,
+            document_header=None,
+            document_footer=None,
             created_at=now,
             updated_at=now,
         )
@@ -207,6 +213,11 @@ class BusinessProfileService:
         currency: str = DEFAULT_CURRENCY,
         utr: str | None = None,
         vat_number: str | None = None,
+        bank_account_name: str | None = None,
+        bank_sort_code: str | None = None,
+        bank_account_number: str | None = None,
+        document_header: str | None = None,
+        document_footer: str | None = None,
     ) -> BusinessProfile:
         if not first_name.strip():
             raise ValidationFailed("first_name is required")
@@ -237,6 +248,11 @@ class BusinessProfileService:
             currency=currency.strip().upper(),
             utr=_blank_to_none(utr),
             vat_number=_blank_to_none(vat_number),
+            bank_account_name=_blank_to_none(bank_account_name),
+            bank_sort_code=_blank_to_none(bank_sort_code),
+            bank_account_number=_blank_to_none(bank_account_number),
+            document_header=_blank_to_none(document_header),
+            document_footer=_blank_to_none(document_footer),
             created_at=created_at,
             updated_at=self._clock(),
         )

@@ -72,6 +72,31 @@ def account_address_lines(account: Account) -> list[str]:
     return [account.address_line1, *(field for field in address_fields if field and field.strip())]
 
 
+def _text_lines(text: str | None) -> list[str]:
+    """Splits free text into its non-blank lines, each individually
+    stripped - shared by document_header_lines/document_footer_lines below.
+    A blank line (just whitespace, or empty) is dropped rather than
+    rendered as an empty Paragraph."""
+    if not text:
+        return []
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def document_header_lines(profile: BusinessProfile | None) -> list[str]:
+    """The free text shown above the title on every quote/invoice PDF this
+    user generates (see BusinessProfile.document_header) - deliberately not
+    a per-page running header, just fixed text once at the top of the
+    document (see BusinessProfile's docstring for why)."""
+    return _text_lines(profile.document_header if profile is not None else None)
+
+
+def document_footer_lines(profile: BusinessProfile | None) -> list[str]:
+    """The free text shown below the totals table on every quote/invoice
+    PDF this user generates (see BusinessProfile.document_footer) - same
+    "fixed text once," not per-page, as document_header_lines above."""
+    return _text_lines(profile.document_footer if profile is not None else None)
+
+
 def _render(
     *,
     title: str,
@@ -89,11 +114,20 @@ def _render(
     doc = SimpleDocTemplate(buffer, pagesize=A4, title=f"{title} {number}")
     styles = getSampleStyleSheet()
 
-    story = [
-        Paragraph(f"{title} {number}", styles["Title"]),
-        Paragraph(f"Status: {status}", styles["Normal"]),
-        Paragraph(f"Issue date: {issue_date.isoformat()}", styles["Normal"]),
-    ]
+    story = []
+    header_lines = document_header_lines(from_profile)
+    if header_lines:
+        for line in header_lines:
+            story.append(Paragraph(line, styles["Normal"]))
+        story.append(Spacer(1, 8 * mm))
+
+    story.extend(
+        [
+            Paragraph(f"{title} {number}", styles["Title"]),
+            Paragraph(f"Status: {status}", styles["Normal"]),
+            Paragraph(f"Issue date: {issue_date.isoformat()}", styles["Normal"]),
+        ]
+    )
     if due_or_expiry_date is not None:
         story.append(Paragraph(f"{due_or_expiry_label}: {due_or_expiry_date.isoformat()}", styles["Normal"]))
     story.append(Spacer(1, 8 * mm))
@@ -146,6 +180,12 @@ def _render(
         )
     )
     story.append(table)
+
+    footer_lines = document_footer_lines(from_profile)
+    if footer_lines:
+        story.append(Spacer(1, 8 * mm))
+        for line in footer_lines:
+            story.append(Paragraph(line, styles["Normal"]))
 
     doc.build(story)
     return buffer.getvalue()

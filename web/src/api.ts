@@ -94,6 +94,23 @@ export async function downloadPdf(path: string, filename: string): Promise<void>
   URL.revokeObjectURL(url)
 }
 
+/** Fetches a PDF and returns an object URL for it, for PdfViewerModal to
+ * show in an in-page <iframe> - not a new browser tab. A new tab was the
+ * first approach tried here, but modern Chromium refuses to top-level-
+ * navigate a *different* browsing context (a new tab/window, via
+ * window.open or a target="_blank" click, with or without 'noopener') to a
+ * blob: URL created by another one - confirmed by testing window.open with
+ * a synchronous reservation + deferred `location.href`, and a synthetic
+ * <a target="_blank"> click; both leave the new tab stuck on about:blank
+ * (or a blank page entirely) forever, not a popup-blocker or timing issue.
+ * A blob: URL works perfectly fine as an <iframe src> *within the same
+ * document* that created it, which is what PdfViewerModal relies on -
+ * revoke the URL (via URL.revokeObjectURL) once the modal closes. */
+export async function getPdfObjectUrl(path: string): Promise<string> {
+  const blob = await requestBlob(path)
+  return URL.createObjectURL(blob)
+}
+
 // -- auth --------------------------------------------------------------
 
 export function login(email: string, password: string, otp?: string): Promise<LoginResult> {
@@ -172,6 +189,10 @@ export function downloadQuotePdf(quote: Quote): Promise<void> {
   return downloadPdf(`/quotes/${quote.id}/pdf`, `${quote.number ?? `quote-${quote.id}`}.pdf`)
 }
 
+export function getQuotePdfUrl(quote: Quote): Promise<string> {
+  return getPdfObjectUrl(`/quotes/${quote.id}/pdf`)
+}
+
 // -- invoices --------------------------------------------------------------
 
 export function listInvoices(accountId?: number): Promise<Invoice[]> {
@@ -203,6 +224,10 @@ export function downloadInvoicePdf(invoice: Invoice): Promise<void> {
   return downloadPdf(`/invoices/${invoice.id}/pdf`, `${invoice.number ?? `invoice-${invoice.id}`}.pdf`)
 }
 
+export function getInvoicePdfUrl(invoice: Invoice): Promise<string> {
+  return getPdfObjectUrl(`/invoices/${invoice.id}/pdf`)
+}
+
 // -- settings ----------------------------------------------------------------
 
 export function getBusinessProfile(): Promise<BusinessProfile> {
@@ -223,6 +248,11 @@ export interface SaveBusinessProfileInput {
   postcode?: string
   utr?: string
   vat_number?: string
+  bank_account_name?: string
+  bank_sort_code?: string
+  bank_account_number?: string
+  document_header?: string
+  document_footer?: string
 }
 
 export function saveBusinessProfile(input: SaveBusinessProfileInput): Promise<BusinessProfile> {

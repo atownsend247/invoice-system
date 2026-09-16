@@ -26,6 +26,21 @@ test('downloading the PDF works even before the invoice is sent', async ({
   expect(download.suggestedFilename()).toMatch(/^invoice-\d+\.pdf$/)
 })
 
+test('viewing the PDF opens an in-page preview instead of downloading it', async ({
+  authenticatedPage: page,
+  draftInvoice,
+}) => {
+  await page.goto(`/invoices/${draftInvoice.id}`)
+  await page.getByRole('button', { name: 'View PDF' }).click()
+
+  const frame = page.locator('.pdf-modal-frame')
+  await expect(frame).toBeVisible()
+  await expect(frame).toHaveAttribute('src', /^blob:/)
+
+  await page.getByRole('button', { name: 'Close' }).click()
+  await expect(frame).toHaveCount(0)
+})
+
 test('sending an invoice assigns a number and a due date', async ({ authenticatedPage: page, draftInvoice }) => {
   await page.goto(`/invoices/${draftInvoice.id}`)
   await page.getByRole('button', { name: 'Send' }).click()

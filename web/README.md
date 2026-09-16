@@ -2,10 +2,12 @@
 
 React + TypeScript + Vite SPA for the backend in `../src/invoice_system/`.
 A home dashboard (overdue/outstanding invoices, a monthly paid-vs-outstanding
-totals chart, all-time stats), accounts (create/edit), quotes (draft → sent
-→ convert to invoice, each line item with its own VAT rate), invoices
-(send/void/mark as paid), PDF download, and a settings page for your own
-business profile, behind login.
+totals chart, all-time stats), accounts (create/edit, searchable list,
+detail page with that account's quotes/invoices), quotes (draft → sent →
+convert to invoice, each line item with its own VAT rate), invoices
+(send/void/mark as paid), a PDF preview and download for both, and a
+settings page for your own business profile (including bank details and a
+document header/footer shown on every PDF you generate), behind login.
 
 ## Develop
 
@@ -64,6 +66,16 @@ failure; a failed run's trace/screenshot land in `test-results/` (gitignored).
   renders when its `onAdd` prop is passed, since invoices don't expose that
   route — see `../docs/api.md`; also renders the VAT column and
   Subtotal/VAT/Total footer from the `subtotal`/`taxTotal`/`total` props).
+  `PdfViewerModal.tsx` shows a quote/invoice PDF in-page (an `<iframe>` over
+  an overlay) for the "View PDF" button both detail pages have alongside
+  "Download PDF" — **not** a new browser tab, which was the first thing
+  tried: modern Chromium refuses to top-level-navigate a different
+  browsing context to a `blob:` URL created by another one (confirmed
+  several ways while building this - see `CLAUDE.md`), but a `blob:` URL
+  works fine as an `<iframe src>` in the *same* document. `api.ts`'s
+  `getPdfObjectUrl()`/`getQuotePdfUrl()`/`getInvoicePdfUrl()` fetch the PDF
+  and return that object URL; the calling page revokes it
+  (`URL.revokeObjectURL`) when the modal closes.
 - `src/pages/` — one file per route (`App.tsx` wires them up).
   `HomePage.tsx` exports its `isOverdue`/`isOutstanding` filters (not just
   the component) specifically so `HomePage.test.ts` can unit-test the

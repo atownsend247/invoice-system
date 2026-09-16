@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import * as api from '../api'
 import { LineItemsTable } from '../components/LineItemsTable'
+import { PdfViewerModal } from '../components/PdfViewerModal'
 import { StatusBadge } from '../components/StatusBadge'
 import { errorMessage, useAsync } from '../hooks/useAsync'
 
@@ -16,6 +17,12 @@ export function QuoteDetailPage() {
   )
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+
+  function closePdfPreview() {
+    if (pdfUrl) URL.revokeObjectURL(pdfUrl)
+    setPdfUrl(null)
+  }
 
   if (loading) return <p>Loading…</p>
   if (error)
@@ -72,6 +79,17 @@ export function QuoteDetailPage() {
       )}
 
       <div className="actions">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            run(async () => {
+              setPdfUrl(await api.getQuotePdfUrl(quote))
+            })
+          }
+        >
+          View PDF
+        </button>
         <button type="button" disabled={busy} onClick={() => run(() => api.downloadQuotePdf(quote))}>
           Download PDF
         </button>
@@ -104,6 +122,12 @@ export function QuoteDetailPage() {
           </button>
         )}
       </div>
+
+      <PdfViewerModal
+        url={pdfUrl}
+        title={quote.number ?? `Draft quote #${quote.id}`}
+        onClose={closePdfPreview}
+      />
     </section>
   )
 }

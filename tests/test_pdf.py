@@ -2,7 +2,13 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from invoice_system.models import Account, BusinessProfile, LineItem, Quote, QuoteStatus
-from invoice_system.pdf import account_address_lines, business_profile_lines, render_quote_pdf
+from invoice_system.pdf import (
+    account_address_lines,
+    business_profile_lines,
+    document_footer_lines,
+    document_header_lines,
+    render_quote_pdf,
+)
 
 
 def _profile(**overrides: object) -> BusinessProfile:
@@ -23,6 +29,11 @@ def _profile(**overrides: object) -> BusinessProfile:
         "currency": "GBP",
         "utr": None,
         "vat_number": None,
+        "bank_account_name": None,
+        "bank_sort_code": None,
+        "bank_account_number": None,
+        "document_header": None,
+        "document_footer": None,
         "created_at": now,
         "updated_at": now,
     }
@@ -114,6 +125,37 @@ def test_account_address_only_the_lines_that_are_set_appear():
     assert lines == ["1 Main St", "SW1A 1AA"]
 
 
+def test_no_profile_has_no_document_header_or_footer():
+    assert document_header_lines(None) == []
+    assert document_footer_lines(None) == []
+
+
+def test_unset_document_header_and_footer_are_empty():
+    assert document_header_lines(_profile(document_header=None)) == []
+    assert document_footer_lines(_profile(document_footer=None)) == []
+
+
+def test_document_header_splits_into_one_line_per_non_blank_line():
+    lines = document_header_lines(
+        _profile(document_header="Acme Ltd\n\nRegistered in England, company no. 12345678")
+    )
+    assert lines == ["Acme Ltd", "Registered in England, company no. 12345678"]
+
+
+def test_document_footer_splits_into_one_line_per_non_blank_line():
+    lines = document_footer_lines(_profile(document_footer="Thank you!\nPayment due within terms."))
+    assert lines == ["Thank you!", "Payment due within terms."]
+
+
+def test_document_header_and_footer_lines_are_individually_stripped():
+    lines = document_header_lines(_profile(document_header="  Acme Ltd  \n  Suite 4  "))
+    assert lines == ["Acme Ltd", "Suite 4"]
+
+
+def test_blank_only_document_header_produces_no_lines():
+    assert document_header_lines(_profile(document_header="   \n   ")) == []
+
+
 def test_rendering_a_quote_pdf_with_a_business_profile_set_does_not_error():
     now = datetime(2026, 1, 1, tzinfo=UTC)
     account = _account(created_at=now)
@@ -129,6 +171,28 @@ def test_rendering_a_quote_pdf_with_a_business_profile_set_does_not_error():
         created_at=now,
     )
     profile = _profile(business_name="Acme", address_line1="1 Main St", postcode="SW1A 1AA")
+    pdf_bytes = render_quote_pdf(account, quote, profile)
+    assert pdf_bytes.startswith(b"%PDF")
+
+
+def test_rendering_a_quote_pdf_with_a_document_header_and_footer_does_not_error():
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    account = _account(created_at=now)
+    quote = Quote(
+        id=1,
+        organisation_id=1,
+        account_id=1,
+        number="Q-0001",
+        status=QuoteStatus.SENT,
+        currency="USD",
+        issue_date=now.date(),
+        expiry_date=None,
+        created_at=now,
+    )
+    profile = _profile(
+        document_header="Acme Ltd\nRegistered in England, company no. 12345678",
+        document_footer="Thank you for your business!\nPayment due within terms.",
+    )
     pdf_bytes = render_quote_pdf(account, quote, profile)
     assert pdf_bytes.startswith(b"%PDF")
 
