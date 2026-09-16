@@ -25,8 +25,9 @@ def client(tmp_path, monkeypatch, auth):
     # both at throwaway paths so it doesn't touch the real default files.
     monkeypatch.setenv("INVOICE_SYSTEM_DB", str(tmp_path / "lifespan.db"))
     monkeypatch.setenv("INVOICE_SYSTEM_AUTH_DB", str(tmp_path / "lifespan-auth.db"))
+    monkeypatch.setenv("INVOICE_SYSTEM_ATTACHMENTS_DIR", str(tmp_path / "lifespan-attachments"))
 
-    application = build_application(tmp_path / "test.db")
+    application = build_application(tmp_path / "test.db", attachments_dir=tmp_path / "attachments")
     app.dependency_overrides[get_application] = lambda: application
     app.dependency_overrides[get_auth_service] = lambda: auth.service
     with TestClient(app) as test_client:
@@ -186,6 +187,84 @@ def test_expense_from_another_login_user_returns_404(client, auth_headers, other
     expense_id = client.post("/expenses", json={"account_id": account_id}, headers=auth_headers).json()["id"]
 
     response = client.get(f"/expenses/{expense_id}", headers=other_auth_headers)
+    assert response.status_code == 404
+
+
+def test_expense_attachment_upload_view_download_and_delete_flow(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    expense_id = client.post("/expenses", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+
+    response = client.post(
+        f"/expenses/{expense_id}/attachments",
+        files={"file": ("receipt.pdf", b"%PDF-1.4 fake receipt", "application/pdf")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    body = response.json()
+    attachment_id = body["id"]
+    assert body["filename"] == "receipt.pdf"
+    assert body["content_type"] == "application/pdf"
+    assert body["size"] == len(b"%PDF-1.4 fake receipt")
+
+    # Inlined on the parent expense, same as line_items - no separate list
+    # call needed to see it.
+    response = client.get(f"/expenses/{expense_id}", headers=auth_headers)
+    assert [a["id"] for a in response.json()["attachments"]] == [attachment_id]
+
+    response = client.get(f"/expenses/{expense_id}/attachments/{attachment_id}", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.content == b"%PDF-1.4 fake receipt"
+    assert response.headers["content-type"] == "application/pdf"
+
+    response = client.delete(f"/expenses/{expense_id}/attachments/{attachment_id}", headers=auth_headers)
+    assert response.status_code == 204
+
+    response = client.get(f"/expenses/{expense_id}", headers=auth_headers)
+    assert response.json()["attachments"] == []
+
+    response = client.get(f"/expenses/{expense_id}/attachments/{attachment_id}", headers=auth_headers)
+    assert response.status_code == 404
+
+
+def test_expense_attachment_upload_rejects_a_non_pdf(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    expense_id = client.post("/expenses", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+
+    response = client.post(
+        f"/expenses/{expense_id}/attachments",
+        files={"file": ("receipt.png", b"not a pdf", "image/png")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
+def test_expense_attachment_from_another_login_user_returns_404(client, auth_headers, other_auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Owner's Client", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    expense_id = client.post("/expenses", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+    attachment_id = client.post(
+        f"/expenses/{expense_id}/attachments",
+        files={"file": ("receipt.pdf", b"data", "application/pdf")},
+        headers=auth_headers,
+    ).json()["id"]
+
+    response = client.get(f"/expenses/{expense_id}/attachments/{attachment_id}", headers=other_auth_headers)
+    assert response.status_code == 404
+
+    response = client.delete(
+        f"/expenses/{expense_id}/attachments/{attachment_id}", headers=other_auth_headers
+    )
     assert response.status_code == 404
 
 

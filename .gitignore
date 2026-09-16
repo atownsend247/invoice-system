@@ -8,6 +8,7 @@ htmlcov/
 *.db
 *.db-shm
 *.db-wal
+/attachments/
 web/node_modules/
 web/dist/
 reports/

@@ -123,12 +123,24 @@ export interface MonthlyTotalsReport {
   months: MonthlyInvoiceTotal[]
 }
 
+// A supplementary file (e.g. a scanned receipt) uploaded against an
+// Expense - always a PDF (validated server-side in
+// ExpenseService.add_attachment). `size` is in bytes.
+export interface ExpenseAttachment {
+  id: string
+  filename: string
+  content_type: string
+  size: number
+  created_at: string
+}
+
 // A cost incurred against an Account - e.g. a domain renewal paid on a
 // client's behalf. Unlike Quote/Invoice there's no status/lifecycle field:
 // it's a record of money already spent, not a document with a draft/sent
 // workflow, so `number` (EXP-0001, same per-organisation counter pattern
 // as Quote.number/Invoice.number) is always set, never null - see
-// CLAUDE.md and models.Expense.
+// CLAUDE.md and models.Expense. `attachments` are addable at any time too,
+// same no-lifecycle reasoning as `line_items`.
 export interface Expense {
   id: string
   account_id: string
@@ -137,6 +149,7 @@ export interface Expense {
   issue_date: string
   created_at: string
   line_items: LineItem[]
+  attachments: ExpenseAttachment[]
   subtotal: string
   tax_total: string
   total: string

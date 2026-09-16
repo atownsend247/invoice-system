@@ -3,7 +3,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, FastAPI, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, File, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sessionkit import AuthenticationError, AuthError, DuplicateUser
@@ -11,6 +11,7 @@ from sessionkit import User as SessionUser
 from sessionkit import UserNotFound as AuthUserNotFound
 from sessionkit import ValidationError as AuthValidationError
 
+from ..attachments import DEFAULT_ATTACHMENTS_DIR
 from ..auth import build_auth
 from ..errors import AppError, Duplicate, InvalidTransition, NotFound, ValidationFailed
 from ..factory import Application, build_application
@@ -29,6 +30,7 @@ from .schemas import (
     AccountOut,
     BusinessProfileIn,
     BusinessProfileOut,
+    ExpenseAttachmentOut,
     ExpenseCreateIn,
     ExpenseOut,
     InvoiceOut,
@@ -58,7 +60,8 @@ _STATUS_BY_AUTH_ERROR: list[tuple[type[AuthError], int]] = [
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     db_path = os.environ.get("INVOICE_SYSTEM_DB", "invoice_system.db")
     auth_db_path = os.environ.get("INVOICE_SYSTEM_AUTH_DB", "auth.db")
-    app.state.application = build_application(db_path)
+    attachments_dir = os.environ.get("INVOICE_SYSTEM_ATTACHMENTS_DIR", DEFAULT_ATTACHMENTS_DIR)
+    app.state.application = build_application(db_path, attachments_dir=attachments_dir)
     app.state.auth = build_auth(auth_db_path)
     yield
     app.state.application.close()
@@ -414,6 +417,55 @@ def get_expense_pdf(
     account = application.accounts.get_account(organisation_id, expense.account_id)
     profile = application.business_profiles.get_profile(user.id)
     return Response(content=render_expense_pdf(account, expense, profile), media_type="application/pdf")
+
+
+@domain_router.post(
+    "/expenses/{expense_id}/attachments", response_model=ExpenseAttachmentOut, status_code=201
+)
+async def add_expense_attachment(
+    expense_id: str,
+    file: UploadFile = File(...),
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> ExpenseAttachmentOut:
+    data = await file.read()
+    attachment = application.expenses.add_attachment(
+        organisation_id,
+        expense_id,
+        filename=file.filename or "attachment.pdf",
+        content_type=file.content_type or "application/octet-stream",
+        data=data,
+    )
+    return ExpenseAttachmentOut.from_model(attachment)
+
+
+@domain_router.get("/expenses/{expense_id}/attachments/{attachment_id}")
+def get_expense_attachment(
+    expense_id: str,
+    attachment_id: str,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> Response:
+    attachment, data = application.expenses.get_attachment_bytes(organisation_id, expense_id, attachment_id)
+    # inline, not attachment - the web UI's "View" action loads this
+    # straight into PdfViewerModal's <iframe>, same as the generated
+    # quote/invoice/expense PDFs; "Download" is a client-side <a download>
+    # over the same bytes (see CLAUDE.md's PDF-preview conventions).
+    return Response(
+        content=data,
+        media_type=attachment.content_type,
+        headers={"Content-Disposition": f'inline; filename="{attachment.filename}"'},
+    )
+
+
+@domain_router.delete("/expenses/{expense_id}/attachments/{attachment_id}", status_code=204)
+def delete_expense_attachment(
+    expense_id: str,
+    attachment_id: str,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> None:
+    application.expenses.delete_attachment(organisation_id, expense_id, attachment_id)
 
 
 @domain_router.get("/settings/business-profile", response_model=BusinessProfileOut)

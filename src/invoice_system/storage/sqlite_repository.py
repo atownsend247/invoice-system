@@ -8,6 +8,7 @@ from ..models import (
     Account,
     BusinessProfile,
     Expense,
+    ExpenseAttachment,
     Invoice,
     InvoiceStatus,
     LineItem,
@@ -534,7 +535,10 @@ class SqliteRepository:
             item_rows = self._conn.execute(
                 "SELECT * FROM expense_line_items WHERE expense_id = ? ORDER BY position", (expense_id,)
             ).fetchall()
-        return self._row_to_expense(row, item_rows)
+            attachment_rows = self._conn.execute(
+                "SELECT * FROM expense_attachments WHERE expense_id = ? ORDER BY rowid", (expense_id,)
+            ).fetchall()
+        return self._row_to_expense(row, item_rows, attachment_rows)
 
     def list_expenses(self, organisation_id: str, account_id: str | None = None) -> list[Expense]:
         # ORDER BY rowid - see list_accounts' comment above.
@@ -554,7 +558,10 @@ class SqliteRepository:
                 item_rows = self._conn.execute(
                     "SELECT * FROM expense_line_items WHERE expense_id = ? ORDER BY position", (row["id"],)
                 ).fetchall()
-                expenses.append(self._row_to_expense(row, item_rows))
+                attachment_rows = self._conn.execute(
+                    "SELECT * FROM expense_attachments WHERE expense_id = ? ORDER BY rowid", (row["id"],)
+                ).fetchall()
+                expenses.append(self._row_to_expense(row, item_rows, attachment_rows))
         return expenses
 
     def add_expense_line_item(self, expense_id: str, item: LineItem) -> LineItem:
@@ -580,7 +587,9 @@ class SqliteRepository:
         return self._next_number(f"{organisation_id}:expense", "EXP-")
 
     @staticmethod
-    def _row_to_expense(row: sqlite3.Row, item_rows: list[sqlite3.Row]) -> Expense:
+    def _row_to_expense(
+        row: sqlite3.Row, item_rows: list[sqlite3.Row], attachment_rows: list[sqlite3.Row]
+    ) -> Expense:
         return Expense(
             id=row["id"],
             organisation_id=row["organisation_id"],
@@ -590,6 +599,60 @@ class SqliteRepository:
             issue_date=date.fromisoformat(row["issue_date"]),
             created_at=datetime.fromisoformat(row["created_at"]),
             line_items=[SqliteRepository._row_to_line_item(r) for r in item_rows],
+            attachments=[SqliteRepository._row_to_expense_attachment(r) for r in attachment_rows],
+        )
+
+    # -- Expense attachments ----------------------------------------------------
+
+    def create_expense_attachment(self, attachment: ExpenseAttachment) -> ExpenseAttachment:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO expense_attachments "
+                "(id, expense_id, filename, content_type, size, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    attachment.id,
+                    attachment.expense_id,
+                    attachment.filename,
+                    attachment.content_type,
+                    attachment.size,
+                    attachment.created_at.isoformat(),
+                ),
+            )
+            self._conn.commit()
+            return attachment
+
+    def list_expense_attachments(self, expense_id: str) -> list[ExpenseAttachment]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM expense_attachments WHERE expense_id = ? ORDER BY rowid", (expense_id,)
+            ).fetchall()
+        return [self._row_to_expense_attachment(row) for row in rows]
+
+    def get_expense_attachment(self, expense_id: str, attachment_id: str) -> ExpenseAttachment | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM expense_attachments WHERE id = ? AND expense_id = ?",
+                (attachment_id, expense_id),
+            ).fetchone()
+        return self._row_to_expense_attachment(row) if row else None
+
+    def delete_expense_attachment(self, expense_id: str, attachment_id: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM expense_attachments WHERE id = ? AND expense_id = ?",
+                (attachment_id, expense_id),
+            )
+            self._conn.commit()
+
+    @staticmethod
+    def _row_to_expense_attachment(row: sqlite3.Row) -> ExpenseAttachment:
+        return ExpenseAttachment(
+            id=row["id"],
+            expense_id=row["expense_id"],
+            filename=row["filename"],
+            content_type=row["content_type"],
+            size=row["size"],
+            created_at=datetime.fromisoformat(row["created_at"]),
         )
 
     # -- Shared --------------------------------------------------------------

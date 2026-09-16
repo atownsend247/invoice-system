@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from .attachments import DEFAULT_ATTACHMENTS_DIR, AttachmentStore
 from .clock import Clock, system_clock
 from .core import (
     AccountService,
@@ -25,6 +26,7 @@ class Application:
         expenses: ExpenseService,
         business_profiles: BusinessProfileService,
         stats: StatsService,
+        attachment_store: AttachmentStore,
     ) -> None:
         self.repository = repository
         self.organisations = organisations
@@ -34,6 +36,7 @@ class Application:
         self.expenses = expenses
         self.business_profiles = business_profiles
         self.stats = stats
+        self.attachment_store = attachment_store
 
     def close(self) -> None:
         self.repository.close()
@@ -45,16 +48,22 @@ class Application:
         self.close()
 
 
-def build_application(db_path: str | Path, clock: Clock = system_clock) -> Application:
+def build_application(
+    db_path: str | Path,
+    clock: Clock = system_clock,
+    attachments_dir: str | Path = DEFAULT_ATTACHMENTS_DIR,
+) -> Application:
     repository = SqliteRepository(db_path)
     repository.migrate()
+    attachment_store = AttachmentStore(attachments_dir)
     return Application(
         repository=repository,
         organisations=OrganisationService(repository, clock=clock),
         accounts=AccountService(repository, clock=clock),
         quotes=QuoteService(repository, clock=clock),
         invoices=InvoiceService(repository, clock=clock),
-        expenses=ExpenseService(repository, clock=clock),
+        expenses=ExpenseService(repository, clock=clock, attachments=attachment_store),
         business_profiles=BusinessProfileService(repository, clock=clock),
         stats=StatsService(repository, clock=clock),
+        attachment_store=attachment_store,
     )

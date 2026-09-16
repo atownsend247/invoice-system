@@ -26,7 +26,7 @@ def fake_clock() -> FakeClock:
 
 @pytest.fixture
 def application(tmp_path, fake_clock: FakeClock) -> Application:
-    app = build_application(tmp_path / "test.db", clock=fake_clock)
+    app = build_application(tmp_path / "test.db", clock=fake_clock, attachments_dir=tmp_path / "attachments")
     yield app
     app.close()
 

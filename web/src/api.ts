@@ -2,6 +2,7 @@ import type {
   Account,
   BusinessProfile,
   Expense,
+  ExpenseAttachment,
   Invoice,
   LoginResult,
   MonthlyTotalsReport,
@@ -79,6 +80,26 @@ async function requestBlob(path: string): Promise<Blob> {
   if (response.status === 401) onUnauthorized?.()
   if (!response.ok) throw new ApiError(response.status, response.statusText)
   return response.blob()
+}
+
+/** Uploads a file as multipart/form-data - deliberately not `request()`,
+ * which always sets Content-Type: application/json for any request with a
+ * body. A multipart request needs the browser to set its own Content-Type
+ * (with the boundary it generates for this exact FormData), so this never
+ * touches that header itself, only Authorization. */
+async function uploadFile<T>(path: string, file: File): Promise<T> {
+  const headers = new Headers()
+  if (authToken) headers.set('Authorization', `Bearer ${authToken}`)
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const response = await fetch(`${BASE_URL}${path}`, { method: 'POST', body: formData, headers })
+  if (response.status === 401) onUnauthorized?.()
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { detail?: string }
+    throw new ApiError(response.status, body.detail ?? response.statusText)
+  }
+  return (await response.json()) as T
 }
 
 /** Fetches a PDF and hands it to the browser as a download - a plain <a href>
@@ -257,6 +278,22 @@ export function downloadExpensePdf(expense: Expense): Promise<void> {
 
 export function getExpensePdfUrl(expense: Expense): Promise<string> {
   return getPdfObjectUrl(`/expenses/${expense.id}/pdf`)
+}
+
+export function uploadExpenseAttachment(expenseId: string, file: File): Promise<ExpenseAttachment> {
+  return uploadFile(`/expenses/${expenseId}/attachments`, file)
+}
+
+export function deleteExpenseAttachment(expenseId: string, attachmentId: string): Promise<void> {
+  return request(`/expenses/${expenseId}/attachments/${attachmentId}`, { method: 'DELETE' })
+}
+
+export function downloadExpenseAttachment(expenseId: string, attachment: ExpenseAttachment): Promise<void> {
+  return downloadPdf(`/expenses/${expenseId}/attachments/${attachment.id}`, attachment.filename)
+}
+
+export function getExpenseAttachmentPdfUrl(expenseId: string, attachmentId: string): Promise<string> {
+  return getPdfObjectUrl(`/expenses/${expenseId}/attachments/${attachmentId}`)
 }
 
 // -- settings ----------------------------------------------------------------

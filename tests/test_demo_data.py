@@ -11,7 +11,7 @@ FIXED_NOW = datetime(2026, 6, 15, 10, 0, tzinfo=UTC)
 
 @pytest.fixture
 def application(tmp_path):
-    app = build_application(tmp_path / "test.db")
+    app = build_application(tmp_path / "test.db", attachments_dir=tmp_path / "attachments")
     yield app
     app.close()
 

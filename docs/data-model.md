@@ -2,7 +2,7 @@
 
 **Status: implemented** (`src/invoice_system/models.py`,
 `storage/schema.py`). Keep this table in sync with the actual schema — this
-doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` has eight
+doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` has nine
 entries: the flattened baseline (2026-09-16), migration 2 (added `tax_rate`
 to both line-item tables), migration 3 (added `Organisation` — the tenant
 boundary — plus nullable `organisation_id` columns on `accounts`/`quotes`/
@@ -16,10 +16,13 @@ System structure as `BusinessProfile`'s), migration 6 (added
 `document_header`/`document_footer` to `business_profiles`), migration 7
 (every primary key, and every column referencing one, switched from an
 autoincrementing `INTEGER` to an opaque UUID4 `TEXT` string — see "Opaque
-ids" below and `CLAUDE.md`'s migrations gotcha), and migration 8 (added
+ids" below and `CLAUDE.md`'s migrations gotcha), migration 8 (added
 `expenses`/`expense_line_items` — two brand new tables, a plain `CREATE
-TABLE` each, no rebuild needed). Schema changes from here on are new
-entries appended to that list, not edits to any of these eight.
+TABLE` each, no rebuild needed), and migration 9 (added
+`expense_attachments` — metadata for uploaded supplementary PDFs; the bytes
+themselves live on the filesystem, not in this table — one more new table,
+no rebuild needed). Schema changes from here on are new entries appended to
+that list, not edits to any of these nine.
 
 ## Entities
 
@@ -31,6 +34,7 @@ entries appended to that list, not edits to any of these eight.
 | `Invoice` | id, organisation_id, account_id, quote_id, number, status, currency, issue_date, due_date, created_at | `status`: `draft \| sent \| paid \| overdue \| void`. `quote_id` is set when created via conversion, `NULL` otherwise. `number` (`INV-0001`, ...) and `due_date` are assigned on `send`, and — same as `Quote.number` — unique per-`organisation_id`, not globally. `paid` is assigned by `InvoiceService.pay()`, only from `sent` — `overdue` is a defined enum value nothing ever actually sets (see "Not yet modelled"). |
 | `LineItem` | id, description, quantity, unit_price, tax_rate, position | One shape, shared by quotes, invoices, and expenses; associated via `quote_line_items`/`invoice_line_items`/`expense_line_items` join tables (`quote_id`/`invoice_id`/`expense_id` + the same columns). `tax_rate` is a fraction (`0.20` = 20% UK VAT; `0` = none), independently set per line. `net_total`/`tax_amount`/`total` (`net_total + tax_amount`, gross) are derived properties, never stored — `tax_amount` is rounded to the minor currency unit, `net_total` is not (see `CLAUDE.md`). |
 | `Expense` | id, organisation_id, account_id, number, currency, issue_date, created_at | A cost incurred against an `Account` (e.g. a domain renewal paid on the client's behalf) — see `CLAUDE.md`. Unlike `Quote`/`Invoice`, no `status` column: there's no draft/sent lifecycle, so `number` (`EXP-0001`, ..., same per-`organisation_id` composite-unique-index pattern as `Quote.number`/`Invoice.number` — see migration 8) is `NOT NULL` and assigned by `ExpenseService.create_expense` immediately, not deferred to a later `send()`. |
+| `ExpenseAttachment` | id, expense_id, filename, content_type, size, created_at | A supplementary PDF (e.g. a scanned receipt) uploaded against an `Expense` — see `CLAUDE.md`. **Metadata only**: the bytes live on the filesystem (`attachments.py`'s `AttachmentStore`, keyed by `id`), not in this row — `filename`/`content_type`/`size` exist purely for display/validation. Addable at any time, same no-lifecycle reasoning as `Expense.line_items`. No `organisation_id` column, same as `quote_line_items`/`expense_line_items` — tenant ownership is always resolved via the parent `expense_id` first (`ExpenseService.get_attachment_bytes`/`delete_attachment` both call `_get_expense` before touching an attachment). |
 | `BusinessProfile` | id, user_id, title, first_name, last_name, business_name, address_line1, address_line2, town_or_city, county, postcode, payment_terms_days, currency, utr, vat_number, bank_account_name, bank_sort_code, bank_account_number, document_header, document_footer, created_at, updated_at | The logged-in user's *own* details, in four groups (see `CLAUDE.md`): user settings (`title` optional, `first_name`/`last_name` required), business settings (`business_name` required; `address_line1`/`address_line2`/`town_or_city`/`county`/`postcode` — a UK GOV.UK Design System-style address, each line independently optional), payment and tax settings (`payment_terms_days`, `currency` — the home dashboard's *reporting* currency, defaults `"GBP"`, independent of any quote/invoice's own `currency` — `utr`/`vat_number`/`bank_account_name`/`bank_sort_code`/`bank_account_number` all optional and purely informational, not currently rendered on a PDF), document settings (`document_header`/`document_footer`, free text, each independently optional — inserted into every quote/invoice/expense PDF this user generates, see `pdf.py`'s `document_header_lines()`/`document_footer_lines()` and the invariants below). Not `Account` (the client being billed). One per `user_id` (`UNIQUE`), which is sessionkit's `User.id` — a plain column, not an enforced FK (see `CLAUDE.md`, "Login accounts" below). Deliberately still per-*user*, not per-`Organisation` — see "Multi-tenancy" below. Every optional field: blank input is normalised to `NULL`, never stored as `""`. |
 | counters (internal) | name, value | Backs `next_quote_number`/`next_invoice_number`/`next_expense_number`; not a domain entity, not exposed via API/CLI. `name` is `"<organisation_id>:quote"`/`"<organisation_id>:invoice"`/`"<organisation_id>:expense"`, not a bare `"quote"`/`"invoice"`/`"expense"` — each organisation gets its own independent sequence starting from one. |
 
@@ -104,6 +108,7 @@ Quote   1──* LineItem   (via quote_line_items)
 Quote   0/1──0/1 Invoice  (conversion; quote.status becomes "converted")
 Invoice 1──* LineItem   (via invoice_line_items)
 Expense 1──* LineItem   (via expense_line_items)
+Expense 1──* ExpenseAttachment
 ```
 
 ## Invariants enforced in `core`, not in storage
@@ -145,6 +150,16 @@ Expense 1──* LineItem   (via expense_line_items)
   `quotes.number`/`invoices.number`). `add_line_item` isn't gated behind any
   status check — a line item can be added at any time, not just while
   "draft" (there is no draft).
+- `ExpenseService.add_attachment` requires `content_type ==
+  "application/pdf"` or a `.pdf` filename extension (either is enough — a
+  browser's own `Content-Type` guess for an unfamiliar extension isn't
+  always trustworthy), a non-empty file, and a size at or under
+  `MAX_ATTACHMENT_SIZE` (10MB) — otherwise `ValidationFailed`. The file is
+  written to disk (`AttachmentStore.save`) *before* the metadata row is
+  inserted; `delete_attachment` removes the DB row *before* the file — in
+  both cases, whichever order leaves at worst an orphaned file (harmless,
+  just wasted disk space) rather than a DB row pointing at bytes that were
+  never written or no longer exist.
 - `InvoiceService.pay()` only transitions `sent → paid` — rejects `draft`
   (never sent, nothing to have been paid for), `void` (cancelled), and an
   already-`paid` invoice. Stricter than `void()`, which also allows `draft`.
@@ -219,8 +234,10 @@ Every `Account`/`Quote`/`Invoice`/`Expense` create/get/list call takes an
 
 `invoice-system-cli init-db` seeds a demo login user, a `BusinessProfile`,
 several `Account`s, a 12-month spread of `Quote`/`Invoice` statuses, and a
-handful of `Expense`s across a few accounts
-(`src/invoice_system/demo_data.py`) unless `--no-demo` is passed. It's
+handful of `Expense`s across a few accounts (one with a synthetic PDF
+`ExpenseAttachment` generated on the fly via reportlab, standing in for a
+real upload) (`src/invoice_system/demo_data.py`) unless `--no-demo` is
+passed. It's
 idempotent (a no-op once the demo user exists) and goes through the real
 service layer with a backdated clock, not hand-crafted storage rows — see
 `CLAUDE.md` for why, and the "keep this in sync" convention for updating it

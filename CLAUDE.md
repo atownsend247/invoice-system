@@ -43,7 +43,9 @@ login) by default — see Commands and `demo_data.py`.
   (`core.py` all domain logic — `AccountService`, `QuoteService`,
   `InvoiceService`, `ExpenseService`, `BusinessProfileService`,
   `StatsService`; `models.py`,
-  `errors.py`, `clock.py`, `repository.py` the storage Protocol,
+  `errors.py`, `clock.py`, `ids.py`, `attachments.py` (filesystem storage
+  for uploaded expense-attachment PDFs, see the ExpenseService Conventions
+  bullet below), `repository.py` the storage Protocol,
   `factory.py` wiring, `pdf.py` PDF rendering used by both entry points,
   `auth.py` wiring for the login/session cross-cutting concern,
   `demo_data.py` the seed data `init-db` loads by default — see below).
@@ -135,20 +137,27 @@ Four separate things are easy to conflate here — don't:
   is safe either way — demo seeding is a no-op once the demo user exists.
 - Serve: `uv run uvicorn invoice_system.api.app:app --reload` (API on
   `:8000`; `INVOICE_SYSTEM_DB` / `INVOICE_SYSTEM_AUTH_DB` override the
-  default db paths).
+  default db paths, `INVOICE_SYSTEM_ATTACHMENTS_DIR` the uploaded
+  expense-attachment directory, default `attachments/`).
 - CLI: `uv run invoice-system-cli --help` (or the installed
   `invoice-system-cli` entry point) — mirrors the API one-for-one over the
   same storage. **Not** behind login — it's a local, trusted tool; only the
   HTTP API is gated (see architecture rules). Where the API resolves "which
   user"/"which organisation" from the Bearer token, the CLI takes an
-  explicit `--user-id` instead — **required** on every account/quote/invoice
+  explicit `--user-id` instead — **required** on every
+  account/quote/invoice/expense
   command (`account create/list/update`, `quote
   create/add-item/send/convert/pdf`, `invoice
-  list/send/void/pay/monthly-totals/pdf`, `stats`), since there's no session
+  list/send/void/pay/monthly-totals/pdf`, `expense
+  create/list/add-item/pdf`, `expense attachment
+  add/list/download/delete`, `stats`), since there's no session
   to resolve an organisation from otherwise (see "Four separate things"
-  above). `settings show/set`, `invoice send`, `quote pdf`/`invoice pdf`
+  above). `settings show/set`, `invoice send`, `quote pdf`/`invoice pdf`/
+  `expense pdf`
   additionally use that same `--user-id` for their pre-existing purpose
-  (payment-terms-driven due dates, the PDF "from" party).
+  (payment-terms-driven due dates, the PDF "from" party). `--attachments-dir`
+  (top-level, alongside `--db`) points at the uploaded expense-attachment
+  storage directory (default `attachments/`).
 - Web: `cd web && npm install && npm run dev` (Vite on `:5173`, or whatever
   port it lands on if that one's taken — it logs the actual one; note it
   binds `localhost`, which may resolve to the IPv6 loopback only, so prefer
@@ -406,6 +415,39 @@ Four separate things are easy to conflate here — don't:
   `QuoteNewPage.tsx`); `ExpenseDetailPage.tsx` (`/expenses/:id`) reuses
   `LineItemsTable`/`PdfViewerModal` unchanged but has no status badge or
   send/convert actions, since there's no lifecycle to show one for.
+- **Expense attachments** (`ExpenseAttachment` in models.py) are
+  supplementary PDFs (e.g. a scanned receipt) uploaded against an expense
+  — addable at any time, same no-lifecycle reasoning as expense line
+  items. The bytes live on the **filesystem**, not in SQLite — a
+  deliberate choice (see `attachments.py`'s docstring): `AttachmentStore`
+  is a small filesystem-only class, injected into `ExpenseService` the
+  same way `clock`/`new_id` are (but required, not optional — there's no
+  sensible ambient default location to fall back to). Only metadata
+  (`filename`/`content_type`/`size`) lives in the `expense_attachments`
+  table (migration 9); the file itself is named after the attachment's
+  own UUID id, never the caller-supplied filename, so there's nothing to
+  sanitise for path-traversal safety. `MAX_ATTACHMENT_SIZE` (`core.py`,
+  10MB) and a PDF-only check (`content_type == "application/pdf"` or a
+  `.pdf` filename extension — a browser's own `Content-Type` guess isn't
+  always trustworthy) are enforced in `ExpenseService.add_attachment`,
+  not at the API/CLI layer. `INVOICE_SYSTEM_ATTACHMENTS_DIR` (API env var,
+  default `attachments/`) / `--attachments-dir` (CLI flag, same default)
+  point at the storage directory — see `docs/deployment.md` for why it
+  needs its own backup story and why the nginx example config's
+  `client_max_body_size` has to match `MAX_ATTACHMENT_SIZE`. Routes: `POST
+  /expenses/{id}/attachments` (multipart upload — needs `python-multipart`
+  installed, FastAPI's own requirement for `UploadFile`), `GET
+  /expenses/{id}/attachments/{attachment_id}` (download/view bytes, same
+  route either way — see the PDF-preview convention below), `DELETE
+  /expenses/{id}/attachments/{attachment_id}`. Attachments are inlined on
+  `ExpenseOut`/`Expense` (`expense.attachments`), same as `line_items` —
+  no separate list endpoint. CLI: `expense attachment add/list/download/
+  delete`, same required `--user-id` pattern as everything else. Web UI:
+  an "Attachments" section on `ExpenseDetailPage.tsx` below the line
+  items, reusing the same `pdfUrl`/`PdfViewerModal` state as the
+  generated-PDF "View"/"Download" buttons above it (only one preview open
+  at a time), plus an upload form (`<input type="file" accept="application/
+  pdf">`).
 - `StatsService.get_stats(organisation_id, currency)` is the all-time
   counters, scoped to one organisation, behind the home dashboard's
   "All-time stats" section (`GET /stats`, CLI `stats`) —
@@ -496,7 +538,10 @@ Four separate things are easy to conflate here — don't:
   `CREATE TABLE` × 2 (`expenses.number` is `NOT NULL`, unlike
   `quotes.number`/`invoices.number`, since an `Expense` has no draft state
   to leave it null through - see `ExpenseService`), no rebuild needed,
-  same reasoning as every other pure-addition migration in this file.)
+  same reasoning as every other pure-addition migration in this file.
+  Migration 9 added `expense_attachments` - metadata only (the uploaded
+  bytes themselves live on disk, not in this table - see `attachments.py`),
+  one more new table, no rebuild needed either.)
 - Storage is a single shared SQLite connection/file — **serialise every
   access on a lock** inside the repository implementation rather than
   assuming the caller will. That lock is per-*call*, not across a sequence

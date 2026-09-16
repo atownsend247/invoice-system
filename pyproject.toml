@@ -10,6 +10,7 @@ dependencies = [
     "reportlab>=4.2",
     "click>=8.1",
     "sessionkit @ git+https://github.com/atownsend247/bb-py-sessionkit.git@v0.2.0",
+    "python-multipart>=0.0.9",
 ]
 
 [project.scripts]
@@ -58,4 +59,11 @@ known-first-party = ["invoice_system"]
 # evaluated once at def time, which this specifically isn't (FastAPI
 # resolves it per-request). Allowlist the FastAPI markers instead of
 # disabling B008 wholesale and losing it for genuine mutable-default bugs.
-extend-immutable-calls = ["fastapi.Depends", "fastapi.Header", "fastapi.Query", "fastapi.Path", "fastapi.Body"]
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Header",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.File",
+]

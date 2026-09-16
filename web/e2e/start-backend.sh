@@ -31,4 +31,5 @@ AuthService(SqliteAuthStore.open('$DATA_DIR/auth.db')).create_user('$E2E_EMAIL',
 exec env \
   INVOICE_SYSTEM_DB="$DATA_DIR/app.db" \
   INVOICE_SYSTEM_AUTH_DB="$DATA_DIR/auth.db" \
+  INVOICE_SYSTEM_ATTACHMENTS_DIR="$DATA_DIR/attachments" \
   uv run uvicorn invoice_system.api.app:app --host 127.0.0.1 --port "$E2E_BACKEND_PORT"

@@ -99,3 +99,89 @@ test('the account detail page lists its expenses', async ({
   await page.goto(`/accounts/${testAccount.id}`)
   await expect(page.getByRole('row', { name: new RegExp(expense.number) })).toBeVisible()
 })
+
+test('uploading a supplementary PDF shows it in the attachments list', async ({
+  authenticatedPage: page,
+  expense,
+}) => {
+  await page.goto(`/expenses/${expense.id}`)
+  await expect(page.getByText('No supplementary PDFs uploaded yet.')).toBeVisible()
+
+  await page
+    .getByLabel('Upload a PDF')
+    .setInputFiles({ name: 'receipt.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 fake') })
+  await page.getByRole('button', { name: 'Upload', exact: true }).click()
+
+  const row = page.locator('tbody tr', { hasText: 'receipt.pdf' })
+  await expect(row).toBeVisible()
+  await expect(page.getByText('No supplementary PDFs uploaded yet.')).toHaveCount(0)
+})
+
+test('an upload that is not a PDF is rejected with an error', async ({
+  authenticatedPage: page,
+  expense,
+}) => {
+  await page.goto(`/expenses/${expense.id}`)
+  await page
+    .getByLabel('Upload a PDF')
+    .setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('not a pdf') })
+  await page.getByRole('button', { name: 'Upload', exact: true }).click()
+
+  await expect(page.getByRole('alert')).toBeVisible()
+  await expect(page.getByText('No supplementary PDFs uploaded yet.')).toBeVisible()
+})
+
+test('viewing an uploaded attachment opens an in-page preview', async ({
+  authenticatedPage: page,
+  expense,
+}) => {
+  await page.goto(`/expenses/${expense.id}`)
+  await page
+    .getByLabel('Upload a PDF')
+    .setInputFiles({ name: 'receipt.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 fake') })
+  await page.getByRole('button', { name: 'Upload', exact: true }).click()
+  await expect(page.locator('tbody tr', { hasText: 'receipt.pdf' })).toBeVisible()
+
+  await page.locator('tbody tr', { hasText: 'receipt.pdf' }).getByRole('button', { name: 'View' }).click()
+
+  const frame = page.locator('.pdf-modal-frame')
+  await expect(frame).toBeVisible()
+  await expect(frame).toHaveAttribute('src', /^blob:/)
+
+  await page.getByRole('button', { name: 'Close' }).click()
+  await expect(frame).toHaveCount(0)
+})
+
+test('downloading an uploaded attachment works', async ({ authenticatedPage: page, expense }) => {
+  await page.goto(`/expenses/${expense.id}`)
+  await page
+    .getByLabel('Upload a PDF')
+    .setInputFiles({ name: 'receipt.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 fake') })
+  await page.getByRole('button', { name: 'Upload', exact: true }).click()
+  const row = page.locator('tbody tr', { hasText: 'receipt.pdf' })
+  await expect(row).toBeVisible()
+
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    row.getByRole('button', { name: 'Download' }).click(),
+  ])
+  expect(download.suggestedFilename()).toBe('receipt.pdf')
+})
+
+test('deleting an uploaded attachment removes it from the list', async ({
+  authenticatedPage: page,
+  expense,
+}) => {
+  await page.goto(`/expenses/${expense.id}`)
+  await page
+    .getByLabel('Upload a PDF')
+    .setInputFiles({ name: 'receipt.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 fake') })
+  await page.getByRole('button', { name: 'Upload', exact: true }).click()
+  const row = page.locator('tbody tr', { hasText: 'receipt.pdf' })
+  await expect(row).toBeVisible()
+
+  await row.getByRole('button', { name: 'Delete' }).click()
+
+  await expect(row).toHaveCount(0)
+  await expect(page.getByText('No supplementary PDFs uploaded yet.')).toBeVisible()
+})

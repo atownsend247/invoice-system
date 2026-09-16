@@ -2,6 +2,7 @@ from decimal import Decimal
 
 import pytest
 
+from invoice_system.core import MAX_ATTACHMENT_SIZE
 from invoice_system.errors import NotFound, ValidationFailed
 
 
@@ -125,3 +126,137 @@ def test_list_expenses_filters_by_account(application, organisation_id, account)
 
     assert len(application.expenses.list_expenses(organisation_id)) == 2
     assert len(application.expenses.list_expenses(organisation_id, account_id=account.id)) == 1
+
+
+def test_add_attachment_round_trips_through_the_returned_expense(application, organisation_id, account):
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    attachment = application.expenses.add_attachment(
+        organisation_id,
+        expense.id,
+        filename="receipt.pdf",
+        content_type="application/pdf",
+        data=b"%PDF-1.4 fake receipt",
+    )
+    assert attachment.filename == "receipt.pdf"
+    assert attachment.size == len(b"%PDF-1.4 fake receipt")
+
+    fetched = application.expenses.get_expense(organisation_id, expense.id)
+    assert [a.id for a in fetched.attachments] == [attachment.id]
+
+
+def test_add_attachment_requires_an_existing_expense(application, organisation_id):
+    with pytest.raises(NotFound):
+        application.expenses.add_attachment(
+            organisation_id,
+            "does-not-exist",
+            filename="receipt.pdf",
+            content_type="application/pdf",
+            data=b"data",
+        )
+
+
+def test_add_attachment_rejects_a_non_pdf(application, organisation_id, account):
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    with pytest.raises(ValidationFailed):
+        application.expenses.add_attachment(
+            organisation_id,
+            expense.id,
+            filename="receipt.png",
+            content_type="image/png",
+            data=b"not a pdf",
+        )
+
+
+def test_add_attachment_accepts_a_pdf_extension_even_with_a_generic_content_type(
+    application, organisation_id, account
+):
+    # A browser upload's Content-Type isn't always trustworthy (some OSes/
+    # browsers send application/octet-stream for an unfamiliar extension) -
+    # the .pdf extension alone is enough, matching ExpenseService.add_attachment.
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    attachment = application.expenses.add_attachment(
+        organisation_id,
+        expense.id,
+        filename="receipt.PDF",
+        content_type="application/octet-stream",
+        data=b"data",
+    )
+    assert attachment.filename == "receipt.PDF"
+
+
+def test_add_attachment_rejects_an_empty_file(application, organisation_id, account):
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    with pytest.raises(ValidationFailed):
+        application.expenses.add_attachment(
+            organisation_id, expense.id, filename="receipt.pdf", content_type="application/pdf", data=b""
+        )
+
+
+def test_add_attachment_rejects_a_blank_filename(application, organisation_id, account):
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    with pytest.raises(ValidationFailed):
+        application.expenses.add_attachment(
+            organisation_id, expense.id, filename="   ", content_type="application/pdf", data=b"data"
+        )
+
+
+def test_add_attachment_rejects_a_file_over_the_size_limit(application, organisation_id, account):
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    with pytest.raises(ValidationFailed):
+        application.expenses.add_attachment(
+            organisation_id,
+            expense.id,
+            filename="receipt.pdf",
+            content_type="application/pdf",
+            data=b"0" * (MAX_ATTACHMENT_SIZE + 1),
+        )
+
+
+def test_get_attachment_bytes_returns_the_uploaded_data(application, organisation_id, account):
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    uploaded = application.expenses.add_attachment(
+        organisation_id, expense.id, filename="receipt.pdf", content_type="application/pdf", data=b"hello"
+    )
+
+    attachment, data = application.expenses.get_attachment_bytes(organisation_id, expense.id, uploaded.id)
+    assert attachment.id == uploaded.id
+    assert data == b"hello"
+
+
+def test_get_attachment_bytes_requires_existing_attachment(application, organisation_id, account):
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    with pytest.raises(NotFound):
+        application.expenses.get_attachment_bytes(organisation_id, expense.id, "does-not-exist")
+
+
+def test_get_attachment_bytes_from_another_organisation_raises_not_found(
+    application, organisation_id, account
+):
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    attachment = application.expenses.add_attachment(
+        organisation_id, expense.id, filename="receipt.pdf", content_type="application/pdf", data=b"data"
+    )
+
+    other_organisation_id = application.organisations.get_or_create_for_user("user-2")
+    with pytest.raises(NotFound):
+        application.expenses.get_attachment_bytes(other_organisation_id, expense.id, attachment.id)
+
+
+def test_delete_attachment_removes_it_from_the_expense_and_from_disk(application, organisation_id, account):
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    attachment = application.expenses.add_attachment(
+        organisation_id, expense.id, filename="receipt.pdf", content_type="application/pdf", data=b"data"
+    )
+
+    application.expenses.delete_attachment(organisation_id, expense.id, attachment.id)
+
+    fetched = application.expenses.get_expense(organisation_id, expense.id)
+    assert fetched.attachments == []
+    with pytest.raises(NotFound):
+        application.expenses.get_attachment_bytes(organisation_id, expense.id, attachment.id)
+
+
+def test_delete_missing_attachment_raises_not_found(application, organisation_id, account):
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    with pytest.raises(NotFound):
+        application.expenses.delete_attachment(organisation_id, expense.id, "does-not-exist")

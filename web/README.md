@@ -6,7 +6,8 @@ totals chart, all-time stats), accounts (create/edit, searchable list,
 detail page with that account's quotes/invoices/expenses), quotes (draft →
 sent → convert to invoice, each line item with its own VAT rate), invoices
 (send/void/mark as paid), expenses (recorded against an account, no
-draft/sent lifecycle - just an EXP-numbered record with line items), a PDF
+draft/sent lifecycle - just an EXP-numbered record with line items and
+supplementary PDF attachments you can upload/view/download/delete), a PDF
 preview and download for all three, and a settings page for your own
 business profile (including bank details and a document header/footer
 shown on every PDF you generate), behind login.
@@ -37,7 +38,7 @@ the full walkthrough and the security caveat.
 ## Test / build
 
 ```
-npm test          # vitest - unit tests: api.ts, HomePage's overdue/outstanding logic, MonthlyTotalsChart, a login/routing integration test
+npm test          # vitest - unit tests: api.ts, HomePage's overdue/outstanding/conversionRate logic, MonthlyTotalsChart, ExpenseDetailPage's formatFileSize, a login/routing integration test
 npm run test:e2e  # playwright - login/home/accounts/quotes/invoices/expenses/settings, one spec each
 npm run build     # tsc -b && vite build
 ```
@@ -100,7 +101,16 @@ failure; a failed run's trace/screenshot land in `test-results/` (gitignored).
   (`/expenses/:id`) is the simpler sibling of `QuoteDetailPage.tsx` - it
   reuses `LineItemsTable`/`PdfViewerModal` unchanged, but has no status
   badge or send/convert actions, since an `Expense` has no lifecycle to
-  move through (see CLAUDE.md).
+  move through (see CLAUDE.md). It also has its own "Attachments" section
+  below the line items - a table of uploaded supplementary PDFs (name,
+  `formatFileSize()`-formatted size, upload date) each with View/Download/
+  Delete, reusing the same `pdfUrl`/`PdfViewerModal` state as the "View
+  PDF"/"Download PDF" buttons above it (only one preview open at a time),
+  plus an `<input type="file" accept="application/pdf">` upload form.
+  `api.ts`'s `uploadFile()` is a second HTTP-calling helper alongside
+  `request()`/`requestBlob()` - multipart, not JSON, so it can't reuse
+  `request()`'s automatic `Content-Type: application/json` header (that
+  would break the multipart boundary the browser needs to set itself).
 - `src/components/MonthlyTotalsChart.tsx` — the home dashboard's paid-vs-
   outstanding bar chart. Plain CSS bars (`<div>`s with a `height: N%`
   inline style), not a charting library — 12 months, two series, doesn't
@@ -122,7 +132,7 @@ failure; a failed run's trace/screenshot land in `test-results/` (gitignored).
   `quotes.spec.ts` isn't the thing that has to create an account first,
   `invoices.spec.ts` isn't the thing that has to drive a quote through
   send-and-convert first, and no spec depends on another one having run —
-  safe to run in parallel (40 tests, 7 workers, under 7s) or in any order.
+  safe to run in parallel (45 tests, 7 workers, under 8s) or in any order.
   `home.spec.ts` only checks that a freshly-sent invoice shows up under
   "Outstanding" (not Overdue) — nothing in the app can backdate a
   `due_date` (always computed server-side as today plus a positive

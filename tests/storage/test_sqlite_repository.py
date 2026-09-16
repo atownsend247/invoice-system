@@ -9,6 +9,7 @@ from invoice_system.models import (
     Account,
     BusinessProfile,
     Expense,
+    ExpenseAttachment,
     LineItem,
     Organisation,
     Quote,
@@ -214,6 +215,56 @@ def test_migration_8_adds_expenses_without_touching_existing_data(tmp_path):
         )
     )
     assert expense.number == "EXP-0001"
+    repository.close()
+
+
+def test_migration_9_adds_expense_attachments_without_touching_existing_data(tmp_path):
+    # Migration 9 (expense_attachments) is purely additive too - one new
+    # table, no rebuild of any existing one - so an expense created under
+    # migration 8's schema should still work unchanged afterwards.
+    db_path = tmp_path / "frozen.db"
+    conn = sqlite3.connect(str(db_path))
+    for version, script in enumerate(MIGRATIONS[:8], start=1):
+        conn.executescript(script)
+        conn.execute(f"PRAGMA user_version = {version}")
+    conn.commit()
+
+    org_id = new_id()
+    account_id = new_id()
+    expense_id = new_id()
+    now = datetime(2026, 1, 1, tzinfo=UTC).isoformat()
+    conn.execute("INSERT INTO organisations (id, name, created_at) VALUES (?, 'Org A', ?)", (org_id, now))
+    conn.execute(
+        "INSERT INTO accounts (id, organisation_id, business_name, email, address_line1, created_at) "
+        "VALUES (?, ?, 'Acme', 'a@b.test', '1 Main St', ?)",
+        (account_id, org_id, now),
+    )
+    conn.execute(
+        "INSERT INTO expenses (id, organisation_id, account_id, number, currency, issue_date, created_at) "
+        "VALUES (?, ?, ?, 'EXP-0001', 'GBP', '2026-01-01', ?)",
+        (expense_id, org_id, account_id, now),
+    )
+    conn.commit()
+    conn.close()
+
+    repository = SqliteRepository(db_path)
+    repository.migrate()  # applies migration 9
+
+    fetched = repository.get_expense(org_id, expense_id)
+    assert fetched.number == "EXP-0001"  # untouched by the new table
+    assert fetched.attachments == []
+
+    attachment = repository.create_expense_attachment(
+        ExpenseAttachment(
+            id=new_id(),
+            expense_id=expense_id,
+            filename="receipt.pdf",
+            content_type="application/pdf",
+            size=4,
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+    assert attachment.filename == "receipt.pdf"
     repository.close()
 
 
@@ -564,3 +615,83 @@ def test_next_expense_number_increments_and_is_scoped_per_organisation(repo, org
     assert repo.next_expense_number(organisation_id) == "EXP-0001"
     assert repo.next_expense_number(organisation_id) == "EXP-0002"
     assert repo.next_expense_number(other.id) == "EXP-0001"
+
+
+def _expense_for(repo: SqliteRepository, organisation_id: str) -> Expense:
+    account = repo.create_account(_account(organisation_id))
+    return repo.create_expense(
+        Expense(
+            id=new_id(),
+            organisation_id=organisation_id,
+            account_id=account.id,
+            number=repo.next_expense_number(organisation_id),
+            currency="GBP",
+            issue_date=date(2026, 1, 1),
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+
+
+def _attachment(expense_id: str, **overrides: object) -> ExpenseAttachment:
+    defaults: dict = {
+        "id": new_id(),
+        "expense_id": expense_id,
+        "filename": "receipt.pdf",
+        "content_type": "application/pdf",
+        "size": 4,
+        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+    }
+    defaults.update(overrides)
+    return ExpenseAttachment(**defaults)
+
+
+def test_expense_attachment_round_trip(repo, organisation_id):
+    expense = _expense_for(repo, organisation_id)
+    created = repo.create_expense_attachment(_attachment(expense.id, filename="receipt.pdf", size=1234))
+    assert created.id is not None
+
+    fetched = repo.get_expense_attachment(expense.id, created.id)
+    assert fetched.filename == "receipt.pdf"
+    assert fetched.content_type == "application/pdf"
+    assert fetched.size == 1234
+    assert fetched.created_at.tzinfo is not None
+
+
+def test_get_missing_expense_attachment_returns_none(repo, organisation_id):
+    expense = _expense_for(repo, organisation_id)
+    assert repo.get_expense_attachment(expense.id, "does-not-exist") is None
+
+
+def test_get_expense_attachment_from_another_expense_returns_none(repo, organisation_id):
+    expense = _expense_for(repo, organisation_id)
+    other_expense = _expense_for(repo, organisation_id)
+    created = repo.create_expense_attachment(_attachment(expense.id))
+
+    assert repo.get_expense_attachment(other_expense.id, created.id) is None
+
+
+def test_list_expense_attachments_is_ordered_by_creation(repo, organisation_id):
+    expense = _expense_for(repo, organisation_id)
+    first = repo.create_expense_attachment(_attachment(expense.id, filename="a.pdf"))
+    second = repo.create_expense_attachment(_attachment(expense.id, filename="b.pdf"))
+
+    fetched = repo.list_expense_attachments(expense.id)
+    assert [a.id for a in fetched] == [first.id, second.id]
+
+
+def test_get_expense_includes_its_attachments(repo, organisation_id):
+    expense = _expense_for(repo, organisation_id)
+    repo.create_expense_attachment(_attachment(expense.id, filename="receipt.pdf"))
+
+    fetched = repo.get_expense(organisation_id, expense.id)
+    assert [a.filename for a in fetched.attachments] == ["receipt.pdf"]
+
+
+def test_delete_expense_attachment_removes_it(repo, organisation_id):
+    expense = _expense_for(repo, organisation_id)
+    created = repo.create_expense_attachment(_attachment(expense.id))
+
+    repo.delete_expense_attachment(expense.id, created.id)
+
+    assert repo.get_expense_attachment(expense.id, created.id) is None
+    assert repo.list_expense_attachments(expense.id) == []

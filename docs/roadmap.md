@@ -405,5 +405,52 @@ flow," not a restructuring, whenever it's actually needed.
       tests), and e2e (40 tests, new `expenses.spec.ts`) suites updated
       and passing.
 
+## Phase 19 — Expense attachments (done)
+
+- [x] `ExpenseAttachment` (id, expense_id, filename, content_type, size,
+      created_at) - supplementary PDFs (e.g. a scanned receipt) uploaded
+      against an expense, addable at any time (no lifecycle to gate on,
+      same as expense line items). **Metadata only** in SQLite (migration
+      9, `expense_attachments`) - the uploaded bytes live on the
+      filesystem instead, via a new small `attachments.py` module
+      (`AttachmentStore`, injected into `ExpenseService` the same way
+      `clock`/`new_id` are, but required rather than optional). Filed
+      under the attachment's own UUID id, never the caller's filename, so
+      there's nothing to sanitise for path-traversal safety.
+      `ExpenseService.add_attachment` enforces a PDF-only check
+      (`content_type == "application/pdf"` or a `.pdf` extension - a
+      browser's own guessed Content-Type isn't always trustworthy) and a
+      10MB cap (`MAX_ATTACHMENT_SIZE`).
+- [x] `POST /expenses/{id}/attachments` (`multipart/form-data`, needs the
+      new `python-multipart` dependency FastAPI's `UploadFile` requires),
+      `GET /expenses/{id}/attachments/{attachment_id}` (view/download,
+      one route for both, same pattern as the generated PDF routes), and
+      `DELETE /expenses/{id}/attachments/{attachment_id}`. Attachments
+      are inlined on `ExpenseOut`/`Expense.attachments`, same as
+      `line_items` - no separate list endpoint. CLI: `expense attachment
+      add/list/download/delete`, same required `--user-id` pattern as
+      everything else; a new `--attachments-dir`/`INVOICE_SYSTEM_
+      ATTACHMENTS_DIR` (default `attachments/`) points the CLI/API at the
+      storage directory.
+- [x] `web/`: an "Attachments" section on `ExpenseDetailPage.tsx` below
+      the line items - a table of uploaded files (name, size, upload
+      date) each with View/Download/Delete, reusing the same
+      `PdfViewerModal`/object-URL state as the generated-PDF "View"/
+      "Download" buttons above it, plus an upload form
+      (`<input type="file" accept="application/pdf">`). `api.ts` gained a
+      dedicated `uploadFile()` helper (multipart, not the shared
+      JSON-only `request()`).
+- [x] `deploy/`: `nginx-invoice-system.conf`'s `client_max_body_size` set
+      to match `MAX_ATTACHMENT_SIZE`; `invoice-system-api.service` gained
+      `INVOICE_SYSTEM_ATTACHMENTS_DIR`, a sibling of the two `.db` files
+      (not inside `src/`) so `deploy.sh`'s rsync never deletes it on
+      redeploy - see `docs/deployment.md`'s new "Where uploaded expense
+      attachments live" section for the backup implication.
+- [x] `demo_data.py` seeds one synthetic PDF attachment (via reportlab,
+      generated on the fly) against the first demo expense.
+- [x] Full backend (225 tests, 98.05% coverage), frontend (36 unit
+      tests), and e2e (45 tests, new attachment specs in
+      `expenses.spec.ts`) suites updated and passing.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

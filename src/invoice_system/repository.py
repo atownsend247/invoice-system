@@ -1,6 +1,15 @@
 from typing import Protocol
 
-from .models import Account, BusinessProfile, Expense, Invoice, LineItem, Organisation, Quote
+from .models import (
+    Account,
+    BusinessProfile,
+    Expense,
+    ExpenseAttachment,
+    Invoice,
+    LineItem,
+    Organisation,
+    Quote,
+)
 
 
 class Repository(Protocol):
@@ -37,3 +46,8 @@ class Repository(Protocol):
     def list_expenses(self, organisation_id: str, account_id: str | None = None) -> list[Expense]: ...
     def add_expense_line_item(self, expense_id: str, item: LineItem) -> LineItem: ...
     def next_expense_number(self, organisation_id: str) -> str: ...
+
+    def create_expense_attachment(self, attachment: ExpenseAttachment) -> ExpenseAttachment: ...
+    def list_expense_attachments(self, expense_id: str) -> list[ExpenseAttachment]: ...
+    def get_expense_attachment(self, expense_id: str, attachment_id: str) -> ExpenseAttachment | None: ...
+    def delete_expense_attachment(self, expense_id: str, attachment_id: str) -> None: ...

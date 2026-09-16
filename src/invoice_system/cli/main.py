@@ -1,3 +1,4 @@
+import mimetypes
 import os
 import sys
 from decimal import Decimal
@@ -5,6 +6,7 @@ from pathlib import Path
 
 import click
 
+from ..attachments import DEFAULT_ATTACHMENTS_DIR
 from ..auth import DEFAULT_AUTH_DB_PATH, build_auth
 from ..demo_data import DEMO_EMAIL, DEMO_PASSWORD, seed_demo_data
 from ..errors import AppError
@@ -28,9 +30,15 @@ def _organisation_id(application: Application, user_id: str) -> str:
 @click.option(
     "--db", "db_path", default=DEFAULT_DB_PATH, show_default=True, help="Path to the SQLite database file."
 )
+@click.option(
+    "--attachments-dir",
+    default=DEFAULT_ATTACHMENTS_DIR,
+    show_default=True,
+    help="Directory uploaded expense-attachment PDFs are stored in (see 'expense attachment add').",
+)
 @click.pass_context
-def cli(ctx: click.Context, db_path: str) -> None:
-    application = build_application(db_path)
+def cli(ctx: click.Context, db_path: str, attachments_dir: str) -> None:
+    application = build_application(db_path, attachments_dir=attachments_dir)
     ctx.call_on_close(application.close)
     ctx.obj = application
 
@@ -406,6 +414,80 @@ def expense_pdf(application: Application, expense_id: str, output: str, user_id:
     profile = application.business_profiles.get_profile(user_id)
     Path(output).write_bytes(render_expense_pdf(account, fetched, profile))
     click.echo(f"Wrote {output}")
+
+
+@expense.group("attachment")
+def expense_attachment() -> None:
+    pass
+
+
+@expense_attachment.command("add")
+@click.argument("expense_id")
+@click.option(
+    "--file",
+    "file_path",
+    type=click.Path(exists=True, dir_okay=False),
+    required=True,
+    help="Path to a local PDF file to upload (e.g. a scanned receipt).",
+)
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.pass_obj
+def expense_attachment_add(application: Application, expense_id: str, file_path: str, user_id: str) -> None:
+    organisation_id = _organisation_id(application, user_id)
+    path = Path(file_path)
+    # Guessed from the extension, not hardcoded to "application/pdf" - a
+    # real Content-Type here (not just trusting the --file argument's
+    # implied intent) is what lets ExpenseService.add_attachment's PDF
+    # check mean anything for the CLI too, same validation a browser
+    # upload through the API goes through.
+    content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    attachment = application.expenses.add_attachment(
+        organisation_id,
+        expense_id,
+        filename=path.name,
+        content_type=content_type,
+        data=path.read_bytes(),
+    )
+    click.echo(f"Uploaded attachment {attachment.id}: {attachment.filename} ({attachment.size} bytes)")
+
+
+@expense_attachment.command("list")
+@click.argument("expense_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.pass_obj
+def expense_attachment_list(application: Application, expense_id: str, user_id: str) -> None:
+    organisation_id = _organisation_id(application, user_id)
+    expense = application.expenses.get_expense(organisation_id, expense_id)
+    for attachment in expense.attachments:
+        click.echo(f"{attachment.id}\t{attachment.filename}\t{attachment.size} bytes")
+
+
+@expense_attachment.command("download")
+@click.argument("expense_id")
+@click.argument("attachment_id")
+@click.option("--output", "-o", type=click.Path(), required=True)
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.pass_obj
+def expense_attachment_download(
+    application: Application, expense_id: str, attachment_id: str, output: str, user_id: str
+) -> None:
+    organisation_id = _organisation_id(application, user_id)
+    _attachment, data = application.expenses.get_attachment_bytes(organisation_id, expense_id, attachment_id)
+    Path(output).write_bytes(data)
+    click.echo(f"Wrote {output}")
+
+
+@expense_attachment.command("delete")
+@click.argument("expense_id")
+@click.argument("attachment_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.pass_obj
+def expense_attachment_delete(
+    application: Application, expense_id: str, attachment_id: str, user_id: str
+) -> None:
+    organisation_id = _organisation_id(application, user_id)
+    application.expenses.delete_attachment(organisation_id, expense_id, attachment_id)
+    click.echo(f"Deleted attachment {attachment_id}")
 
 
 @cli.group()

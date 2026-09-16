@@ -1,9 +1,17 @@
-import { useState } from 'react'
+import { type FormEvent, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import * as api from '../api'
 import { LineItemsTable } from '../components/LineItemsTable'
 import { PdfViewerModal } from '../components/PdfViewerModal'
 import { errorMessage, useAsync } from '../hooks/useAsync'
+
+/** A human-readable file size (e.g. "12.3 KB") - exported so the
+ * threshold math is unit-testable without rendering the page. */
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
 
 export function ExpenseDetailPage() {
   const { id: expenseId } = useParams()
@@ -20,6 +28,7 @@ export function ExpenseDetailPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const [pdfTitle, setPdfTitle] = useState('')
 
   function closePdfPreview() {
     if (pdfUrl) URL.revokeObjectURL(pdfUrl)
@@ -80,6 +89,7 @@ export function ExpenseDetailPage() {
           disabled={busy}
           onClick={() =>
             run(async () => {
+              setPdfTitle(expense.number)
               setPdfUrl(await api.getExpensePdfUrl(expense))
             })
           }
@@ -91,7 +101,121 @@ export function ExpenseDetailPage() {
         </button>
       </div>
 
-      <PdfViewerModal url={pdfUrl} title={expense.number} onClose={closePdfPreview} />
+      <div className="dashboard-section">
+        <h2>Attachments</h2>
+        {expense.attachments.length === 0 && <p className="meta">No supplementary PDFs uploaded yet.</p>}
+        {expense.attachments.length > 0 && (
+          <table>
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Size</th>
+                <th>Uploaded</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {expense.attachments.map((attachment) => (
+                <tr key={attachment.id}>
+                  <td>{attachment.filename}</td>
+                  <td>{formatFileSize(attachment.size)}</td>
+                  <td>{attachment.created_at.slice(0, 10)}</td>
+                  <td className="actions">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        run(async () => {
+                          setPdfTitle(attachment.filename)
+                          setPdfUrl(await api.getExpenseAttachmentPdfUrl(expense.id, attachment.id))
+                        })
+                      }
+                    >
+                      View
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        run(() => api.downloadExpenseAttachment(expense.id, attachment))
+                      }
+                    >
+                      Download
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        run(async () => {
+                          await api.deleteExpenseAttachment(expense.id, attachment.id)
+                          refetch()
+                        })
+                      }
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        <AttachmentUploadForm
+          onUpload={async (file) => {
+            await api.uploadExpenseAttachment(expense.id, file)
+            refetch()
+          }}
+        />
+      </div>
+
+      <PdfViewerModal url={pdfUrl} title={pdfTitle} onClose={closePdfPreview} />
     </section>
+  )
+}
+
+function AttachmentUploadForm({ onUpload }: { onUpload: (file: File) => Promise<void> }) {
+  const [file, setFile] = useState<File | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault()
+    if (!file) return
+    setError(null)
+    setSubmitting(true)
+    try {
+      await onUpload(file)
+      setFile(null)
+      // Controlled <input type="file"> can't be reset via its value prop -
+      // clearing the form element itself is the only way to un-select it.
+      ;(event.target as HTMLFormElement).reset()
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <form className="inline-form" onSubmit={handleSubmit}>
+      <label>
+        Upload a PDF
+        <input
+          type="file"
+          accept="application/pdf"
+          onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+          required
+        />
+      </label>
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+      <button type="submit" disabled={submitting || !file}>
+        {submitting ? 'Uploading…' : 'Upload'}
+      </button>
+    </form>
   )
 }

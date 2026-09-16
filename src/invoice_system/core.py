@@ -2,6 +2,7 @@ from datetime import date as date_
 from datetime import timedelta
 from decimal import Decimal
 
+from .attachments import AttachmentStore
 from .clock import Clock, system_clock
 from .errors import InvalidTransition, NotFound, ValidationFailed
 from .ids import IdGenerator
@@ -10,6 +11,7 @@ from .models import (
     Account,
     BusinessProfile,
     Expense,
+    ExpenseAttachment,
     Invoice,
     InvoiceStatus,
     LineItem,
@@ -26,6 +28,7 @@ DEFAULT_PAYMENT_TERMS_DAYS = 30
 DEFAULT_CURRENCY = "GBP"
 MONTHLY_TOTALS_MONTHS = 12
 DEFAULT_ORGANISATION_NAME = "My Organisation"
+MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024  # 10 MiB - see ExpenseService.add_attachment
 
 
 class OrganisationService:
@@ -545,14 +548,26 @@ class ExpenseService:
     so `create_expense` assigns its EXP-0001 number immediately rather than
     deferring that to a later `send()` the way Quote/Invoice do, and
     `add_line_item` isn't gated behind a status check the way
-    QuoteService.add_line_item requires `draft`."""
+    QuoteService.add_line_item requires `draft`.
+
+    `attachments` is an injected `AttachmentStore` (see attachments.py) -
+    the only ambient dependency here that isn't a plain function like
+    `clock`/`new_id`, since it needs a base directory to write to; there's
+    no sensible parameterless default to fall back to, so unlike those two
+    it's a required constructor argument, not an optional one."""
 
     def __init__(
-        self, repository: Repository, clock: Clock = system_clock, new_id: IdGenerator = default_new_id
+        self,
+        repository: Repository,
+        clock: Clock = system_clock,
+        new_id: IdGenerator = default_new_id,
+        *,
+        attachments: AttachmentStore,
     ) -> None:
         self._repository = repository
         self._clock = clock
         self._new_id = new_id
+        self._attachments = attachments
 
     def create_expense(self, *, organisation_id: str, account_id: str, currency: str = "USD") -> Expense:
         if self._repository.get_account(organisation_id, account_id) is None:
@@ -598,6 +613,68 @@ class ExpenseService:
         )
         self._repository.add_expense_line_item(expense_id, item)
         return self._get_expense(organisation_id, expense_id)
+
+    def add_attachment(
+        self,
+        organisation_id: str,
+        expense_id: str,
+        *,
+        filename: str,
+        content_type: str,
+        data: bytes,
+    ) -> ExpenseAttachment:
+        """Uploads a supplementary PDF (e.g. a scanned receipt) against an
+        expense - addable at any time, same no-lifecycle reasoning as
+        add_line_item above. The file is saved to disk *before* the
+        metadata row is inserted: if the write fails, nothing references
+        it; if it's the insert that fails afterwards, the orphaned file on
+        disk is harmless (nothing else generates that id), whereas the
+        reverse order could leave a DB row pointing at a file that was
+        never actually written."""
+        self._get_expense(organisation_id, expense_id)  # 404s if missing/wrong organisation
+        if not filename.strip():
+            raise ValidationFailed("filename is required")
+        if content_type != "application/pdf" and not filename.lower().endswith(".pdf"):
+            raise ValidationFailed("only PDF attachments are supported")
+        if not data:
+            raise ValidationFailed("attachment is empty")
+        if len(data) > MAX_ATTACHMENT_SIZE:
+            raise ValidationFailed(f"attachment exceeds the {MAX_ATTACHMENT_SIZE // (1024 * 1024)}MB limit")
+
+        attachment = ExpenseAttachment(
+            id=self._new_id(),
+            expense_id=expense_id,
+            filename=filename,
+            content_type=content_type,
+            size=len(data),
+            created_at=self._clock(),
+        )
+        self._attachments.save(attachment.id, data)
+        return self._repository.create_expense_attachment(attachment)
+
+    def get_attachment_bytes(
+        self, organisation_id: str, expense_id: str, attachment_id: str
+    ) -> tuple[ExpenseAttachment, bytes]:
+        self._get_expense(organisation_id, expense_id)  # 404s if missing/wrong organisation
+        attachment = self._get_attachment(expense_id, attachment_id)
+        return attachment, self._attachments.read(attachment.id)
+
+    def delete_attachment(self, organisation_id: str, expense_id: str, attachment_id: str) -> None:
+        self._get_expense(organisation_id, expense_id)  # 404s if missing/wrong organisation
+        attachment = self._get_attachment(expense_id, attachment_id)
+        # DB row first, then the file - the reverse order could leave a
+        # row pointing at a file that no longer exists if the delete were
+        # interrupted between the two steps; an orphaned file with no
+        # referencing row is merely wasted disk space, never a broken
+        # reference (same reasoning as add_attachment's ordering above).
+        self._repository.delete_expense_attachment(expense_id, attachment_id)
+        self._attachments.delete(attachment.id)
+
+    def _get_attachment(self, expense_id: str, attachment_id: str) -> ExpenseAttachment:
+        attachment = self._repository.get_expense_attachment(expense_id, attachment_id)
+        if attachment is None:
+            raise NotFound(f"attachment {attachment_id} not found")
+        return attachment
 
     def _get_expense(self, organisation_id: str, expense_id: str) -> Expense:
         expense = self._repository.get_expense(organisation_id, expense_id)

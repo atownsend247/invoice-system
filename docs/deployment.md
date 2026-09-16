@@ -92,6 +92,20 @@ fresh dev clone and exactly wrong for a real deployment. See CLAUDE.md and
 either way — migrations are forward-only and idempotent regardless of
 `--no-demo`, only the seeding step is skipped.
 
+## Where uploaded expense attachments live
+
+Supplementary PDFs uploaded against an expense (see `docs/api.md`,
+`CLAUDE.md`) are stored on the filesystem, not in SQLite —
+`INVOICE_SYSTEM_ATTACHMENTS_DIR` (`invoice-system-api.service` points it at
+`/opt/invoice-system/attachments`, a sibling of the two `.db` files, not
+inside `src/`). `deploy.sh`'s rsync only ever syncs `src/`/`pyproject.toml`/
+`uv.lock` with `--delete`, so — same as the database files — this directory
+is never touched by a redeploy; it's something to back up alongside the
+`.db` files, not something the pipeline manages. The nginx config's
+`client_max_body_size` (`deploy/nginx-invoice-system.conf`) is set to match
+the API's own per-file upload cap (`core.py`'s `MAX_ATTACHMENT_SIZE`, 10MB)
+— raise both together if that limit ever changes.
+
 ## Not done yet
 
 - Infrastructure provisioning (the container itself, `nginx`/`uv`

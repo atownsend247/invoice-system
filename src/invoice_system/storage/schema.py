@@ -407,4 +407,26 @@ MIGRATIONS: list[str] = [
         position INTEGER NOT NULL
     );
     """,
+    """
+    -- Expense attachments - supplementary PDFs (e.g. scanned receipts)
+    -- uploaded against an Expense (see models.ExpenseAttachment,
+    -- attachments.py's AttachmentStore). Metadata only: the bytes
+    -- themselves live on disk, not in this database (see
+    -- attachments.py's docstring for why) - `content_type`/`size` are
+    -- still stored here purely for display/validation, same reasoning as
+    -- LineItem's derived properties never being stored. No
+    -- `organisation_id` column - same as expense_line_items, a caller
+    -- always resolves tenant ownership via the parent `expense_id` first
+    -- (ExpenseService.get_attachment_bytes/delete_attachment both call
+    -- `_get_expense` before touching an attachment). New table, so a
+    -- plain CREATE TABLE, no rebuild needed.
+    CREATE TABLE expense_attachments (
+        id TEXT PRIMARY KEY,
+        expense_id TEXT NOT NULL REFERENCES expenses(id),
+        filename TEXT NOT NULL,
+        content_type TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    """,
 ]

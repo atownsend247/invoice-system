@@ -115,6 +115,15 @@ uv run invoice-system-cli expense add-item c4e91d02-... --user-id e9f1c2a0-... \
 uv run invoice-system-cli expense list --user-id e9f1c2a0-...
 uv run invoice-system-cli expense pdf c4e91d02-... -o expense.pdf --user-id e9f1c2a0-...
 
+uv run invoice-system-cli expense attachment add c4e91d02-... --user-id e9f1c2a0-... \
+    --file ./receipt.pdf
+# -> Uploaded attachment 2255ee4c-... : receipt.pdf (48213 bytes)
+uv run invoice-system-cli expense attachment list c4e91d02-... --user-id e9f1c2a0-...
+uv run invoice-system-cli expense attachment download c4e91d02-... 2255ee4c-... \
+    -o downloaded-receipt.pdf --user-id e9f1c2a0-...
+uv run invoice-system-cli expense attachment delete c4e91d02-... 2255ee4c-... \
+    --user-id e9f1c2a0-...
+
 uv run invoice-system-cli stats --user-id e9f1c2a0-...
 ```
 
@@ -127,7 +136,10 @@ to a UUID4.)
 VAT, `0.05` for 5%, valid range `[0, 1]`.
 
 `--db PATH` (before the subcommand) points any command at a different
-SQLite file; default is `invoice_system.db` in the working directory. The
+SQLite file; default is `invoice_system.db` in the working directory.
+`--attachments-dir PATH` (also before the subcommand) does the same for
+uploaded expense-attachment PDFs; default is `attachments/` in the working
+directory. The
 CLI is a local, trusted tool and is **not** behind login (unlike the API) —
 see `CLAUDE.md`.
 
@@ -236,6 +248,9 @@ cd web && npm run lint   # oxlint
   API, and by `invoice-system-cli init-db`'s demo-data seeding (both
   default `auth.db`). The `sessionkit` CLI takes the same thing as its own
   `--db` flag or `$SESSIONKIT_DB` instead.
+- `INVOICE_SYSTEM_ATTACHMENTS_DIR` — directory uploaded expense-attachment
+  PDFs are stored in (default `attachments/`). The CLI takes the same thing
+  as the `--attachments-dir` flag instead.
 - `INVOICE_SYSTEM_CORS_ORIGINS` — comma-separated allowed origins for the
   API's CORS policy (default `*` — see `CLAUDE.md`).
 - `VITE_API_BASE_URL` — the web client's API base URL, read at

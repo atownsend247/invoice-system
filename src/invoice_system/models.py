@@ -231,6 +231,25 @@ class Invoice:
 
 
 @dataclass
+class ExpenseAttachment:
+    """A supplementary file (e.g. a scanned receipt) uploaded against an
+    Expense - always a PDF (validated in ExpenseService.add_attachment,
+    not here or in storage). This dataclass is metadata only; the bytes
+    themselves live on disk, not in SQLite (see attachments.py's
+    AttachmentStore) - keyed by `id`, which is also the on-disk filename's
+    stem, so nothing here needs to sanitise the caller-supplied
+    `filename` for filesystem safety (that string is display-only,
+    never used as a path)."""
+
+    id: str
+    expense_id: str
+    filename: str
+    content_type: str
+    size: int
+    created_at: datetime
+
+
+@dataclass
 class Expense:
     """A cost incurred against an Account - e.g. a domain renewal paid on a
     client's behalf. Unlike Quote/Invoice there's no draft/sent lifecycle
@@ -242,7 +261,10 @@ class Expense:
     a status check the way Quote.add_line_item is gated on `draft`. Line
     items share the same shape as Quote/Invoice's (LineItem, including a
     per-line tax_rate) rather than a simpler description+amount shape,
-    since VAT paid on a business expense may be separately reclaimable."""
+    since VAT paid on a business expense may be separately reclaimable.
+    `attachments` (see ExpenseAttachment above) are supplementary PDFs
+    (receipts, etc.) uploaded against this expense - also addable at any
+    time, same no-lifecycle reasoning as line items."""
 
     id: str
     organisation_id: str
@@ -252,6 +274,7 @@ class Expense:
     issue_date: date
     created_at: datetime
     line_items: list[LineItem] = field(default_factory=list)
+    attachments: list[ExpenseAttachment] = field(default_factory=list)
 
     @property
     def subtotal(self) -> Decimal:

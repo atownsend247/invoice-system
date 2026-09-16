@@ -166,6 +166,24 @@ class ExpenseCreateIn(BaseModel):
     currency: str = "USD"
 
 
+class ExpenseAttachmentOut(BaseModel):
+    id: str
+    filename: str
+    content_type: str
+    size: int
+    created_at: datetime
+
+    @classmethod
+    def from_model(cls, attachment) -> "ExpenseAttachmentOut":
+        return cls(
+            id=attachment.id,
+            filename=attachment.filename,
+            content_type=attachment.content_type,
+            size=attachment.size,
+            created_at=attachment.created_at,
+        )
+
+
 class ExpenseOut(BaseModel):
     id: str
     account_id: str
@@ -174,6 +192,7 @@ class ExpenseOut(BaseModel):
     issue_date: date
     created_at: datetime
     line_items: list[LineItemOut]
+    attachments: list[ExpenseAttachmentOut]
     subtotal: str
     tax_total: str
     total: str
@@ -188,6 +207,7 @@ class ExpenseOut(BaseModel):
             issue_date=expense.issue_date,
             created_at=expense.created_at,
             line_items=[LineItemOut.from_model(item) for item in expense.line_items],
+            attachments=[ExpenseAttachmentOut.from_model(a) for a in expense.attachments],
             subtotal=str(expense.subtotal),
             tax_total=str(expense.tax_total),
             total=str(expense.total),
