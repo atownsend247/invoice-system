@@ -4,6 +4,8 @@ from decimal import Decimal
 
 from .clock import Clock, system_clock
 from .errors import InvalidTransition, NotFound, ValidationFailed
+from .ids import IdGenerator
+from .ids import new_id as default_new_id
 from .models import (
     Account,
     BusinessProfile,
@@ -27,37 +29,43 @@ DEFAULT_ORGANISATION_NAME = "My Organisation"
 
 class OrganisationService:
     """Resolves the tenant boundary for a login user - see
-    models.py's Organisation docstring and CLAUDE.md's "Three separate
-    things" (now four) section. Every Account/Quote/Invoice belongs to
-    exactly one Organisation; `get_or_create_for_user` is how the API/CLI
-    layers turn "which sessionkit user is this" into "which
-    organisation's data can they see" before calling into
+    models.py's Organisation docstring and CLAUDE.md's "Four separate
+    things" section. Every Account/Quote/Invoice belongs to exactly one
+    Organisation; `get_or_create_for_user` is how the API/CLI layers turn
+    "which sessionkit user is this" into "which organisation's data can
+    they see" before calling into
     AccountService/QuoteService/InvoiceService/StatsService, all of which
     take an `organisation_id` and never resolve one themselves."""
 
-    def __init__(self, repository: Repository, clock: Clock = system_clock) -> None:
+    def __init__(
+        self, repository: Repository, clock: Clock = system_clock, new_id: IdGenerator = default_new_id
+    ) -> None:
         self._repository = repository
         self._clock = clock
+        self._new_id = new_id
 
-    def get_or_create_for_user(self, user_id: int, *, default_name: str = DEFAULT_ORGANISATION_NAME) -> int:
+    def get_or_create_for_user(self, user_id: str, *, default_name: str = DEFAULT_ORGANISATION_NAME) -> str:
         existing = self._repository.get_organisation_id_for_user(user_id)
         if existing is not None:
             return existing
         organisation = self._repository.create_organisation(
-            Organisation(id=None, name=default_name, created_at=self._clock())
+            Organisation(id=self._new_id(), name=default_name, created_at=self._clock())
         )
         return self._repository.add_organisation_member(organisation.id, user_id)
 
 
 class AccountService:
-    def __init__(self, repository: Repository, clock: Clock = system_clock) -> None:
+    def __init__(
+        self, repository: Repository, clock: Clock = system_clock, new_id: IdGenerator = default_new_id
+    ) -> None:
         self._repository = repository
         self._clock = clock
+        self._new_id = new_id
 
     def create_account(
         self,
         *,
-        organisation_id: int,
+        organisation_id: str,
         business_name: str,
         email: str,
         address_line1: str,
@@ -75,7 +83,7 @@ class AccountService:
         if not address_line1.strip():
             raise ValidationFailed("address_line1 is required")
         account = Account(
-            id=None,
+            id=self._new_id(),
             organisation_id=organisation_id,
             business_name=business_name,
             contact_name=contact_name,
@@ -90,19 +98,19 @@ class AccountService:
         )
         return self._repository.create_account(account)
 
-    def get_account(self, organisation_id: int, account_id: int) -> Account:
+    def get_account(self, organisation_id: str, account_id: str) -> Account:
         account = self._repository.get_account(organisation_id, account_id)
         if account is None:
             raise NotFound(f"account {account_id} not found")
         return account
 
-    def list_accounts(self, organisation_id: int) -> list[Account]:
+    def list_accounts(self, organisation_id: str) -> list[Account]:
         return self._repository.list_accounts(organisation_id)
 
     def update_account(
         self,
-        organisation_id: int,
-        account_id: int,
+        organisation_id: str,
+        account_id: str,
         *,
         business_name: str,
         email: str,
@@ -162,17 +170,20 @@ class BusinessProfileService:
     per-Organisation, even after Organisation was introduced - see
     CLAUDE.md."""
 
-    def __init__(self, repository: Repository, clock: Clock = system_clock) -> None:
+    def __init__(
+        self, repository: Repository, clock: Clock = system_clock, new_id: IdGenerator = default_new_id
+    ) -> None:
         self._repository = repository
         self._clock = clock
+        self._new_id = new_id
 
-    def get_profile(self, user_id: int) -> BusinessProfile:
+    def get_profile(self, user_id: str) -> BusinessProfile:
         existing = self._repository.get_business_profile(user_id)
         if existing is not None:
             return existing
         now = self._clock()
         return BusinessProfile(
-            id=None,
+            id=self._new_id(),
             user_id=user_id,
             title=None,
             first_name="",
@@ -198,7 +209,7 @@ class BusinessProfileService:
 
     def save_profile(
         self,
-        user_id: int,
+        user_id: str,
         *,
         first_name: str,
         last_name: str,
@@ -233,7 +244,7 @@ class BusinessProfileService:
         existing = self._repository.get_business_profile(user_id)
         created_at = existing.created_at if existing is not None else self._clock()
         profile = BusinessProfile(
-            id=existing.id if existing is not None else None,
+            id=existing.id if existing is not None else self._new_id(),
             user_id=user_id,
             title=_blank_to_none(title),
             first_name=first_name,
@@ -260,22 +271,25 @@ class BusinessProfileService:
 
 
 class QuoteService:
-    def __init__(self, repository: Repository, clock: Clock = system_clock) -> None:
+    def __init__(
+        self, repository: Repository, clock: Clock = system_clock, new_id: IdGenerator = default_new_id
+    ) -> None:
         self._repository = repository
         self._clock = clock
+        self._new_id = new_id
 
     def create_quote(
         self,
         *,
-        organisation_id: int,
-        account_id: int,
+        organisation_id: str,
+        account_id: str,
         currency: str = "USD",
         expiry_date: date_ | None = None,
     ) -> Quote:
         if self._repository.get_account(organisation_id, account_id) is None:
             raise NotFound(f"account {account_id} not found")
         quote = Quote(
-            id=None,
+            id=self._new_id(),
             organisation_id=organisation_id,
             account_id=account_id,
             number=None,
@@ -287,16 +301,16 @@ class QuoteService:
         )
         return self._repository.create_quote(quote)
 
-    def get_quote(self, organisation_id: int, quote_id: int) -> Quote:
+    def get_quote(self, organisation_id: str, quote_id: str) -> Quote:
         return self._get_quote(organisation_id, quote_id)
 
-    def list_quotes(self, organisation_id: int, account_id: int | None = None) -> list[Quote]:
+    def list_quotes(self, organisation_id: str, account_id: str | None = None) -> list[Quote]:
         return self._repository.list_quotes(organisation_id, account_id=account_id)
 
     def add_line_item(
         self,
-        organisation_id: int,
-        quote_id: int,
+        organisation_id: str,
+        quote_id: str,
         *,
         description: str,
         quantity: Decimal,
@@ -308,7 +322,7 @@ class QuoteService:
             raise ValidationFailed("description is required")
         _validate_tax_rate(tax_rate)
         item = LineItem(
-            id=None,
+            id=self._new_id(),
             description=description,
             quantity=quantity,
             unit_price=unit_price,
@@ -318,7 +332,7 @@ class QuoteService:
         self._repository.add_quote_line_item(quote_id, item)
         return self._get_quote(organisation_id, quote_id)
 
-    def send(self, organisation_id: int, quote_id: int) -> Quote:
+    def send(self, organisation_id: str, quote_id: str) -> Quote:
         quote = self._get_quote(organisation_id, quote_id)
         if quote.status != QuoteStatus.DRAFT:
             raise InvalidTransition(f"quote {quote_id} is not a draft (status={quote.status.value})")
@@ -328,27 +342,27 @@ class QuoteService:
         quote.status = QuoteStatus.SENT
         return self._repository.update_quote(quote)
 
-    def mark_accepted(self, organisation_id: int, quote_id: int) -> Quote:
+    def mark_accepted(self, organisation_id: str, quote_id: str) -> Quote:
         return self._transition(
             organisation_id, quote_id, from_status=QuoteStatus.SENT, to_status=QuoteStatus.ACCEPTED
         )
 
-    def mark_rejected(self, organisation_id: int, quote_id: int) -> Quote:
+    def mark_rejected(self, organisation_id: str, quote_id: str) -> Quote:
         return self._transition(
             organisation_id, quote_id, from_status=QuoteStatus.SENT, to_status=QuoteStatus.REJECTED
         )
 
-    def mark_expired(self, organisation_id: int, quote_id: int) -> Quote:
+    def mark_expired(self, organisation_id: str, quote_id: str) -> Quote:
         return self._transition(
             organisation_id, quote_id, from_status=QuoteStatus.SENT, to_status=QuoteStatus.EXPIRED
         )
 
-    def convert_to_invoice(self, organisation_id: int, quote_id: int) -> Invoice:
+    def convert_to_invoice(self, organisation_id: str, quote_id: str) -> Invoice:
         quote = self._get_quote(organisation_id, quote_id)
         if quote.status not in (QuoteStatus.SENT, QuoteStatus.ACCEPTED):
             raise InvalidTransition(f"quote {quote_id} cannot be converted from status {quote.status.value}")
         invoice = Invoice(
-            id=None,
+            id=self._new_id(),
             organisation_id=organisation_id,
             account_id=quote.account_id,
             quote_id=quote.id,
@@ -364,7 +378,7 @@ class QuoteService:
             self._repository.add_invoice_line_item(
                 invoice.id,
                 LineItem(
-                    id=None,
+                    id=self._new_id(),
                     description=item.description,
                     quantity=item.quantity,
                     unit_price=item.unit_price,
@@ -377,7 +391,7 @@ class QuoteService:
         return self._repository.get_invoice(organisation_id, invoice.id)
 
     def _transition(
-        self, organisation_id: int, quote_id: int, *, from_status: QuoteStatus, to_status: QuoteStatus
+        self, organisation_id: str, quote_id: str, *, from_status: QuoteStatus, to_status: QuoteStatus
     ) -> Quote:
         quote = self._get_quote(organisation_id, quote_id)
         if quote.status != from_status:
@@ -388,13 +402,13 @@ class QuoteService:
         quote.status = to_status
         return self._repository.update_quote(quote)
 
-    def _get_quote(self, organisation_id: int, quote_id: int) -> Quote:
+    def _get_quote(self, organisation_id: str, quote_id: str) -> Quote:
         quote = self._repository.get_quote(organisation_id, quote_id)
         if quote is None:
             raise NotFound(f"quote {quote_id} not found")
         return quote
 
-    def _get_draft_quote(self, organisation_id: int, quote_id: int) -> Quote:
+    def _get_draft_quote(self, organisation_id: str, quote_id: str) -> Quote:
         quote = self._get_quote(organisation_id, quote_id)
         if quote.status != QuoteStatus.DRAFT:
             raise InvalidTransition(f"quote {quote_id} is not editable (status={quote.status.value})")
@@ -402,20 +416,23 @@ class QuoteService:
 
 
 class InvoiceService:
-    def __init__(self, repository: Repository, clock: Clock = system_clock) -> None:
+    def __init__(
+        self, repository: Repository, clock: Clock = system_clock, new_id: IdGenerator = default_new_id
+    ) -> None:
         self._repository = repository
         self._clock = clock
+        self._new_id = new_id
 
-    def get_invoice(self, organisation_id: int, invoice_id: int) -> Invoice:
+    def get_invoice(self, organisation_id: str, invoice_id: str) -> Invoice:
         return self._get_invoice(organisation_id, invoice_id)
 
-    def list_invoices(self, organisation_id: int, account_id: int | None = None) -> list[Invoice]:
+    def list_invoices(self, organisation_id: str, account_id: str | None = None) -> list[Invoice]:
         return self._repository.list_invoices(organisation_id, account_id=account_id)
 
     def add_line_item(
         self,
-        organisation_id: int,
-        invoice_id: int,
+        organisation_id: str,
+        invoice_id: str,
         *,
         description: str,
         quantity: Decimal,
@@ -427,7 +444,7 @@ class InvoiceService:
             raise ValidationFailed("description is required")
         _validate_tax_rate(tax_rate)
         item = LineItem(
-            id=None,
+            id=self._new_id(),
             description=description,
             quantity=quantity,
             unit_price=unit_price,
@@ -439,8 +456,8 @@ class InvoiceService:
 
     def send(
         self,
-        organisation_id: int,
-        invoice_id: int,
+        organisation_id: str,
+        invoice_id: str,
         *,
         due_date: date_ | None = None,
         payment_terms_days: int | None = None,
@@ -456,14 +473,14 @@ class InvoiceService:
         invoice.status = InvoiceStatus.SENT
         return self._repository.update_invoice(invoice)
 
-    def void(self, organisation_id: int, invoice_id: int) -> Invoice:
+    def void(self, organisation_id: str, invoice_id: str) -> Invoice:
         invoice = self._get_invoice(organisation_id, invoice_id)
         if invoice.status == InvoiceStatus.PAID:
             raise InvalidTransition(f"invoice {invoice_id} is already paid, cannot void")
         invoice.status = InvoiceStatus.VOID
         return self._repository.update_invoice(invoice)
 
-    def pay(self, organisation_id: int, invoice_id: int) -> Invoice:
+    def pay(self, organisation_id: str, invoice_id: str) -> Invoice:
         invoice = self._get_invoice(organisation_id, invoice_id)
         if invoice.status != InvoiceStatus.SENT:
             raise InvalidTransition(
@@ -473,7 +490,7 @@ class InvoiceService:
         return self._repository.update_invoice(invoice)
 
     def monthly_totals(
-        self, organisation_id: int, currency: str, *, months: int = MONTHLY_TOTALS_MONTHS
+        self, organisation_id: str, currency: str, *, months: int = MONTHLY_TOTALS_MONTHS
     ) -> list[MonthlyInvoiceTotals]:
         """Invoice totals for the trailing `months` months (this one
         included), split into paid vs not, for `organisation_id`'s invoices
@@ -507,13 +524,13 @@ class InvoiceService:
 
         return [buckets[key] for key in order]
 
-    def _get_invoice(self, organisation_id: int, invoice_id: int) -> Invoice:
+    def _get_invoice(self, organisation_id: str, invoice_id: str) -> Invoice:
         invoice = self._repository.get_invoice(organisation_id, invoice_id)
         if invoice is None:
             raise NotFound(f"invoice {invoice_id} not found")
         return invoice
 
-    def _get_draft_invoice(self, organisation_id: int, invoice_id: int) -> Invoice:
+    def _get_draft_invoice(self, organisation_id: str, invoice_id: str) -> Invoice:
         invoice = self._get_invoice(organisation_id, invoice_id)
         if invoice.status != InvoiceStatus.DRAFT:
             raise InvalidTransition(f"invoice {invoice_id} is not editable (status={invoice.status.value})")
@@ -531,5 +548,5 @@ class StatsService:
         self._repository = repository
         self._clock = clock
 
-    def get_stats(self, organisation_id: int) -> Stats:
+    def get_stats(self, organisation_id: str) -> Stats:
         return Stats(account_count=len(self._repository.list_accounts(organisation_id)))

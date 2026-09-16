@@ -4,6 +4,7 @@ from decimal import Decimal
 import pytest
 
 from invoice_system.errors import InvalidTransition, NotFound, ValidationFailed
+from invoice_system.ids import new_id
 from invoice_system.models import Invoice, InvoiceStatus
 
 
@@ -33,7 +34,7 @@ def test_get_missing_invoice_raises_not_found(application, organisation_id):
 
 
 def test_invoice_from_another_organisation_raises_not_found(application, organisation_id, draft_invoice):
-    other_organisation_id = application.organisations.get_or_create_for_user(2)
+    other_organisation_id = application.organisations.get_or_create_for_user("user-2")
     with pytest.raises(NotFound):
         application.invoices.get_invoice(other_organisation_id, draft_invoice.id)
 
@@ -73,7 +74,7 @@ def test_cannot_send_invoice_without_line_items(application, organisation_id, ac
     # the otherwise-unreachable zero-item state.
     empty = application.repository.create_invoice(
         Invoice(
-            id=None,
+            id=new_id(),
             organisation_id=organisation_id,
             account_id=account.id,
             quote_id=None,
@@ -139,7 +140,7 @@ def test_get_missing_invoice_raises_not_found_for_pay(application, organisation_
 def test_add_line_item_to_a_draft_invoice_applies_tax_rate(application, organisation_id, account, fake_clock):
     empty = application.repository.create_invoice(
         Invoice(
-            id=None,
+            id=new_id(),
             organisation_id=organisation_id,
             account_id=account.id,
             quote_id=None,
@@ -260,7 +261,7 @@ class TestMonthlyTotals:
             organisation_id, self._create_invoice(application, organisation_id, account, price="100.00").id
         )
 
-        other_organisation_id = application.organisations.get_or_create_for_user(2)
+        other_organisation_id = application.organisations.get_or_create_for_user("user-2")
         totals = {t.month: t for t in application.invoices.monthly_totals(other_organisation_id, "GBP")}
         assert totals["2026-03"].paid_total == Decimal("0")
         assert totals["2026-03"].unpaid_total == Decimal("0")

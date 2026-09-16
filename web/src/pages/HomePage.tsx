@@ -106,7 +106,7 @@ function InvoiceSection({
   accounts: Account[] | null
   emptyMessage: string
 }) {
-  const accountName = (accountId: number) =>
+  const accountName = (accountId: string) =>
     accounts?.find((account) => account.id === accountId)?.business_name ?? `#${accountId}`
 
   return (

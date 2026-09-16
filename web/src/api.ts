@@ -131,7 +131,7 @@ export function listAccounts(): Promise<Account[]> {
   return request('/accounts')
 }
 
-export function getAccount(id: number): Promise<Account> {
+export function getAccount(id: string): Promise<Account> {
   return request(`/accounts/${id}`)
 }
 
@@ -151,37 +151,37 @@ export function createAccount(input: CreateAccountInput): Promise<Account> {
   return request('/accounts', { method: 'POST', body: JSON.stringify(input) })
 }
 
-export function updateAccount(id: number, input: CreateAccountInput): Promise<Account> {
+export function updateAccount(id: string, input: CreateAccountInput): Promise<Account> {
   return request(`/accounts/${id}`, { method: 'PUT', body: JSON.stringify(input) })
 }
 
 // -- quotes ----------------------------------------------------------------
 
-export function listQuotes(accountId?: number): Promise<Quote[]> {
+export function listQuotes(accountId?: string): Promise<Quote[]> {
   const query = accountId ? `?account_id=${accountId}` : ''
   return request(`/quotes${query}`)
 }
 
-export function getQuote(id: number): Promise<Quote> {
+export function getQuote(id: string): Promise<Quote> {
   return request(`/quotes/${id}`)
 }
 
-export function createQuote(accountId: number, currency = 'USD'): Promise<Quote> {
+export function createQuote(accountId: string, currency = 'USD'): Promise<Quote> {
   return request('/quotes', { method: 'POST', body: JSON.stringify({ account_id: accountId, currency }) })
 }
 
 export function addQuoteLineItem(
-  quoteId: number,
+  quoteId: string,
   input: { description: string; quantity: string; unit_price: string; tax_rate?: string },
 ): Promise<Quote> {
   return request(`/quotes/${quoteId}/line-items`, { method: 'POST', body: JSON.stringify(input) })
 }
 
-export function sendQuote(id: number): Promise<Quote> {
+export function sendQuote(id: string): Promise<Quote> {
   return request(`/quotes/${id}/send`, { method: 'POST' })
 }
 
-export function convertQuote(id: number): Promise<Invoice> {
+export function convertQuote(id: string): Promise<Invoice> {
   return request(`/quotes/${id}/convert`, { method: 'POST' })
 }
 
@@ -195,24 +195,24 @@ export function getQuotePdfUrl(quote: Quote): Promise<string> {
 
 // -- invoices --------------------------------------------------------------
 
-export function listInvoices(accountId?: number): Promise<Invoice[]> {
+export function listInvoices(accountId?: string): Promise<Invoice[]> {
   const query = accountId ? `?account_id=${accountId}` : ''
   return request(`/invoices${query}`)
 }
 
-export function getInvoice(id: number): Promise<Invoice> {
+export function getInvoice(id: string): Promise<Invoice> {
   return request(`/invoices/${id}`)
 }
 
-export function sendInvoice(id: number): Promise<Invoice> {
+export function sendInvoice(id: string): Promise<Invoice> {
   return request(`/invoices/${id}/send`, { method: 'POST' })
 }
 
-export function voidInvoice(id: number): Promise<Invoice> {
+export function voidInvoice(id: string): Promise<Invoice> {
   return request(`/invoices/${id}/void`, { method: 'POST' })
 }
 
-export function payInvoice(id: number): Promise<Invoice> {
+export function payInvoice(id: string): Promise<Invoice> {
   return request(`/invoices/${id}/pay`, { method: 'POST' })
 }
 

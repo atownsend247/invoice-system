@@ -26,7 +26,7 @@ class LoginIn(BaseModel):
 
 
 class UserOut(BaseModel):
-    id: int
+    id: str
     email: str
     name: str
     created_at: datetime

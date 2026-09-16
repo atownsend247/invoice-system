@@ -8,17 +8,26 @@ import { useAsync } from '../hooks/useAsync'
 import type { Invoice, Quote } from '../types'
 
 /** Newest first by issue_date (the "when this was created" convention used
- * throughout - see CLAUDE.md), id as a tie-breaker for same-day entries. */
-function byIssueDateNewestFirst<T extends { issue_date: string; id: number }>(items: T[]): T[] {
-  return [...items].sort(
-    (a, b) => b.issue_date.localeCompare(a.issue_date) || b.id - a.id,
-  )
+ * throughout - see CLAUDE.md). Ids are random UUID4s now (see CLAUDE.md),
+ * with no ordering relationship to insertion order, so there's no id-based
+ * tie-breaker for same-day entries anymore - instead this relies on the
+ * API already returning items oldest-first (the backend orders by SQLite's
+ * implicit rowid - see sqlite_repository.py) and Array.sort's stability
+ * (guaranteed since ES2019): reversing to newest-insertion-first, then a
+ * stable sort by issue_date descending, keeps a same-day group in
+ * newest-insertion-first order too. */
+function byIssueDateNewestFirst<T extends { issue_date: string }>(items: T[]): T[] {
+  return [...items].reverse().sort((a, b) => b.issue_date.localeCompare(a.issue_date))
 }
 
 export function AccountDetailPage() {
-  const { id } = useParams()
-  const accountId = Number(id)
-  const { data: account, loading, error, refetch } = useAsync(() => api.getAccount(accountId), [accountId])
+  const { id: accountId } = useParams()
+  const {
+    data: account,
+    loading,
+    error,
+    refetch,
+  } = useAsync(() => api.getAccount(accountId ?? ''), [accountId])
   const { data: quotes } = useAsync(() => api.listQuotes(accountId), [accountId])
   const { data: invoices } = useAsync(() => api.listInvoices(accountId), [accountId])
   const [editing, setEditing] = useState(false)

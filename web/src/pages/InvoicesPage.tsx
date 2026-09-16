@@ -7,7 +7,7 @@ export function InvoicesPage() {
   const { data: invoices, loading, error } = useAsync(() => api.listInvoices(), [])
   const { data: accounts } = useAsync(() => api.listAccounts(), [])
 
-  const accountName = (accountId: number) =>
+  const accountName = (accountId: string) =>
     accounts?.find((account) => account.id === accountId)?.business_name ?? `#${accountId}`
 
   return (

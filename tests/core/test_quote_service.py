@@ -22,7 +22,7 @@ def test_create_quote_requires_existing_account(application, organisation_id):
 
 
 def test_create_quote_requires_account_in_same_organisation(application, organisation_id, account):
-    other_organisation_id = application.organisations.get_or_create_for_user(2)
+    other_organisation_id = application.organisations.get_or_create_for_user("user-2")
     with pytest.raises(NotFound):
         application.quotes.create_quote(organisation_id=other_organisation_id, account_id=account.id)
 
@@ -95,7 +95,7 @@ def test_cannot_convert_quote_twice(application, organisation_id, account):
 
 def test_quote_from_another_organisation_raises_not_found(application, organisation_id, account):
     quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
-    other_organisation_id = application.organisations.get_or_create_for_user(2)
+    other_organisation_id = application.organisations.get_or_create_for_user("user-2")
 
     with pytest.raises(NotFound):
         application.quotes.get_quote(other_organisation_id, quote.id)
@@ -233,7 +233,7 @@ def test_quote_numbers_are_independent_per_organisation(application, organisatio
     )
     first = application.quotes.send(organisation_id, first.id)
 
-    other_organisation_id = application.organisations.get_or_create_for_user(2)
+    other_organisation_id = application.organisations.get_or_create_for_user("user-2")
     other_account = application.accounts.create_account(
         organisation_id=other_organisation_id, business_name="Other Co", email="b@b.test", address_line1="y"
     )

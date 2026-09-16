@@ -2,7 +2,7 @@
 
 **Status: implemented** (`src/invoice_system/models.py`,
 `storage/schema.py`). Keep this table in sync with the actual schema — this
-doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` has six
+doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` has seven
 entries: the flattened baseline (2026-09-16), migration 2 (added `tax_rate`
 to both line-item tables), migration 3 (added `Organisation` — the tenant
 boundary — plus nullable `organisation_id` columns on `accounts`/`quotes`/
@@ -11,11 +11,13 @@ uniqueness from a single global column constraint to a composite
 `(organisation_id, number)` index, since numbering is now per-organisation),
 migration 5 (split `accounts.address` into `address_line1`/
 `address_line2`/`town_or_city`/`county`/`postcode`, same UK GOV.UK Design
-System structure as `BusinessProfile`'s), and migration 6 (added
+System structure as `BusinessProfile`'s), migration 6 (added
 `bank_account_name`/`bank_sort_code`/`bank_account_number`/
-`document_header`/`document_footer` to `business_profiles` — see
-`CLAUDE.md`'s migrations gotcha). Schema changes from here on are new
-entries appended to that list, not edits to any of these six.
+`document_header`/`document_footer` to `business_profiles`), and migration 7
+(every primary key, and every column referencing one, switched from an
+autoincrementing `INTEGER` to an opaque UUID4 `TEXT` string — see "Opaque
+ids" below and `CLAUDE.md`'s migrations gotcha). Schema changes from here on
+are new entries appended to that list, not edits to any of these seven.
 
 ## Entities
 
@@ -34,6 +36,54 @@ entries appended to that list, not edits to any of these six.
 `InvoiceService.monthly_totals()`/`StatsService.get_stats()`'s return
 shapes, computed on read for the home dashboard. See the invariants below
 for exactly what the former includes/excludes.
+
+## Opaque ids
+
+Every `id` in this schema (and every column that references one -
+`organisation_id`, `account_id`, `quote_id`, `invoice_id`, `user_id`) is a
+random UUID4 string, not an autoincrementing integer - `Organisation`,
+`Account`, `Quote`, `Invoice`, `LineItem`, `BusinessProfile` alike (migration
+7). `user_id` is sessionkit's own `User.id`, itself a UUID4 string since
+sessionkit v0.2.0, for the same reason.
+
+Why: a sequential id leaks information it has no business leaking - an id
+appearing in a URL or API response otherwise tells a caller roughly how many
+rows exist and in what order they were created, which nothing should be
+able to infer about another organisation's activity. This is the same
+reasoning that already justified making `Quote.number`/`Invoice.number`
+per-organisation (migration 4) rather than a single global counter; this
+migration closes the same leak for every id, not just those two.
+
+Ids are generated in the application layer, not by the database:
+`AccountService`/`QuoteService`/`InvoiceService`/`OrganisationService`/
+`BusinessProfileService` each take an injectable `new_id: IdGenerator`
+constructor parameter (`src/invoice_system/ids.py`, `default_new_id` →
+`uuid.uuid4()`), mirroring the existing `clock: Clock` pattern - a service
+generates the id *before* constructing the dataclass passed to
+`Repository.create_*`, which now only persists whatever id it's given
+(never `cursor.lastrowid`) - see CLAUDE.md's architecture rules on why
+storage doesn't generate ids itself.
+
+**`list_accounts`/`list_quotes`/`list_invoices` order by SQLite's implicit
+`rowid`, not `id`.** A UUID has no relationship to insertion order (unlike
+the old autoincrementing integer, which doubled as one) - every SQLite
+table not declared `WITHOUT ROWID` keeps a hidden, monotonically-increasing
+`rowid` regardless of its declared `PRIMARY KEY` type. It's never selected
+or exposed to any caller, so ordering by it doesn't reintroduce the
+information leak switching to UUIDs was meant to close - see
+`sqlite_repository.py`'s comment on `list_accounts` for the full reasoning
+(including why `ORDER BY created_at` alone isn't enough: two rows can share
+a timestamp, notably under a frozen/fake clock in tests).
+
+Migration 7 is a one-time authorized full reset, not a data-preserving
+migration like every other one in this list: every table is dropped and
+recreated, deliberately, rather than remapping each existing integer id to
+a UUID and rewriting every foreign key that pointed at it - added
+complexity for no benefit on a pre-1.0 app with no production database to
+preserve. `invoice-system-cli init-db` reseeds demo data with real UUIDs
+afterward. This is *not* a pattern to reuse for a future migration once
+real user data exists - that's exactly what forward-only, data-preserving
+migrations (every other entry in this list) exist to avoid.
 
 ## Relationships
 
@@ -132,14 +182,14 @@ Every `Account`/`Quote`/`Invoice` create/get/list/update call takes an
   colleague to share one business's data) is deliberately future work: the
   schema shape doesn't need to change for it, only dropping that `UNIQUE`
   constraint and adding an invite/add-member flow — see `docs/roadmap.md`.
-- **Migrating from a pre-`Organisation` database**: `accounts`/`quotes`/
-  `invoices.organisation_id` is nullable and **not backfilled** — there's
-  no way to know which login user should adopt a pre-existing row, so a
-  database created before this feature simply has all its old data become
-  invisible (every query is `WHERE organisation_id = ?`, and `NULL` never
-  matches). For a local/dev database, the practical fix is to delete
-  `invoice_system.db` (and, if you want a clean login too, `auth.db`) and
-  re-run `invoice-system-cli init-db`.
+- `accounts`/`quotes`/`invoices.organisation_id` is `NOT NULL` as of
+  migration 7 (a fresh `CREATE TABLE`, not the `ALTER TABLE ADD COLUMN`
+  migration 3 originally used, which had to be nullable since SQLite can't
+  add a `NOT NULL` column without a default and there was no meaningful one
+  to backfill existing rows with at the time). Every account/quote/invoice
+  has always had an `organisation_id` set at creation since `Organisation`
+  was introduced, so by the time migration 7 ran there was nothing left
+  needing that historical nullability.
 
 ## Login accounts (not this schema)
 

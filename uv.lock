@@ -518,7 +518,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "reportlab", specifier = ">=4.2" },
-    { name = "sessionkit", git = "https://github.com/atownsend247/bb-py-sessionkit.git?rev=v0.1.2" },
+    { name = "sessionkit", git = "https://github.com/atownsend247/bb-py-sessionkit.git?rev=v0.2.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
 
@@ -823,8 +823,8 @@ wheels = [
 
 [[package]]
 name = "sessionkit"
-version = "0.1.2"
-source = { git = "https://github.com/atownsend247/bb-py-sessionkit.git?rev=v0.1.2#134e881b365983ea95c023891e0f23dc04c8f05b" }
+version = "0.2.0"
+source = { git = "https://github.com/atownsend247/bb-py-sessionkit.git?rev=v0.2.0#a8682b1a90c1081804845fe4ce99f1fbf498d711" }
 dependencies = [
     { name = "argon2-cffi" },
     { name = "pyotp" },

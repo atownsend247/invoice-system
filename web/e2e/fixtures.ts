@@ -5,20 +5,20 @@ import { BACKEND_PORT, TEST_EMAIL, TEST_PASSWORD } from './constants'
 export const API_BASE_URL = `http://127.0.0.1:${BACKEND_PORT}`
 
 export interface ApiAccount {
-  id: number
+  id: string
   business_name: string
 }
 
 export interface ApiQuote {
-  id: number
+  id: string
   number: string | null
-  account_id: number
+  account_id: string
 }
 
 export interface ApiInvoice {
-  id: number
+  id: string
   number: string | null
-  quote_id: number | null
+  quote_id: string | null
 }
 
 // Plain fetch, not Playwright's `request` fixture - these calls happen from

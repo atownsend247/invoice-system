@@ -34,7 +34,7 @@ class Auth:
 
 def build_auth(db_path: str | Path = DEFAULT_AUTH_DB_PATH) -> Auth:
     # check_same_thread=False is SqliteAuthStore's default as of sessionkit
-    # v0.1.2 (every method is serialised on its own lock) - relied on here
+    # v0.1.2+ (every method is serialised on its own lock) - relied on here
     # rather than passed explicitly, since the API layer runs sync handlers
     # in a worker thread pool, not the thread that opens this connection.
     store = SqliteAuthStore.open(str(db_path))

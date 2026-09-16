@@ -21,9 +21,9 @@ describe('api', () => {
 
   it('attaches the Authorization header once a token is set', async () => {
     setAuthToken('tok_123')
-    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, { id: 1, business_name: 'Acme' }))
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, { id: 'acc-1', business_name: 'Acme' }))
 
-    await getAccount(1)
+    await getAccount('acc-1')
 
     const [, options] = vi.mocked(fetch).mock.calls[0]
     const headers = new Headers(options?.headers)
@@ -32,9 +32,9 @@ describe('api', () => {
 
   it('does not attach an Authorization header when logged out', async () => {
     setAuthToken(null)
-    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, { id: 1, business_name: 'Acme' }))
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, { id: 'acc-1', business_name: 'Acme' }))
 
-    await getAccount(1)
+    await getAccount('acc-1')
 
     const [, options] = vi.mocked(fetch).mock.calls[0]
     const headers = new Headers(options?.headers)
@@ -44,7 +44,7 @@ describe('api', () => {
   it('throws an ApiError carrying the status and server detail on failure', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(404, { detail: 'account 999 not found' }))
 
-    await expect(getAccount(999)).rejects.toMatchObject({
+    await expect(getAccount('does-not-exist')).rejects.toMatchObject({
       name: 'ApiError',
       status: 404,
       message: 'account 999 not found',
@@ -56,7 +56,7 @@ describe('api', () => {
     setUnauthorizedHandler(handler)
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(401, { detail: 'not authenticated' }))
 
-    await expect(getAccount(1)).rejects.toBeInstanceOf(ApiError)
+    await expect(getAccount('acc-1')).rejects.toBeInstanceOf(ApiError)
     expect(handler).toHaveBeenCalledOnce()
   })
 

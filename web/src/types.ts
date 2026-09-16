@@ -1,5 +1,7 @@
+// id is a UUID4 string (sessionkit's own, since v0.2.0 - see CLAUDE.md),
+// not a sequential integer - never parsed or compared as a number.
 export interface User {
-  id: number
+  id: string
   email: string
   name: string
   created_at: string
@@ -15,9 +17,10 @@ export interface LoginResult {
 // Address fields follow the same UK GOV.UK Design System pattern as
 // BusinessProfile's - see CLAUDE.md. address_line1 is required (an Account
 // is a real client being billed); the rest are each independently
-// optional.
+// optional. id (like every id in this app) is a UUID4 string, not a
+// sequential integer - see CLAUDE.md.
 export interface Account {
-  id: number
+  id: string
   business_name: string
   contact_name: string | null
   email: string
@@ -34,7 +37,7 @@ export interface Account {
 // this line only - see CLAUDE.md. total is *gross* (net_total +
 // tax_amount) - what this line actually adds to what's owed.
 export interface LineItem {
-  id: number
+  id: string
   description: string
   quantity: string
   unit_price: string
@@ -47,8 +50,8 @@ export interface LineItem {
 export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired' | 'converted'
 
 export interface Quote {
-  id: number
-  account_id: number
+  id: string
+  account_id: string
   number: string | null
   status: QuoteStatus
   currency: string
@@ -64,9 +67,9 @@ export interface Quote {
 export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'void'
 
 export interface Invoice {
-  id: number
-  account_id: number
-  quote_id: number | null
+  id: string
+  account_id: string
+  quote_id: string | null
   number: string | null
   status: InvoiceStatus
   currency: string

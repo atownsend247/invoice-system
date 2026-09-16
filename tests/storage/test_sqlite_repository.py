@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from invoice_system.ids import new_id
 from invoice_system.models import Account, BusinessProfile, Organisation, Quote, QuoteStatus
 from invoice_system.storage.schema import MIGRATIONS
 from invoice_system.storage.sqlite_repository import SqliteRepository
@@ -17,11 +18,11 @@ def repo(tmp_path):
 
 
 @pytest.fixture
-def organisation_id(repo) -> int:
+def organisation_id(repo) -> str:
     created = repo.create_organisation(
-        Organisation(id=None, name="Acme Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
+        Organisation(id=new_id(), name="Acme Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
     )
-    repo.add_organisation_member(created.id, user_id=1)
+    repo.add_organisation_member(created.id, user_id="user-1")
     return created.id
 
 
@@ -35,6 +36,14 @@ def test_migration_4_rescopes_number_uniqueness_to_per_organisation_and_preserve
     # (organisation_id, number) index - see schema.py) with an existing
     # quote, then confirm migration 4 both preserves it and actually
     # fixes the bug: two organisations can now share the same number.
+    #
+    # Ids here are plain integers, not UUIDs - migration 4 doesn't touch id
+    # types at all (that's migration 7), so this frozen snapshot is
+    # genuinely still on the old INTEGER AUTOINCREMENT schema. Only
+    # migration 4's own script is applied (not repository.migrate(), which
+    # would also run every later migration including migration 7's full
+    # reset - see that test below - and wipe this data before it could be
+    # asserted).
     db_path = tmp_path / "frozen.db"
     conn = sqlite3.connect(str(db_path))
     for version, script in enumerate(MIGRATIONS[:3], start=1):
@@ -61,10 +70,13 @@ def test_migration_4_rescopes_number_uniqueness_to_per_organisation_and_preserve
         ("2026-01-01", now),
     )
     conn.commit()
+
+    conn.executescript(MIGRATIONS[3])
+    conn.execute("PRAGMA user_version = 4")
+    conn.commit()
     conn.close()
 
     repository = SqliteRepository(db_path)
-    repository.migrate()
 
     fetched = repository.get_quote(1, 1)
     assert fetched is not None
@@ -72,7 +84,7 @@ def test_migration_4_rescopes_number_uniqueness_to_per_organisation_and_preserve
 
     duplicate = repository.create_quote(
         Quote(
-            id=None,
+            id=3,
             organisation_id=2,
             account_id=2,
             number="Q-0001",
@@ -92,7 +104,9 @@ def test_migration_5_splits_account_address_into_structured_fields_and_preserves
     # into address_line1/address_line2/town_or_city/county/postcode - see
     # schema.py) with an existing account, then confirm migration 5 moves
     # the old free-text value into address_line1 wholesale (never
-    # discarded, never guessed-at-split) and leaves the rest NULL.
+    # discarded, never guessed-at-split) and leaves the rest NULL. Only
+    # migration 5's own script is applied - see the migration 4 test above
+    # for why not repository.migrate().
     db_path = tmp_path / "frozen.db"
     conn = sqlite3.connect(str(db_path))
     for version, script in enumerate(MIGRATIONS[:4], start=1):
@@ -108,10 +122,13 @@ def test_migration_5_splits_account_address_into_structured_fields_and_preserves
         (now,),
     )
     conn.commit()
+
+    conn.executescript(MIGRATIONS[4])
+    conn.execute("PRAGMA user_version = 5")
+    conn.commit()
     conn.close()
 
     repository = SqliteRepository(db_path)
-    repository.migrate()
 
     fetched = repository.get_account(1, 1)
     assert fetched is not None
@@ -123,19 +140,50 @@ def test_migration_5_splits_account_address_into_structured_fields_and_preserves
     repository.close()
 
 
+def test_migration_7_resets_ids_to_uuids(tmp_path):
+    # Freeze a database at migration 6 (the last INTEGER-id schema) with
+    # existing data, then confirm migration 7 - an authorized, one-time
+    # full reset rather than a data-preserving migration (see schema.py) -
+    # actually drops it: every table is empty afterwards, and a freshly
+    # created row gets a real (non-integer) UUID4 id, not a resumed
+    # autoincrement sequence.
+    db_path = tmp_path / "frozen.db"
+    conn = sqlite3.connect(str(db_path))
+    for version, script in enumerate(MIGRATIONS[:6], start=1):
+        conn.executescript(script)
+        conn.execute(f"PRAGMA user_version = {version}")
+    conn.commit()
+
+    now = datetime(2026, 1, 1, tzinfo=UTC).isoformat()
+    conn.execute("INSERT INTO organisations (id, name, created_at) VALUES (1, 'Org A', ?)", (now,))
+    conn.commit()
+    conn.close()
+
+    repository = SqliteRepository(db_path)
+    repository.migrate()  # applies migration 7 - the latest, so this is fine here
+
+    assert repository.get_organisation_id_for_user("anyone") is None
+    created = repository.create_organisation(
+        Organisation(id=new_id(), name="Fresh Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
+    )
+    assert created.id != "1"
+    assert len(created.id) == 36  # UUID4's canonical string length
+    repository.close()
+
+
 def test_get_organisation_id_for_user_returns_none_when_unset(repo):
-    assert repo.get_organisation_id_for_user(1) is None
+    assert repo.get_organisation_id_for_user("user-1") is None
 
 
 def test_create_organisation_and_add_member_round_trip(repo):
     created = repo.create_organisation(
-        Organisation(id=None, name="Acme Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
+        Organisation(id=new_id(), name="Acme Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
     )
     assert created.id is not None
 
-    returned = repo.add_organisation_member(created.id, user_id=1)
+    returned = repo.add_organisation_member(created.id, user_id="user-1")
     assert returned == created.id
-    assert repo.get_organisation_id_for_user(1) == created.id
+    assert repo.get_organisation_id_for_user("user-1") == created.id
 
 
 def test_add_organisation_member_is_idempotent_for_a_racing_second_organisation(repo):
@@ -147,22 +195,22 @@ def test_add_organisation_member_is_idempotent_for_a_racing_second_organisation(
     # returning the first (winning) organisation_id rather than raising
     # on organisation_members.user_id's UNIQUE constraint.
     first = repo.create_organisation(
-        Organisation(id=None, name="First Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
+        Organisation(id=new_id(), name="First Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
     )
     second = repo.create_organisation(
-        Organisation(id=None, name="Second Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
+        Organisation(id=new_id(), name="Second Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
     )
 
-    assert repo.add_organisation_member(first.id, user_id=1) == first.id
+    assert repo.add_organisation_member(first.id, user_id="user-1") == first.id
     # The "losing" call - same user, a different organisation - must not
     # raise, and must report the organisation that actually won.
-    assert repo.add_organisation_member(second.id, user_id=1) == first.id
-    assert repo.get_organisation_id_for_user(1) == first.id
+    assert repo.add_organisation_member(second.id, user_id="user-1") == first.id
+    assert repo.get_organisation_id_for_user("user-1") == first.id
 
 
-def _account(organisation_id: int, **overrides: object) -> Account:
+def _account(organisation_id: str, **overrides: object) -> Account:
     defaults: dict = {
-        "id": None,
+        "id": new_id(),
         "organisation_id": organisation_id,
         "business_name": "Acme",
         "contact_name": None,
@@ -209,14 +257,14 @@ def test_account_round_trip_preserves_the_full_address(repo, organisation_id):
 
 
 def test_get_missing_account_returns_none(repo, organisation_id):
-    assert repo.get_account(organisation_id, 999) is None
+    assert repo.get_account(organisation_id, "does-not-exist") is None
 
 
 def test_get_account_from_another_organisation_returns_none(repo, organisation_id):
     created = repo.create_account(_account(organisation_id))
 
     other = repo.create_organisation(
-        Organisation(id=None, name="Other Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
+        Organisation(id=new_id(), name="Other Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
     )
     assert repo.get_account(other.id, created.id) is None
 
@@ -240,6 +288,18 @@ def test_update_account_round_trip(repo, organisation_id):
     assert fetched.town_or_city == "Bristol"
 
 
+def test_list_accounts_is_ordered_by_creation_not_by_id(repo, organisation_id):
+    # Ids are random UUID4s (see ids.py) with no ordering relationship to
+    # insertion order - list_accounts orders by SQLite's implicit rowid
+    # instead (see sqlite_repository.py's comment on list_accounts).
+    first = repo.create_account(_account(organisation_id, business_name="A"))
+    second = repo.create_account(_account(organisation_id, business_name="B"))
+
+    fetched = repo.list_accounts(organisation_id)
+    assert [a.business_name for a in fetched] == ["A", "B"]
+    assert [a.id for a in fetched] == [first.id, second.id]
+
+
 def test_next_number_increments_and_is_scoped_by_name(repo, organisation_id):
     assert repo.next_quote_number(organisation_id) == "Q-0001"
     assert repo.next_quote_number(organisation_id) == "Q-0002"
@@ -248,7 +308,7 @@ def test_next_number_increments_and_is_scoped_by_name(repo, organisation_id):
 
 def test_next_number_is_scoped_per_organisation(repo, organisation_id):
     other = repo.create_organisation(
-        Organisation(id=None, name="Other Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
+        Organisation(id=new_id(), name="Other Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
     )
 
     assert repo.next_quote_number(organisation_id) == "Q-0001"
@@ -257,14 +317,14 @@ def test_next_number_is_scoped_per_organisation(repo, organisation_id):
 
 
 def test_get_business_profile_returns_none_when_unset(repo):
-    assert repo.get_business_profile(user_id=1) is None
+    assert repo.get_business_profile(user_id="user-1") is None
 
 
 def test_upsert_business_profile_round_trip_and_update(repo):
     created_at = datetime(2026, 1, 1, tzinfo=UTC)
     first = BusinessProfile(
-        id=None,
-        user_id=1,
+        id=new_id(),
+        user_id="user-1",
         title="Dr",
         first_name="Ada",
         last_name="Lovelace",
@@ -289,7 +349,7 @@ def test_upsert_business_profile_round_trip_and_update(repo):
     inserted = repo.upsert_business_profile(first)
     assert inserted.id is not None
 
-    fetched = repo.get_business_profile(user_id=1)
+    fetched = repo.get_business_profile(user_id="user-1")
     assert fetched.title == "Dr"
     assert fetched.first_name == "Ada"
     assert fetched.last_name == "Lovelace"
@@ -310,8 +370,8 @@ def test_upsert_business_profile_round_trip_and_update(repo):
 
     updated_at = datetime(2026, 1, 2, tzinfo=UTC)
     second = BusinessProfile(
-        id=None,
-        user_id=1,
+        id=new_id(),
+        user_id="user-1",
         title=None,
         first_name="Grace",
         last_name="Hopper",

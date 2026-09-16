@@ -133,7 +133,7 @@ def _months_ago(now: datetime, months: int) -> datetime:
     return now - timedelta(days=30 * months + 3)
 
 
-def _add_line_items(quotes: QuoteService, organisation_id: int, quote_id: int, *item_indices: int) -> None:
+def _add_line_items(quotes: QuoteService, organisation_id: str, quote_id: str, *item_indices: int) -> None:
     for i in item_indices:
         description, quantity, unit_price, tax_rate = _LINE_ITEM_POOL[i % len(_LINE_ITEM_POOL)]
         quotes.add_line_item(
@@ -160,7 +160,7 @@ class _Seeder:
     `init-db` actually runs."""
 
     def __init__(
-        self, application: Application, organisation_id: int, account_id: int, when: datetime, item_index: int
+        self, application: Application, organisation_id: str, account_id: str, when: datetime, item_index: int
     ) -> None:
         clock = _FixedClock(when)
         self.repository = application.repository
@@ -170,7 +170,7 @@ class _Seeder:
         self.account_id = account_id
         self.item_index = item_index
 
-    def _new_quote(self) -> int:
+    def _new_quote(self) -> str:
         quote = self.quotes.create_quote(
             organisation_id=self.organisation_id, account_id=self.account_id, currency=DEMO_CURRENCY
         )
@@ -193,7 +193,7 @@ class _Seeder:
         self.quotes.send(self.organisation_id, quote_id)
         self.quotes.mark_expired(self.organisation_id, quote_id)
 
-    def _accepted_and_converted(self) -> int:
+    def _accepted_and_converted(self) -> str:
         quote_id = self._new_quote()
         self.quotes.send(self.organisation_id, quote_id)
         self.quotes.mark_accepted(self.organisation_id, quote_id)

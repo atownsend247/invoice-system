@@ -25,7 +25,7 @@ class AccountIn(BaseModel):
 
 
 class AccountOut(BaseModel):
-    id: int
+    id: str
     business_name: str
     contact_name: str | None
     email: str
@@ -66,7 +66,7 @@ class LineItemIn(BaseModel):
 
 
 class LineItemOut(BaseModel):
-    id: int
+    id: str
     description: str
     quantity: str
     unit_price: str
@@ -90,14 +90,14 @@ class LineItemOut(BaseModel):
 
 
 class QuoteCreateIn(BaseModel):
-    account_id: int
+    account_id: str
     currency: str = "USD"
     expiry_date: date | None = None
 
 
 class QuoteOut(BaseModel):
-    id: int
-    account_id: int
+    id: str
+    account_id: str
     number: str | None
     status: str
     currency: str
@@ -128,9 +128,9 @@ class QuoteOut(BaseModel):
 
 
 class InvoiceOut(BaseModel):
-    id: int
-    account_id: int
-    quote_id: int | None
+    id: str
+    account_id: str
+    quote_id: str | None
     number: str | None
     status: str
     currency: str

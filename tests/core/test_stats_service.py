@@ -19,7 +19,7 @@ def test_get_stats_only_counts_accounts_in_the_same_organisation(application, or
     application.accounts.create_account(
         organisation_id=organisation_id, business_name="A", email="a@b.test", address_line1="x"
     )
-    other_organisation_id = application.organisations.get_or_create_for_user(2)
+    other_organisation_id = application.organisations.get_or_create_for_user("user-2")
     application.accounts.create_account(
         organisation_id=other_organisation_id, business_name="B", email="b@b.test", address_line1="y"
     )

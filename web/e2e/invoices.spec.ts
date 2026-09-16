@@ -23,7 +23,7 @@ test('downloading the PDF works even before the invoice is sent', async ({
     page.waitForEvent('download'),
     page.getByRole('button', { name: 'Download PDF' }).click(),
   ])
-  expect(download.suggestedFilename()).toMatch(/^invoice-\d+\.pdf$/)
+  expect(download.suggestedFilename()).toMatch(/^invoice-.+\.pdf$/)
 })
 
 test('viewing the PDF opens an in-page preview instead of downloading it', async ({

@@ -23,7 +23,7 @@ test('creating an account through the form lands on its detail page', async ({
   await page.getByLabel('Contact name').fill('Sarah Chen')
   await page.getByRole('button', { name: 'Create account' }).click()
 
-  await expect(page).toHaveURL(/\/accounts\/\d+$/)
+  await expect(page).toHaveURL(/\/accounts\/[^/]+$/)
   await expect(page.getByRole('heading', { name: businessName })).toBeVisible()
   await expect(page.getByText('Sarah Chen')).toBeVisible()
   await expect(page.getByText('billing@acme-widgets.test')).toBeVisible()

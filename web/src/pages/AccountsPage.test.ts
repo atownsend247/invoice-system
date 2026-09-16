@@ -4,7 +4,7 @@ import { accountMatchesQuery } from './AccountsPage'
 
 function account(overrides: Partial<Account>): Account {
   return {
-    id: 1,
+    id: 'acc-1',
     business_name: 'Northwind Traders',
     contact_name: 'Priya Patel',
     email: 'billing@northwindtraders.test',

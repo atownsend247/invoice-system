@@ -7,9 +7,13 @@ import { StatusBadge } from '../components/StatusBadge'
 import { errorMessage, useAsync } from '../hooks/useAsync'
 
 export function InvoiceDetailPage() {
-  const { id } = useParams()
-  const invoiceId = Number(id)
-  const { data: invoice, loading, error, refetch } = useAsync(() => api.getInvoice(invoiceId), [invoiceId])
+  const { id: invoiceId } = useParams()
+  const {
+    data: invoice,
+    loading,
+    error,
+    refetch,
+  } = useAsync(() => api.getInvoice(invoiceId ?? ''), [invoiceId])
   const { data: account } = useAsync(
     () => (invoice ? api.getAccount(invoice.account_id) : Promise.resolve(null)),
     [invoice?.account_id],

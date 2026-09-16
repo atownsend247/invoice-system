@@ -23,7 +23,7 @@ export function QuoteNewPage() {
     setError(null)
     setSubmitting(true)
     try {
-      const quote = await api.createQuote(Number(accountId), currencyValue)
+      const quote = await api.createQuote(accountId, currencyValue)
       navigate(`/quotes/${quote.id}`, { replace: true })
     } catch (err) {
       setError(errorMessage(err))

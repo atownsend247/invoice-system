@@ -233,4 +233,148 @@ MIGRATIONS: list[str] = [
     ALTER TABLE business_profiles ADD COLUMN document_header TEXT;
     ALTER TABLE business_profiles ADD COLUMN document_footer TEXT;
     """,
+    """
+    -- Every primary key in this schema (and every column that references
+    -- one) switches from an autoincrementing INTEGER to an opaque UUID4
+    -- TEXT string - matching sessionkit v0.2.0's own User.id change (see
+    -- CLAUDE.md) and closing the same information leak: a sequential id in
+    -- a URL/response reveals roughly how many rows exist and in what order
+    -- they were created, which nothing should be able to infer about
+    -- another organisation's activity (see data-model.md's Multi-tenancy).
+    -- Ids are now generated in the application layer
+    -- (OrganisationService/AccountService/QuoteService/InvoiceService/
+    -- BusinessProfileService's injectable `IdGenerator`, see ids.py)
+    -- before INSERT, not read back from `lastrowid` after.
+    --
+    -- This is a one-time authorized full reset, not a data-preserving
+    -- migration: remapping every existing integer id to a UUID while
+    -- rewriting every foreign key that points at it is possible but adds
+    -- real complexity for no benefit on a pre-1.0 app with no production
+    -- database to preserve (explicitly authorized by the user - see
+    -- CLAUDE.md). Every table is dropped and recreated;
+    -- `invoice-system-cli init-db` reseeds demo data with real UUIDs going
+    -- forward. Don't reuse this "just drop everything" pattern for a
+    -- future migration once real user data exists - that's exactly what
+    -- forward-only, data-preserving migrations exist to avoid.
+    --
+    -- organisation_id on accounts/quotes/invoices is NOT NULL here, unlike
+    -- migration 3 - that nullability existed only because ALTER TABLE ADD
+    -- COLUMN can't add a NOT NULL column without a default; a fresh CREATE
+    -- TABLE has no such restriction, and every row has always had one set
+    -- at creation since Organisation was introduced.
+    DROP TABLE IF EXISTS invoice_line_items;
+    DROP TABLE IF EXISTS quote_line_items;
+    DROP TABLE IF EXISTS invoices;
+    DROP TABLE IF EXISTS quotes;
+    DROP TABLE IF EXISTS accounts;
+    DROP TABLE IF EXISTS business_profiles;
+    DROP TABLE IF EXISTS organisation_members;
+    DROP TABLE IF EXISTS organisations;
+    DROP TABLE IF EXISTS counters;
+
+    CREATE TABLE organisations (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE organisation_members (
+        organisation_id TEXT NOT NULL REFERENCES organisations(id),
+        user_id TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (organisation_id, user_id)
+    );
+
+    CREATE TABLE accounts (
+        id TEXT PRIMARY KEY,
+        organisation_id TEXT NOT NULL REFERENCES organisations(id),
+        business_name TEXT NOT NULL,
+        contact_name TEXT,
+        email TEXT NOT NULL,
+        phone TEXT,
+        address_line1 TEXT NOT NULL,
+        address_line2 TEXT,
+        town_or_city TEXT,
+        county TEXT,
+        postcode TEXT,
+        created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE quotes (
+        id TEXT PRIMARY KEY,
+        organisation_id TEXT NOT NULL REFERENCES organisations(id),
+        account_id TEXT NOT NULL REFERENCES accounts(id),
+        number TEXT,
+        status TEXT NOT NULL,
+        currency TEXT NOT NULL,
+        issue_date TEXT NOT NULL,
+        expiry_date TEXT,
+        created_at TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX idx_quotes_organisation_number ON quotes (organisation_id, number);
+
+    CREATE TABLE quote_line_items (
+        id TEXT PRIMARY KEY,
+        quote_id TEXT NOT NULL REFERENCES quotes(id),
+        description TEXT NOT NULL,
+        quantity TEXT NOT NULL,
+        unit_price TEXT NOT NULL,
+        tax_rate TEXT NOT NULL DEFAULT '0',
+        position INTEGER NOT NULL
+    );
+
+    CREATE TABLE invoices (
+        id TEXT PRIMARY KEY,
+        organisation_id TEXT NOT NULL REFERENCES organisations(id),
+        account_id TEXT NOT NULL REFERENCES accounts(id),
+        quote_id TEXT REFERENCES quotes(id),
+        number TEXT,
+        status TEXT NOT NULL,
+        currency TEXT NOT NULL,
+        issue_date TEXT NOT NULL,
+        due_date TEXT,
+        created_at TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX idx_invoices_organisation_number ON invoices (organisation_id, number);
+
+    CREATE TABLE invoice_line_items (
+        id TEXT PRIMARY KEY,
+        invoice_id TEXT NOT NULL REFERENCES invoices(id),
+        description TEXT NOT NULL,
+        quantity TEXT NOT NULL,
+        unit_price TEXT NOT NULL,
+        tax_rate TEXT NOT NULL DEFAULT '0',
+        position INTEGER NOT NULL
+    );
+
+    CREATE TABLE counters (
+        name TEXT PRIMARY KEY,
+        value INTEGER NOT NULL
+    );
+
+    CREATE TABLE business_profiles (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL UNIQUE,
+        title TEXT,
+        first_name TEXT NOT NULL DEFAULT '',
+        last_name TEXT NOT NULL DEFAULT '',
+        business_name TEXT NOT NULL DEFAULT '',
+        address_line1 TEXT,
+        address_line2 TEXT,
+        town_or_city TEXT,
+        county TEXT,
+        postcode TEXT,
+        payment_terms_days INTEGER NOT NULL DEFAULT 30,
+        currency TEXT NOT NULL DEFAULT 'GBP',
+        utr TEXT,
+        vat_number TEXT,
+        bank_account_name TEXT,
+        bank_sort_code TEXT,
+        bank_account_number TEXT,
+        document_header TEXT,
+        document_footer TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    """,
 ]

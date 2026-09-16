@@ -7,10 +7,9 @@ import { StatusBadge } from '../components/StatusBadge'
 import { errorMessage, useAsync } from '../hooks/useAsync'
 
 export function QuoteDetailPage() {
-  const { id } = useParams()
-  const quoteId = Number(id)
+  const { id: quoteId } = useParams()
   const navigate = useNavigate()
-  const { data: quote, loading, error, refetch } = useAsync(() => api.getQuote(quoteId), [quoteId])
+  const { data: quote, loading, error, refetch } = useAsync(() => api.getQuote(quoteId ?? ''), [quoteId])
   const { data: account } = useAsync(
     () => (quote ? api.getAccount(quote.account_id) : Promise.resolve(null)),
     [quote?.account_id],

@@ -4,8 +4,8 @@ import { isOutstanding, isOverdue } from './HomePage'
 
 function invoice(overrides: Partial<Invoice>): Invoice {
   return {
-    id: 1,
-    account_id: 1,
+    id: 'inv-1',
+    account_id: 'acc-1',
     quote_id: null,
     number: 'INV-0001',
     status: 'sent',

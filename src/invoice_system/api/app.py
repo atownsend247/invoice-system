@@ -88,7 +88,7 @@ def get_application(request: Request) -> Application:
 def get_organisation_id(
     application: Application = Depends(get_application),
     user: SessionUser = Depends(get_current_user),
-) -> int:
+) -> str:
     """The tenant boundary for the current request - see CLAUDE.md and
     models.py's Organisation docstring. Every domain route depends on this
     (directly or via a handler that also needs `user`/`application` for
@@ -130,7 +130,7 @@ def healthz() -> dict:
 def create_account(
     body: AccountIn,
     application: Application = Depends(get_application),
-    organisation_id: int = Depends(get_organisation_id),
+    organisation_id: str = Depends(get_organisation_id),
 ) -> AccountOut:
     account = application.accounts.create_account(
         organisation_id=organisation_id,
@@ -150,26 +150,26 @@ def create_account(
 @domain_router.get("/accounts", response_model=list[AccountOut])
 def list_accounts(
     application: Application = Depends(get_application),
-    organisation_id: int = Depends(get_organisation_id),
+    organisation_id: str = Depends(get_organisation_id),
 ) -> list[AccountOut]:
     return [AccountOut.from_model(a) for a in application.accounts.list_accounts(organisation_id)]
 
 
 @domain_router.get("/accounts/{account_id}", response_model=AccountOut)
 def get_account(
-    account_id: int,
+    account_id: str,
     application: Application = Depends(get_application),
-    organisation_id: int = Depends(get_organisation_id),
+    organisation_id: str = Depends(get_organisation_id),
 ) -> AccountOut:
     return AccountOut.from_model(application.accounts.get_account(organisation_id, account_id))
 
 
 @domain_router.put("/accounts/{account_id}", response_model=AccountOut)
 def update_account(
-    account_id: int,
+    account_id: str,
     body: AccountIn,
     application: Application = Depends(get_application),
-    organisation_id: int = Depends(get_organisation_id),
+    organisation_id: str = Depends(get_organisation_id),
 ) -> AccountOut:
     account = application.accounts.update_account(
         organisation_id,
@@ -191,7 +191,7 @@ def update_account(
 def create_quote(
     body: QuoteCreateIn,
     application: Application = Depends(get_application),
-    organisation_id: int = Depends(get_organisation_id),
+    organisation_id: str = Depends(get_organisation_id),
 ) -> QuoteOut:
     quote = application.quotes.create_quote(
         organisation_id=organisation_id,
@@ -204,9 +204,9 @@ def create_quote(
 
 @domain_router.get("/quotes", response_model=list[QuoteOut])
 def list_quotes(
-    account_id: int | None = None,
+    account_id: str | None = None,
     application: Application = Depends(get_application),
-    organisation_id: int = Depends(get_organisation_id),
+    organisation_id: str = Depends(get_organisation_id),
 ) -> list[QuoteOut]:
     return [
         QuoteOut.from_model(q) for q in application.quotes.list_quotes(organisation_id, account_id=account_id)
@@ -215,19 +215,19 @@ def list_quotes(
 
 @domain_router.get("/quotes/{quote_id}", response_model=QuoteOut)
 def get_quote(
-    quote_id: int,
+    quote_id: str,
     application: Application = Depends(get_application),
-    organisation_id: int = Depends(get_organisation_id),
+    organisation_id: str = Depends(get_organisation_id),
 ) -> QuoteOut:
     return QuoteOut.from_model(application.quotes.get_quote(organisation_id, quote_id))
 
 
 @domain_router.post("/quotes/{quote_id}/line-items", response_model=QuoteOut, status_code=201)
 def add_quote_line_item(
-    quote_id: int,
+    quote_id: str,
     body: LineItemIn,
     application: Application = Depends(get_application),
-    organisation_id: int = Depends(get_organisation_id),
+    organisation_id: str = Depends(get_organisation_id),
 ) -> QuoteOut:
     quote = application.quotes.add_line_item(
         organisation_id,
@@ -242,28 +242,28 @@ def add_quote_line_item(
 
 @domain_router.post("/quotes/{quote_id}/send", response_model=QuoteOut)
 def send_quote(
-    quote_id: int,
+    quote_id: str,
     application: Application = Depends(get_application),
-    organisation_id: int = Depends(get_organisation_id),
+    organisation_id: str = Depends(get_organisation_id),
 ) -> QuoteOut:
     return QuoteOut.from_model(application.quotes.send(organisation_id, quote_id))
 
 
 @domain_router.post("/quotes/{quote_id}/convert", response_model=InvoiceOut, status_code=201)
 def convert_quote(
-    quote_id: int,
+    quote_id: str,
     application: Application = Depends(get_application),
-    organisation_id: int = Depends(get_organisation_id),
+    organisation_id: str = Depends(get_organisation_id),
 ) -> InvoiceOut:
     return InvoiceOut.from_model(application.quotes.convert_to_invoice(organisation_id, quote_id))
 
 
 @domain_router.get("/quotes/{quote_id}/pdf")
 def get_quote_pdf(
-    quote_id: int,
+    quote_id: str,
     application: Application = Depends(get_application),
     user: SessionUser = Depends(get_current_user),
-    organisation_id: int = Depends(get_organisation_id),
+    organisation_id: str = Depends(get_organisation_id),
 ) -> Response:
     quote = application.quotes.get_quote(organisation_id, quote_id)
     account = application.accounts.get_account(organisation_id, quote.account_id)
@@ -273,9 +273,9 @@ def get_quote_pdf(
 
 @domain_router.get("/invoices", response_model=list[InvoiceOut])
 def list_invoices(
-    account_id: int | None = None,
+    account_id: str | None = None,
     application: Application = Depends(get_application),
-    organisation_id: int = Depends(get_organisation_id),
+    organisation_id: str = Depends(get_organisation_id),
 ) -> list[InvoiceOut]:
     return [
         InvoiceOut.from_model(i)
@@ -287,7 +287,7 @@ def list_invoices(
 def invoice_monthly_totals(
     application: Application = Depends(get_application),
     user: SessionUser = Depends(get_current_user),
-    organisation_id: int = Depends(get_organisation_id),
+    organisation_id: str = Depends(get_organisation_id),
 ) -> MonthlyTotalsReportOut:
     # Registered before /invoices/{invoice_id} - a fixed path segment would
     # otherwise be swallowed by that route's int path param and 422.
@@ -298,19 +298,19 @@ def invoice_monthly_totals(
 
 @domain_router.get("/invoices/{invoice_id}", response_model=InvoiceOut)
 def get_invoice(
-    invoice_id: int,
+    invoice_id: str,
     application: Application = Depends(get_application),
-    organisation_id: int = Depends(get_organisation_id),
+    organisation_id: str = Depends(get_organisation_id),
 ) -> InvoiceOut:
     return InvoiceOut.from_model(application.invoices.get_invoice(organisation_id, invoice_id))
 
 
 @domain_router.post("/invoices/{invoice_id}/send", response_model=InvoiceOut)
 def send_invoice(
-    invoice_id: int,
+    invoice_id: str,
     application: Application = Depends(get_application),
     user: SessionUser = Depends(get_current_user),
-    organisation_id: int = Depends(get_organisation_id),
+    organisation_id: str = Depends(get_organisation_id),
 ) -> InvoiceOut:
     profile = application.business_profiles.get_profile(user.id)
     invoice = application.invoices.send(
@@ -321,28 +321,28 @@ def send_invoice(
 
 @domain_router.post("/invoices/{invoice_id}/void", response_model=InvoiceOut)
 def void_invoice(
-    invoice_id: int,
+    invoice_id: str,
     application: Application = Depends(get_application),
-    organisation_id: int = Depends(get_organisation_id),
+    organisation_id: str = Depends(get_organisation_id),
 ) -> InvoiceOut:
     return InvoiceOut.from_model(application.invoices.void(organisation_id, invoice_id))
 
 
 @domain_router.post("/invoices/{invoice_id}/pay", response_model=InvoiceOut)
 def pay_invoice(
-    invoice_id: int,
+    invoice_id: str,
     application: Application = Depends(get_application),
-    organisation_id: int = Depends(get_organisation_id),
+    organisation_id: str = Depends(get_organisation_id),
 ) -> InvoiceOut:
     return InvoiceOut.from_model(application.invoices.pay(organisation_id, invoice_id))
 
 
 @domain_router.get("/invoices/{invoice_id}/pdf")
 def get_invoice_pdf(
-    invoice_id: int,
+    invoice_id: str,
     application: Application = Depends(get_application),
     user: SessionUser = Depends(get_current_user),
-    organisation_id: int = Depends(get_organisation_id),
+    organisation_id: str = Depends(get_organisation_id),
 ) -> Response:
     invoice = application.invoices.get_invoice(organisation_id, invoice_id)
     account = application.accounts.get_account(organisation_id, invoice.account_id)
@@ -391,7 +391,7 @@ def save_business_profile(
 @domain_router.get("/stats", response_model=StatsOut)
 def get_stats(
     application: Application = Depends(get_application),
-    organisation_id: int = Depends(get_organisation_id),
+    organisation_id: str = Depends(get_organisation_id),
 ) -> StatsOut:
     return StatsOut.from_model(application.stats.get_stats(organisation_id))
 

@@ -83,7 +83,7 @@ def test_accounts_are_isolated_per_organisation(application, organisation_id):
     application.accounts.create_account(
         organisation_id=organisation_id, business_name="A", email="a@b.test", address_line1="x"
     )
-    other_organisation_id = application.organisations.get_or_create_for_user(2)
+    other_organisation_id = application.organisations.get_or_create_for_user("user-2")
     application.accounts.create_account(
         organisation_id=other_organisation_id, business_name="B", email="b@b.test", address_line1="y"
     )
@@ -160,7 +160,7 @@ def test_update_account_from_another_organisation_raises_not_found(application, 
         email="jane@acme.test",
         address_line1="1 Main St",
     )
-    other_organisation_id = application.organisations.get_or_create_for_user(2)
+    other_organisation_id = application.organisations.get_or_create_for_user("user-2")
 
     with pytest.raises(NotFound):
         application.accounts.update_account(

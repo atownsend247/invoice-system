@@ -32,10 +32,12 @@ def application(tmp_path, fake_clock: FakeClock) -> Application:
 
 
 @pytest.fixture
-def organisation_id(application: Application) -> int:
-    """A single user's (id 1) auto-created Organisation - the tenant
+def organisation_id(application: Application) -> str:
+    """A single user's (id "user-1") auto-created Organisation - the tenant
     boundary every Account/Quote/Invoice call now requires (see CLAUDE.md).
     Most tests only care that there's *an* organisation, not which one -
     tests asserting isolation between two organisations build their own
-    second id via `application.organisations.get_or_create_for_user(2)`."""
-    return application.organisations.get_or_create_for_user(1)
+    second id via `application.organisations.get_or_create_for_user("user-2")`.
+    A plain string, not a real UUID - user_id is never parsed or validated
+    as one (see CLAUDE.md), only ever used as an opaque key."""
+    return application.organisations.get_or_create_for_user("user-1")

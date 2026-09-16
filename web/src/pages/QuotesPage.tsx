@@ -7,7 +7,7 @@ export function QuotesPage() {
   const { data: quotes, loading, error } = useAsync(() => api.listQuotes(), [])
   const { data: accounts } = useAsync(() => api.listAccounts(), [])
 
-  const accountName = (accountId: number) =>
+  const accountName = (accountId: string) =>
     accounts?.find((account) => account.id === accountId)?.business_name ?? `#${accountId}`
 
   return (

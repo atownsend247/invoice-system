@@ -50,7 +50,7 @@ describe('App', () => {
       token: 'tok_123',
       expires_at: '2026-10-01T00:00:00Z',
       user: {
-        id: 1,
+        id: 'user-1',
         email: 'owner@acme.test',
         name: 'owner',
         created_at: '2026-01-01T00:00:00Z',

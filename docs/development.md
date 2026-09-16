@@ -67,26 +67,50 @@ resolve "which organisation" from, so it resolves that from an explicit
 user id instead (auto-creating that user's `Organisation` on first use, same
 as the API does from a Bearer token — see `docs/data-model.md`'s
 "Multi-tenancy"). Two different `--user-id`s see two entirely separate sets
-of accounts/quotes/invoices:
+of accounts/quotes/invoices.
+
+Every id in this app (`--user-id` included) is a UUID4 string, not a small
+sequential number — there's nothing to guess, but there's also nothing to
+type from memory: an `account`/`quote`/`invoice` id only exists once a prior
+command has printed it, so a real session copies it from that command's
+output into the next one, exactly like the example below (each command
+prints the id of whatever it just created — `Created account <id>: ...`,
+`Created quote <id> (draft)`, `Converted quote <id> to invoice <id>` — see
+`cli/main.py` for the exact wording):
 
 ```
 uv run invoice-system-cli --help
-uv run invoice-system-cli account create --user-id 1 --business-name "Acme Co" \
+uv run sessionkit list
+# -> e9f1c2a0-...  you@example.com
+
+uv run invoice-system-cli account create --user-id e9f1c2a0-... --business-name "Acme Co" \
     --email billing@acme.test --address-line1 "1 Main St" --town-or-city London \
     --postcode "SW1A 1AA"
-uv run invoice-system-cli account update 1 --user-id 1 --business-name "Acme Co Ltd" \
-    --email billing@acme.test --address-line1 "1 Main St"
-uv run invoice-system-cli quote create --user-id 1 --account-id 1
-uv run invoice-system-cli quote add-item 1 --user-id 1 --description "Design work" \
-    --quantity 10 --unit-price 50.00 --tax-rate 0.20
-uv run invoice-system-cli quote send 1 --user-id 1
-uv run invoice-system-cli quote pdf 1 -o quote.pdf --user-id 1
-uv run invoice-system-cli quote convert 1 --user-id 1
-uv run invoice-system-cli invoice send 1 --user-id 1
-uv run invoice-system-cli invoice pay 1 --user-id 1
-uv run invoice-system-cli invoice pdf 1 -o invoice.pdf --user-id 1
-uv run invoice-system-cli stats --user-id 1
+# -> Created account 3b7d4e10-...: Acme Co
+
+uv run invoice-system-cli account update 3b7d4e10-... --user-id e9f1c2a0-... \
+    --business-name "Acme Co Ltd" --email billing@acme.test --address-line1 "1 Main St"
+
+uv run invoice-system-cli quote create --user-id e9f1c2a0-... --account-id 3b7d4e10-...
+# -> Created quote 6a2f88c4-... (draft)
+
+uv run invoice-system-cli quote add-item 6a2f88c4-... --user-id e9f1c2a0-... \
+    --description "Design work" --quantity 10 --unit-price 50.00 --tax-rate 0.20
+uv run invoice-system-cli quote send 6a2f88c4-... --user-id e9f1c2a0-...
+uv run invoice-system-cli quote pdf 6a2f88c4-... -o quote.pdf --user-id e9f1c2a0-...
+uv run invoice-system-cli quote convert 6a2f88c4-... --user-id e9f1c2a0-...
+# -> Converted quote 6a2f88c4-... to invoice 91d0aa77-...
+
+uv run invoice-system-cli invoice send 91d0aa77-... --user-id e9f1c2a0-...
+uv run invoice-system-cli invoice pay 91d0aa77-... --user-id e9f1c2a0-...
+uv run invoice-system-cli invoice pdf 91d0aa77-... -o invoice.pdf --user-id e9f1c2a0-...
+uv run invoice-system-cli stats --user-id e9f1c2a0-...
 ```
+
+(`...`-truncated above purely for readability — a real id is a full UUID4,
+e.g. `e9f1c2a0-4b3d-4e7a-9c1f-2d6b8a0e5f31`. See `docs/data-model.md`'s
+"Opaque ids" for why every id in this app moved from a sequential integer
+to a UUID4.)
 
 `--tax-rate` (default `0`) is a fraction, not a percentage - `0.20` for 20%
 VAT, `0.05` for 5%, valid range `[0, 1]`.
@@ -104,7 +128,7 @@ explicit `--user-id` (find it via `uv run sessionkit list`) since the CLI
 has no login session to resolve it from:
 
 ```
-uv run invoice-system-cli settings set --user-id 1 \
+uv run invoice-system-cli settings set --user-id e9f1c2a0-... \
     --first-name Ada --last-name Lovelace \
     --business-name "Acme Consulting" --address-line1 "1 Main St" \
     --town-or-city London --postcode "SW1A 1AA" \
@@ -114,7 +138,7 @@ uv run invoice-system-cli settings set --user-id 1 \
     --bank-sort-code "12-34-56" --bank-account-number 12345678 \
     --document-header "Acme Consulting" \
     --document-footer "Thank you for your business!"
-uv run invoice-system-cli settings show --user-id 1
+uv run invoice-system-cli settings show --user-id e9f1c2a0-...
 ```
 
 `currency` (default `GBP`) is the *reporting* currency the home dashboard's
@@ -124,7 +148,7 @@ resolves it from the profile the same way `invoice send`/`quote pdf` resolve
 payment terms/the "From" party:
 
 ```
-uv run invoice-system-cli invoice monthly-totals --user-id 1
+uv run invoice-system-cli invoice monthly-totals --user-id e9f1c2a0-...
 ```
 
 `--user-id` on `invoice send`, `quote pdf`, and `invoice pdf` does double
@@ -132,8 +156,8 @@ duty: besides resolving the organisation (required, as above), it also pulls
 in that user's payment terms / "From" details:
 
 ```
-uv run invoice-system-cli invoice send 1 --user-id 1
-uv run invoice-system-cli quote pdf 1 -o quote.pdf --user-id 1
+uv run invoice-system-cli invoice send 91d0aa77-... --user-id e9f1c2a0-...
+uv run invoice-system-cli quote pdf 6a2f88c4-... -o quote.pdf --user-id e9f1c2a0-...
 ```
 
 ## Serve the web client
