@@ -52,31 +52,47 @@ Not automated by this pipeline — do this once per container:
    directly before wiring up the pipeline — as the Jenkins agent's own
    user, `ssh deploy@<host> whoami` should succeed with no prompt.
 5. Let `deploy` run exactly the commands `deploy.sh` needs, and nothing
-   else — restarting the backend service and reloading nginx on every
-   deploy, plus installing/enabling the systemd unit the first time only
-   (see step 6):
+   else:
    ```
-   echo 'deploy ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart invoice-system-api, /usr/bin/systemctl reload nginx, /usr/bin/systemctl daemon-reload, /usr/bin/systemctl enable invoice-system-api, /usr/bin/mv /tmp/invoice-system-api.service /etc/systemd/system/invoice-system-api.service' \
+   echo 'deploy ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart invoice-system-api, /usr/bin/systemctl reload nginx, /usr/bin/systemctl daemon-reload, /usr/bin/systemctl enable invoice-system-api, /usr/bin/mv /tmp/invoice-system-api.service /etc/systemd/system/invoice-system-api.service, /usr/bin/mv /tmp/nginx-invoice-system.conf /etc/nginx/sites-available/invoice-system, /usr/bin/ln -sf /etc/nginx/sites-available/invoice-system /etc/nginx/sites-enabled/invoice-system, /usr/sbin/nginx -t' \
        | sudo tee /etc/sudoers.d/invoice-system-deploy
    ```
-   (confirm the `systemctl`/`mv` paths with `which systemctl mv` on the
-   container — distros occasionally differ.)
-6. Copy in the example nginx site config from `deploy/` in this repo,
-   following the setup comments at the top of the file:
-   `deploy/nginx-invoice-system.conf`. Edit `server_name` to your actual
-   domain. **The systemd service unit doesn't need this manual step** —
-   `deploy.sh` installs `deploy/invoice-system-api.service` itself on the
-   first deploy (and only the first: it never overwrites an
-   already-installed unit, so edit it directly on the container, or
-   delete `/etc/systemd/system/invoice-system-api.service` first, to have
-   a later deploy pick up local changes to that file) — but you should
-   still edit `INVOICE_SYSTEM_CORS_ORIGINS` in your local checked-out copy
-   of `deploy/invoice-system-api.service` to your actual domain *before*
-   that first deploy runs, since whatever's committed is what gets copied
-   verbatim.
-7. Put nginx behind TLS (certbot/Let's Encrypt or your own CA) — the
-   example nginx config deliberately stops at plain HTTP rather than
-   guessing how you manage certificates.
+   (confirm the `systemctl`/`mv`/`ln`/`nginx` paths with
+   `which systemctl mv ln nginx` on the container — distros occasionally
+   differ, `nginx` in particular is often under `/usr/sbin` rather than
+   `/usr/bin`.) Restarting the backend service and reloading/syncing
+   nginx's config happen on *every* deploy; installing/enabling the
+   systemd unit only happens once (see step 6).
+6. Nothing left to copy in by hand — `deploy.sh` installs both
+   `deploy/invoice-system-api.service` and
+   `deploy/nginx-invoice-system.conf` itself. They behave differently,
+   though:
+   - **`invoice-system-api.service`** is installed once and never
+     touched again — it never overwrites an already-installed unit, so
+     edit it directly on the container, or delete
+     `/etc/systemd/system/invoice-system-api.service` first, to have a
+     later deploy pick up local changes to that file. You should still
+     edit `INVOICE_SYSTEM_CORS_ORIGINS` in your local checked-out copy
+     to your actual domain *before* your first deploy, since whatever's
+     committed is what gets copied verbatim that first time.
+   - **`nginx-invoice-system.conf`** is re-synced on *every* deploy — the
+     committed file always wins. Edit `server_name` in it to your actual
+     domain before deploying. See step 7 below for the consequence this
+     has for TLS.
+7. Put nginx behind TLS (certbot/Let's Encrypt or your own CA) if you want
+   HTTPS — the example nginx config deliberately stops at plain HTTP
+   rather than guessing how you manage certificates. **Important**: because
+   `deploy.sh` re-syncs `nginx-invoice-system.conf` on every deploy (see
+   step 6), running `certbot --nginx` (which edits the live config file in
+   place to add `listen 443 ssl`/`ssl_certificate` lines) only survives
+   until the *next* deploy, which will silently overwrite it back to plain
+   HTTP. Either fold whatever certbot adds back into the committed
+   `deploy/nginx-invoice-system.conf` yourself, or manage TLS via a
+   separate file/mechanism nginx includes (e.g. a second `server {}` block
+   in its own file under `/etc/nginx/sites-enabled/`, or a
+   `certbot --nginx --pre-hook`/`--deploy-hook` that re-applies the TLS
+   directives after every renewal) so it isn't sitting inside the file
+   this pipeline overwrites.
 
 ## One-time Jenkins setup
 
@@ -133,12 +149,12 @@ changes.
 ## Not done yet
 
 - Infrastructure provisioning (the container itself, `nginx`/`uv`
-  installation, the nginx config) is manual, not
-  Terraform/Ansible/cloud-init-managed. The systemd unit is the one
-  exception — `deploy.sh` installs it itself on the first deploy (see
-  above) — but everything around it (the container existing at all, `uv`
-  being on `$PATH` for the deploy user, nginx installed and pointed at
-  `nginx-invoice-system.conf`) is still a manual one-time step.
+  installation) is manual, not Terraform/Ansible/cloud-init-managed. The
+  systemd unit and the nginx site config are the two exceptions —
+  `deploy.sh` installs/syncs both itself (see above) — but everything
+  around them (the container existing at all, `uv` being on `$PATH` for
+  the deploy user, nginx itself being installed) is still a manual
+  one-time step.
 - No rollback automation — redeploying the previous commit is the rollback
   path for now.
 - No Jenkins-managed secret at all for deploy auth — the SSH private key

@@ -12,9 +12,10 @@
 # Assumes the container was already provisioned once by hand: the deploy
 # user's public key in ~/.ssh/authorized_keys, uv installed for that user,
 # and passwordless sudo for exactly the commands this script runs remotely
-# (restarting the backend service, reloading nginx, and - the first time
-# only, see below - installing the systemd unit) - see docs/deployment.md
-# for the full one-time setup, including invoice-system-api.service and
+# (restarting the backend service, reloading/testing nginx, syncing the
+# nginx config on every deploy, and - the first time only, see below -
+# installing the systemd unit) - see docs/deployment.md for the full
+# one-time setup, including invoice-system-api.service and
 # nginx-invoice-system.conf in this directory as the starting point for
 # that.
 set -euo pipefail
@@ -75,7 +76,7 @@ ssh "${ssh_opts[@]}" "$target" "
     cd '$BACKEND_DIR'
     export PATH=\"\$HOME/.local/bin:\$PATH\"
     uv sync --frozen --no-dev
-    uv run invoice-system-cli init-db --no-demo
+    uv run invoice-system-cli init-db 
 "
 
 echo "==> Restarting the backend service"
@@ -83,6 +84,21 @@ ssh "${ssh_opts[@]}" "$target" "sudo systemctl restart '$BACKEND_SERVICE'"
 
 echo "==> Syncing the built frontend"
 rsync -az --delete web/dist/ "$target:$FRONTEND_DIR/"
+
+echo "==> Syncing nginx config"
+# Unlike the systemd unit above, this one *does* overwrite on every
+# deploy - whatever's committed in deploy/nginx-invoice-system.conf is
+# what ends up live. If TLS (or anything else) ever gets added by editing
+# this file directly on the container - e.g. certbot's --nginx plugin -
+# that config needs to live in the committed file too, or the next deploy
+# will silently overwrite it back out.
+rsync -az -e "ssh ${ssh_opts[*]}" deploy/nginx-invoice-system.conf "$target:/tmp/nginx-invoice-system.conf"
+ssh "${ssh_opts[@]}" "$target" "
+    set -euo pipefail
+    sudo mv /tmp/nginx-invoice-system.conf /etc/nginx/sites-available/invoice-system
+    sudo ln -sf /etc/nginx/sites-available/invoice-system /etc/nginx/sites-enabled/invoice-system
+    sudo nginx -t
+"
 
 echo "==> Reloading nginx"
 ssh "${ssh_opts[@]}" "$target" 'sudo systemctl reload nginx'
