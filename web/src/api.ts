@@ -390,8 +390,12 @@ export interface SaveBusinessProfileInput {
   bank_account_name?: string
   bank_sort_code?: string
   bank_account_number?: string
-  document_header?: string
-  document_footer?: string
+  quote_document_header?: string
+  quote_document_footer?: string
+  invoice_document_header?: string
+  invoice_document_footer?: string
+  expense_document_header?: string
+  expense_document_footer?: string
 }
 
 export function saveBusinessProfile(input: SaveBusinessProfileInput): Promise<BusinessProfile> {

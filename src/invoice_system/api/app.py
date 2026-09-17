@@ -556,8 +556,12 @@ def save_business_profile(
         bank_account_name=body.bank_account_name,
         bank_sort_code=body.bank_sort_code,
         bank_account_number=body.bank_account_number,
-        document_header=body.document_header,
-        document_footer=body.document_footer,
+        quote_document_header=body.quote_document_header,
+        quote_document_footer=body.quote_document_footer,
+        invoice_document_header=body.invoice_document_header,
+        invoice_document_footer=body.invoice_document_footer,
+        expense_document_header=body.expense_document_header,
+        expense_document_footer=body.expense_document_footer,
     )
     return BusinessProfileOut.from_model(profile)
 

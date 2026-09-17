@@ -463,4 +463,32 @@ MIGRATIONS: list[str] = [
         used_at TEXT
     );
     """,
+    """
+    -- business_profiles.document_header/document_footer split into three
+    -- independent pairs, one per document type (quote/invoice/expense),
+    -- so each can say something different - see models.BusinessProfile
+    -- and pdf.py's quote_header_lines/quote_footer_lines and its
+    -- invoice_/expense_ equivalents. Same shape as migration 5's
+    -- accounts.address split: add the new nullable columns, copy the one
+    -- old value into all three new header columns and all three new
+    -- footer columns (existing users keep exactly what they had, just
+    -- duplicated across the three - not dropped), then drop the old
+    -- columns. All directly supported by SQLite's ALTER TABLE, no
+    -- rebuild needed.
+    ALTER TABLE business_profiles ADD COLUMN quote_document_header TEXT;
+    ALTER TABLE business_profiles ADD COLUMN quote_document_footer TEXT;
+    ALTER TABLE business_profiles ADD COLUMN invoice_document_header TEXT;
+    ALTER TABLE business_profiles ADD COLUMN invoice_document_footer TEXT;
+    ALTER TABLE business_profiles ADD COLUMN expense_document_header TEXT;
+    ALTER TABLE business_profiles ADD COLUMN expense_document_footer TEXT;
+    UPDATE business_profiles SET
+        quote_document_header = document_header,
+        invoice_document_header = document_header,
+        expense_document_header = document_header,
+        quote_document_footer = document_footer,
+        invoice_document_footer = document_footer,
+        expense_document_footer = document_footer;
+    ALTER TABLE business_profiles DROP COLUMN document_header;
+    ALTER TABLE business_profiles DROP COLUMN document_footer;
+    """,
 ]

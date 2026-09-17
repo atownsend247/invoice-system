@@ -577,8 +577,12 @@ def settings_show(application: Application, user_id: str) -> None:
     click.echo(f"Bank account name: {profile.bank_account_name or '-'}")
     click.echo(f"Bank sort code: {profile.bank_sort_code or '-'}")
     click.echo(f"Bank account number: {profile.bank_account_number or '-'}")
-    click.echo(f"Document header: {profile.document_header or '-'}")
-    click.echo(f"Document footer: {profile.document_footer or '-'}")
+    click.echo(f"Quote header: {profile.quote_document_header or '-'}")
+    click.echo(f"Quote footer: {profile.quote_document_footer or '-'}")
+    click.echo(f"Invoice header: {profile.invoice_document_header or '-'}")
+    click.echo(f"Invoice footer: {profile.invoice_document_footer or '-'}")
+    click.echo(f"Expense header: {profile.expense_document_header or '-'}")
+    click.echo(f"Expense footer: {profile.expense_document_footer or '-'}")
 
 
 @settings.command("set")
@@ -599,11 +603,19 @@ def settings_show(application: Application, user_id: str) -> None:
 @click.option("--bank-account-name", default=None)
 @click.option("--bank-sort-code", default=None)
 @click.option("--bank-account-number", default=None)
+@click.option("--quote-header", default=None, help="Free text (multi-line OK) shown above every quote PDF.")
+@click.option("--quote-footer", default=None, help="Free text (multi-line OK) shown below every quote PDF.")
 @click.option(
-    "--document-header", default=None, help="Free text (multi-line OK) shown above every quote/invoice PDF."
+    "--invoice-header", default=None, help="Free text (multi-line OK) shown above every invoice PDF."
 )
 @click.option(
-    "--document-footer", default=None, help="Free text (multi-line OK) shown below every quote/invoice PDF."
+    "--invoice-footer", default=None, help="Free text (multi-line OK) shown below every invoice PDF."
+)
+@click.option(
+    "--expense-header", default=None, help="Free text (multi-line OK) shown above every expense PDF."
+)
+@click.option(
+    "--expense-footer", default=None, help="Free text (multi-line OK) shown below every expense PDF."
 )
 @click.pass_obj
 def settings_set(
@@ -625,8 +637,12 @@ def settings_set(
     bank_account_name: str | None,
     bank_sort_code: str | None,
     bank_account_number: str | None,
-    document_header: str | None,
-    document_footer: str | None,
+    quote_header: str | None,
+    quote_footer: str | None,
+    invoice_header: str | None,
+    invoice_footer: str | None,
+    expense_header: str | None,
+    expense_footer: str | None,
 ) -> None:
     application.business_profiles.save_profile(
         user_id,
@@ -646,8 +662,12 @@ def settings_set(
         bank_account_name=bank_account_name,
         bank_sort_code=bank_sort_code,
         bank_account_number=bank_account_number,
-        document_header=document_header,
-        document_footer=document_footer,
+        quote_document_header=quote_header,
+        quote_document_footer=quote_footer,
+        invoice_document_header=invoice_header,
+        invoice_document_footer=invoice_footer,
+        expense_document_header=expense_header,
+        expense_document_footer=expense_footer,
     )
     click.echo(f"Saved business profile for user {user_id}")
 

@@ -429,8 +429,15 @@ def seed_demo_data(application: Application, auth: Auth, *, now: datetime | None
         bank_account_name="Blake Freelance Design",
         bank_sort_code="12-34-56",
         bank_account_number="12345678",
-        document_header="Blake Freelance Design\nRegistered in England & Wales, company no. 12345678",
-        document_footer="Thank you for your business!\nPayment is due within the stated terms.",
+        # Deliberately different per document type, not the same text three
+        # times over - that's the whole point of these being three
+        # independent pairs rather than one shared one (see CLAUDE.md).
+        quote_document_header="Blake Freelance Design",
+        quote_document_footer="This quote is valid for 30 days from the issue date.",
+        invoice_document_header="Blake Freelance Design\nRegistered in England & Wales, company no. 12345678",
+        invoice_document_footer="Thank you for your business!\nPayment is due within the stated terms.",
+        expense_document_header="Blake Freelance Design",
+        expense_document_footer="Recorded for internal accounting purposes only.",
     )
 
     accounts = AccountService(application.repository, clock=lambda: now)

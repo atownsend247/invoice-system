@@ -746,5 +746,96 @@ flow," not a restructuring, whenever it's actually needed.
       no-token/invalid-token/valid-token-and-submit/reused-token cases)
       before trusting the e2e coverage alone.
 
+## Phase 26 — PDF layout: Bill to beside From, bank details on invoices (done)
+
+- [x] "Bill to" no longer stacks below "From" on generated PDFs - when a
+      business profile with a name is set, `pdf.py`'s `_render()` now
+      lays the two out as a single-row, two-column `Table` (each side's
+      `Paragraph`s as a cell's flowable list, not text - platypus table
+      cells accept either), From on the left where it's always been, Bill
+      to alongside it on the right. With no business profile set, Bill to
+      just stays exactly where it was before this change - top-left,
+      right after the title/dates - since there's nothing to sit it
+      beside.
+- [x] `bank_account_name`/`bank_sort_code`/`bank_account_number` - set in
+      Settings but never rendered anywhere until now - appear as a new
+      "Payment details" section, after the totals table and before the
+      document footer, on **invoices only** (`pdf.py`'s new
+      `bank_details_lines()`, wired in via `_render()`'s new
+      `show_bank_details` param - `render_invoice_pdf` is the only caller
+      that sets it `True`; quotes and expenses are unaffected - there's
+      nothing to pay yet against a quote, and an expense is money already
+      spent, not billed to the account). Whichever of the three fields
+      are actually set is what prints, same "print what's there" pattern
+      as `business_profile_lines`/`account_address_lines`.
+- [x] Full backend suite (292 tests, 98.31% coverage, 100% on `pdf.py`)
+      updated and passing; visually verified by rendering a real demo
+      invoice PDF via the CLI and reading it back.
+
+## Phase 27 — Per-document-type header/footer, tabbed Settings page (done)
+
+- [x] `BusinessProfile.document_header`/`document_footer` was one shared
+      pair used on every quote/invoice/expense PDF alike - split into
+      three independent pairs (`quote_document_header`/
+      `quote_document_footer`, `invoice_document_header`/
+      `invoice_document_footer`, `expense_document_header`/
+      `expense_document_footer`) so each document type can say something
+      different (e.g. a quote footer noting a 30-day validity window, an
+      invoice footer giving payment terms, an expense footer noting it's
+      for internal accounting only - the demo data now shows all three
+      genuinely differing, not the same string copied three times).
+      Migration 12: `ADD COLUMN` × 6 for the new fields, an `UPDATE`
+      copying the one old value into all three new header columns and all
+      three new footer columns (existing content preserved, not dropped),
+      then `DROP COLUMN` × 2 for the old fields - same shape as migration
+      5's `accounts.address` split.
+- [x] `pdf.py`: `document_header_lines`/`document_footer_lines` (one
+      shared field) replaced by `quote_header_lines`/`quote_footer_lines`
+      and `invoice_`/`expense_` equivalents (six small pure functions,
+      same unit-testable pattern as `business_profile_lines`/
+      `bank_details_lines`). `_render()` no longer decides which field to
+      read itself - it takes plain `header_lines`/`footer_lines` params,
+      and `render_quote_pdf`/`render_invoice_pdf`/`render_expense_pdf`
+      each compute theirs from their own pair before calling it, the same
+      "caller decides what's type-specific" split Phase 26's
+      `show_bank_details` already established.
+- [x] `api/schemas.py`, `cli/main.py` (`settings show`/`set` - the CLI's
+      `--document-header`/`--document-footer` became
+      `--quote-header`/`--quote-footer`/`--invoice-header`/
+      `--invoice-footer`/`--expense-header`/`--expense-footer`),
+      `demo_data.py`, `web/src/types.ts`/`api.ts` all updated mechanically
+      for the six-field shape.
+- [x] `web/src/pages/SettingsPage.tsx`: the four `<fieldset>` sections
+      (user/business/payment and tax/document settings) became actual
+      tabs - a `role="tablist"` of four `role="tab"` buttons driving one
+      `activeTab` state, each tab's content in a `role="tabpanel"` using
+      the native `hidden` attribute (not conditional unmounting, so
+      switching tabs never loses in-progress edits in another tab) with a
+      single "Save settings" button always visible below the tabpanels,
+      not per-tab - the required fields (first/last/business name) span
+      tabs, so a per-tab independent save couldn't validate on its own
+      even if built. Each tab's original `<fieldset>/<legend>` moved
+      inside its tabpanel unchanged, preserving the existing `getByRole('group',
+      { name: ... })` accessible-grouping e2e already relied on; the
+      Document tab additionally nests three `<fieldset>/<legend>`
+      sub-groups (Quotes/Invoices/Expenses, `.form-subsection` CSS), one
+      per header/footer pair. New `.settings-tabs` CSS, same visual
+      language as the main nav's active-link underline.
+- [x] `web/e2e/settings.spec.ts` rewritten throughout: every test that
+      touches fields from more than one section now clicks that section's
+      tab first (fields inside a `hidden` tabpanel aren't visible, so
+      Playwright's `.fill()` can't reach them without it); the first test
+      now clicks through all four tabs asserting each becomes visible
+      while the others go `not.toBeVisible()`, rather than asserting all
+      four visible at once.
+- [x] Full backend (293 tests, 98.33% coverage, 100% on `pdf.py`), frontend
+      (32 unit tests, build/lint clean), and e2e (56 tests, settings.spec.ts
+      additionally stress-tested with `--repeat-each=3 --workers=1` per
+      its documented shared-singleton-profile race history) suites updated
+      and passing. Manually rendered a quote, invoice, and expense PDF
+      from the same demo profile via the CLI and confirmed each shows its
+      own distinct header/footer text (and only the invoice shows bank
+      details).
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

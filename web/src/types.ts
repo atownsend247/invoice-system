@@ -111,10 +111,16 @@ export interface BusinessProfile {
   bank_account_name: string | null
   bank_sort_code: string | null
   bank_account_number: string | null
-  // Free text (multi-line) shown on every quote/invoice PDF this user
-  // generates - header before the title, footer after the totals table.
-  document_header: string | null
-  document_footer: string | null
+  // Free text (multi-line) shown on every PDF of the matching type this
+  // user generates - header before the title, footer after the totals
+  // table. Three independent pairs, one per document type, so each can
+  // say something different.
+  quote_document_header: string | null
+  quote_document_footer: string | null
+  invoice_document_header: string | null
+  invoice_document_footer: string | null
+  expense_document_header: string | null
+  expense_document_footer: string | null
   updated_at: string
 }
 

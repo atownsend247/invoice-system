@@ -536,8 +536,12 @@ def test_upsert_business_profile_round_trip_and_update(repo):
         bank_account_name="Acme Ltd",
         bank_sort_code="12-34-56",
         bank_account_number="12345678",
-        document_header="Acme Ltd",
-        document_footer="Thank you!",
+        quote_document_header="Quote header",
+        quote_document_footer="Quote footer",
+        invoice_document_header="Acme Ltd",
+        invoice_document_footer="Thank you!",
+        expense_document_header="Expense header",
+        expense_document_footer="Expense footer",
         created_at=created_at,
         updated_at=created_at,
     )
@@ -560,8 +564,12 @@ def test_upsert_business_profile_round_trip_and_update(repo):
     assert fetched.bank_account_name == "Acme Ltd"
     assert fetched.bank_sort_code == "12-34-56"
     assert fetched.bank_account_number == "12345678"
-    assert fetched.document_header == "Acme Ltd"
-    assert fetched.document_footer == "Thank you!"
+    assert fetched.quote_document_header == "Quote header"
+    assert fetched.quote_document_footer == "Quote footer"
+    assert fetched.invoice_document_header == "Acme Ltd"
+    assert fetched.invoice_document_footer == "Thank you!"
+    assert fetched.expense_document_header == "Expense header"
+    assert fetched.expense_document_footer == "Expense footer"
 
     updated_at = datetime(2026, 1, 2, tzinfo=UTC)
     second = BusinessProfile(
@@ -583,8 +591,12 @@ def test_upsert_business_profile_round_trip_and_update(repo):
         bank_account_name=None,
         bank_sort_code=None,
         bank_account_number=None,
-        document_header=None,
-        document_footer=None,
+        quote_document_header=None,
+        quote_document_footer=None,
+        invoice_document_header=None,
+        invoice_document_footer=None,
+        expense_document_header=None,
+        expense_document_footer=None,
         created_at=created_at,
         updated_at=updated_at,
     )
@@ -600,7 +612,9 @@ def test_upsert_business_profile_round_trip_and_update(repo):
     assert updated.utr is None
     assert updated.vat_number == "GB123456789"
     assert updated.bank_account_name is None
-    assert updated.document_header is None
+    assert updated.quote_document_header is None
+    assert updated.invoice_document_header is None
+    assert updated.expense_document_header is None
 
 
 def test_expense_round_trip_with_line_items(repo, organisation_id):

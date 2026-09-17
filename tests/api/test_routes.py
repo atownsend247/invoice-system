@@ -743,8 +743,12 @@ def test_business_profile_defaults_before_first_save(client, auth_headers):
     assert body["bank_account_name"] is None
     assert body["bank_sort_code"] is None
     assert body["bank_account_number"] is None
-    assert body["document_header"] is None
-    assert body["document_footer"] is None
+    assert body["quote_document_header"] is None
+    assert body["quote_document_footer"] is None
+    assert body["invoice_document_header"] is None
+    assert body["invoice_document_footer"] is None
+    assert body["expense_document_header"] is None
+    assert body["expense_document_footer"] is None
 
 
 def test_saving_business_profile_persists_and_is_returned_on_refetch(client, auth_headers):
@@ -767,8 +771,12 @@ def test_saving_business_profile_persists_and_is_returned_on_refetch(client, aut
             "bank_account_name": "Acme Consulting Ltd",
             "bank_sort_code": "12-34-56",
             "bank_account_number": "12345678",
-            "document_header": "Acme Consulting\nCompany no. 12345678",
-            "document_footer": "Thank you for your business!",
+            "quote_document_header": "Acme Consulting",
+            "quote_document_footer": "Valid for 30 days.",
+            "invoice_document_header": "Acme Consulting\nCompany no. 12345678",
+            "invoice_document_footer": "Thank you for your business!",
+            "expense_document_header": "Acme Consulting",
+            "expense_document_footer": "Internal use only.",
         },
         headers=auth_headers,
     )
@@ -789,8 +797,12 @@ def test_saving_business_profile_persists_and_is_returned_on_refetch(client, aut
     assert response.json()["bank_account_name"] == "Acme Consulting Ltd"
     assert response.json()["bank_sort_code"] == "12-34-56"
     assert response.json()["bank_account_number"] == "12345678"
-    assert response.json()["document_header"] == "Acme Consulting\nCompany no. 12345678"
-    assert response.json()["document_footer"] == "Thank you for your business!"
+    assert response.json()["quote_document_header"] == "Acme Consulting"
+    assert response.json()["quote_document_footer"] == "Valid for 30 days."
+    assert response.json()["invoice_document_header"] == "Acme Consulting\nCompany no. 12345678"
+    assert response.json()["invoice_document_footer"] == "Thank you for your business!"
+    assert response.json()["expense_document_header"] == "Acme Consulting"
+    assert response.json()["expense_document_footer"] == "Internal use only."
 
 
 def test_address_fields_are_optional(client, auth_headers):
@@ -808,7 +820,9 @@ def test_address_fields_are_optional(client, auth_headers):
     assert response.json()["address_line1"] is None
     assert response.json()["postcode"] is None
     assert response.json()["bank_account_name"] is None
-    assert response.json()["document_header"] is None
+    assert response.json()["quote_document_header"] is None
+    assert response.json()["invoice_document_header"] is None
+    assert response.json()["expense_document_header"] is None
 
 
 def test_blank_bank_and_document_fields_are_normalised_to_null(client, auth_headers):
@@ -820,13 +834,17 @@ def test_blank_bank_and_document_fields_are_normalised_to_null(client, auth_head
             "business_name": "Acme Consulting",
             "payment_terms_days": 30,
             "bank_account_name": "   ",
-            "document_header": "   ",
+            "quote_document_header": "   ",
+            "invoice_document_header": "   ",
+            "expense_document_header": "   ",
         },
         headers=auth_headers,
     )
     assert response.status_code == 200
     assert response.json()["bank_account_name"] is None
-    assert response.json()["document_header"] is None
+    assert response.json()["quote_document_header"] is None
+    assert response.json()["invoice_document_header"] is None
+    assert response.json()["expense_document_header"] is None
 
 
 def test_saving_business_profile_without_a_name_returns_422(client, auth_headers):

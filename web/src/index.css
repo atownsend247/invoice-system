@@ -524,6 +524,49 @@ button.secondary {
   min-width: 0;
 }
 
+.settings-tabs {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.2rem;
+}
+
+.settings-tabs button {
+  background: transparent;
+  color: var(--text-muted);
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.92rem;
+}
+
+.settings-tabs button.active {
+  color: var(--text);
+  border-bottom-color: var(--brand);
+  font-weight: 600;
+}
+
+.form-subsection {
+  border: none;
+  border-top: 1px solid var(--border);
+  padding: 1rem 0 0 0;
+  margin: 0 0 1.2rem 0;
+}
+
+.form-subsection:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.form-subsection legend {
+  padding: 0;
+  margin-bottom: 0.7rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
 .line-items {
   margin-bottom: 1.2rem;
 }

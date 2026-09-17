@@ -57,7 +57,7 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | POST | `/invoices/{id}/void` | required | Transition to `void`. 409 if already `paid`. |
 | POST | `/invoices/{id}/pay` | required | Transition `sent → paid`. 409 if not currently `sent` (covers `draft`, `void`, and already-`paid`). |
 | GET | `/invoices/monthly-totals` | required | Registered *before* `/invoices/{id}` (see `CLAUDE.md`'s architecture rules on route ordering). `{currency, months: [{month, paid_total, unpaid_total}]}` for the trailing 12 months, scoped to the current user's organisation, in the current user's business profile `currency`. An invoice in any other currency isn't counted. |
-| GET | `/invoices/{id}/pdf` | required | Render the invoice as a PDF (`application/pdf`), with a "From" section for the current user's business name/address if set, and their `document_header`/`document_footer` (if set) above the title/below the totals table. |
+| GET | `/invoices/{id}/pdf` | required | Render the invoice as a PDF (`application/pdf`), with a "From" section for the current user's business name/address if set (with "Bill to" beside it, not below, when it is), their `invoice_document_header`/`invoice_document_footer` (if set) above the title/below the totals table, and — invoices only, never quotes or expenses — a "Payment details" section for whichever of `bank_account_name`/`bank_sort_code`/`bank_account_number` are set, after the totals table. Quotes/expenses render the same way via their own `quote_document_header`/`quote_document_footer`/`expense_document_header`/`expense_document_footer` pair instead - see the Conventions section. |
 | POST | `/expenses` | required | Create an expense against an account (`account_id` required; `currency` defaults `USD`). Unlike a quote, its `EXP-0001` `number` is assigned immediately - there's no draft state (see `CLAUDE.md`). |
 | GET | `/expenses` | required | List expenses, optionally filtered by `?account_id=`. |
 | GET | `/expenses/{id}` | required | Fetch one expense with its line items, `subtotal`, `tax_total`, and (gross) `total`. |
@@ -68,7 +68,7 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | GET | `/expenses/{id}/attachments/{attachment_id}` | required | The uploaded bytes (`Content-Type` is whatever was uploaded, `Content-Disposition: inline` - the web UI's "View"/"Download" both hit this one route, same pattern as the generated PDF routes above). |
 | DELETE | `/expenses/{id}/attachments/{attachment_id}` | required | Delete it. `204`. |
 | GET | `/settings/business-profile` | required | The current user's own profile. Never 404s — returns sensible defaults (`payment_terms_days: 30`, `currency: "GBP"`, everything else blank/`null`) if nothing's been saved yet. |
-| PUT | `/settings/business-profile` | required | Upsert it (`first_name`, `last_name`, `business_name`, `payment_terms_days` required; `currency` defaults `"GBP"`; `title`, `address_line1`, `address_line2`, `town_or_city`, `county`, `postcode`, `utr`, `vat_number`, `bank_account_name`, `bank_sort_code`, `bank_account_number`, `document_header`, `document_footer` optional — each address line independently optional). 422 on a blank required field, `payment_terms_days <= 0`, or a blank `currency`. |
+| PUT | `/settings/business-profile` | required | Upsert it (`first_name`, `last_name`, `business_name`, `payment_terms_days` required; `currency` defaults `"GBP"`; `title`, `address_line1`, `address_line2`, `town_or_city`, `county`, `postcode`, `utr`, `vat_number`, `bank_account_name`, `bank_sort_code`, `bank_account_number`, `quote_document_header`, `quote_document_footer`, `invoice_document_header`, `invoice_document_footer`, `expense_document_header`, `expense_document_footer` optional — each address line independently optional, and each document header/footer is its own independent pair per document type, not one shared pair). 422 on a blank required field, `payment_terms_days <= 0`, or a blank `currency`. |
 | GET | `/stats` | required | All-time counters for the home dashboard, scoped to the current user's organisation: `{account_count, quote_count, invoice_count, quotes_sent_count, quotes_converted_count, total_paid, currency}`. `total_paid` is filtered to `currency` (the caller's own business profile's reporting currency, same resolution as `/invoices/monthly-totals`) — a paid invoice in a different currency isn't counted. `quotes_sent_count`/`quotes_converted_count` are raw counts, not a precomputed rate; the web UI derives a conversion percentage from them client-side (`HomePage.tsx`'s `conversionRate`). |
 
 Every account/quote/invoice/expense route above resolves the caller's
@@ -112,6 +112,13 @@ stays per-user, not per-organisation (see `docs/data-model.md`'s
 
 ## Conventions
 
+- **Per-document-type header/footer**: `quote_document_header`/
+  `quote_document_footer`, `invoice_document_header`/
+  `invoice_document_footer`, and `expense_document_header`/
+  `expense_document_footer` are three independent pairs, not one shared
+  pair - a quote/invoice/expense PDF only ever shows its own pair, never
+  another type's. All six are free text, each independently optional,
+  each split into non-blank lines when rendered.
 - **Invite-gated registration**: `invoice-system-cli invite create
   [--expires-in-days N]` (default 7) creates a single-use
   `RegistrationInvite` and prints its token plus a relative `/register?

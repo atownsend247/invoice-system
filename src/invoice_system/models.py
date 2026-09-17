@@ -103,23 +103,29 @@ class BusinessProfile:
 
     bank_account_name/bank_sort_code/bank_account_number sit in the same
     "payment and tax settings" group as payment_terms_days/utr/vat_number -
-    each independently optional, same as utr/vat_number, and (like every
-    other field here) purely informational: nothing in this codebase
-    validates a sort code's format or checks a bank account actually
-    exists. Not currently rendered on any PDF - see document_header/
-    document_footer below for the one place free text is actually injected
-    into generated documents.
+    each independently optional, and (like every other field here) purely
+    informational: nothing in this codebase validates a sort code's format
+    or checks a bank account actually exists. Rendered as a "Payment
+    details" section on generated invoices only, never quotes or expenses
+    (see pdf.py's bank_details_lines/render_invoice_pdf) - there's nothing
+    to pay yet against a quote, and an expense is money already spent, not
+    billed to the account.
 
-    document_header/document_footer are free text (blank lines allowed,
-    trimmed and dropped when rendering - see pdf.py's document_header_lines/
-    document_footer_lines) inserted into every quote/invoice PDF this user
-    generates: the header before the title, the footer after the totals
-    table. Deliberately simple - not per-page running headers/footers (that
-    would need reportlab page templates/canvas callbacks, a bigger lift
-    than anything asked for), just fixed text once at the top and bottom of
-    the document, which is enough for the common case (a slogan/company
-    registration number up top, payment terms or a thank-you note at the
-    bottom) on the short, mostly-single-page documents this app generates."""
+    quote_document_header/quote_document_footer,
+    invoice_document_header/invoice_document_footer, and
+    expense_document_header/expense_document_footer are three independent
+    pairs of free text (blank lines allowed, trimmed and dropped when
+    rendering - see pdf.py's quote_header_lines/quote_footer_lines and its
+    invoice_/expense_ equivalents), one pair per document type so each can
+    say something different - inserted into every quote/invoice/expense PDF
+    this user generates respectively: the header before the title, the
+    footer after the totals table. Deliberately simple - not per-page
+    running headers/footers (that would need reportlab page templates/
+    canvas callbacks, a bigger lift than anything asked for), just fixed
+    text once at the top and bottom of the document, which is enough for
+    the common case (a slogan/company registration number up top, payment
+    terms or a thank-you note at the bottom) on the short, mostly-single-
+    page documents this app generates."""
 
     id: str
     user_id: str
@@ -139,8 +145,12 @@ class BusinessProfile:
     bank_account_name: str | None
     bank_sort_code: str | None
     bank_account_number: str | None
-    document_header: str | None
-    document_footer: str | None
+    quote_document_header: str | None
+    quote_document_footer: str | None
+    invoice_document_header: str | None
+    invoice_document_footer: str | None
+    expense_document_header: str | None
+    expense_document_footer: str | None
     created_at: datetime
     updated_at: datetime
 

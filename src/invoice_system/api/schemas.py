@@ -255,8 +255,12 @@ class BusinessProfileIn(BaseModel):
     bank_account_name: str | None = None
     bank_sort_code: str | None = None
     bank_account_number: str | None = None
-    document_header: str | None = None
-    document_footer: str | None = None
+    quote_document_header: str | None = None
+    quote_document_footer: str | None = None
+    invoice_document_header: str | None = None
+    invoice_document_footer: str | None = None
+    expense_document_header: str | None = None
+    expense_document_footer: str | None = None
 
 
 class BusinessProfileOut(BaseModel):
@@ -276,8 +280,12 @@ class BusinessProfileOut(BaseModel):
     bank_account_name: str | None
     bank_sort_code: str | None
     bank_account_number: str | None
-    document_header: str | None
-    document_footer: str | None
+    quote_document_header: str | None
+    quote_document_footer: str | None
+    invoice_document_header: str | None
+    invoice_document_footer: str | None
+    expense_document_header: str | None
+    expense_document_footer: str | None
     updated_at: datetime
 
     @classmethod
@@ -299,8 +307,12 @@ class BusinessProfileOut(BaseModel):
             bank_account_name=profile.bank_account_name,
             bank_sort_code=profile.bank_sort_code,
             bank_account_number=profile.bank_account_number,
-            document_header=profile.document_header,
-            document_footer=profile.document_footer,
+            quote_document_header=profile.quote_document_header,
+            quote_document_footer=profile.quote_document_footer,
+            invoice_document_header=profile.invoice_document_header,
+            invoice_document_footer=profile.invoice_document_footer,
+            expense_document_header=profile.expense_document_header,
+            expense_document_footer=profile.expense_document_footer,
             updated_at=profile.updated_at,
         )
 

@@ -196,7 +196,7 @@ def _validate_tax_rate(tax_rate: Decimal) -> None:
 
 class BusinessProfileService:
     """The logged-in user's own details (name/address/payment terms/UTR/VAT/
-    bank details/document header & footer), one per user - see CLAUDE.md
+    bank details/per-document-type header & footer), one per user - see CLAUDE.md
     for why this is deliberately not an `Account` (that's the client being
     billed) and not part of sessionkit. Deliberately still per-*user*, not
     per-Organisation, even after Organisation was introduced - see
@@ -233,8 +233,12 @@ class BusinessProfileService:
             bank_account_name=None,
             bank_sort_code=None,
             bank_account_number=None,
-            document_header=None,
-            document_footer=None,
+            quote_document_header=None,
+            quote_document_footer=None,
+            invoice_document_header=None,
+            invoice_document_footer=None,
+            expense_document_header=None,
+            expense_document_footer=None,
             created_at=now,
             updated_at=now,
         )
@@ -259,8 +263,12 @@ class BusinessProfileService:
         bank_account_name: str | None = None,
         bank_sort_code: str | None = None,
         bank_account_number: str | None = None,
-        document_header: str | None = None,
-        document_footer: str | None = None,
+        quote_document_header: str | None = None,
+        quote_document_footer: str | None = None,
+        invoice_document_header: str | None = None,
+        invoice_document_footer: str | None = None,
+        expense_document_header: str | None = None,
+        expense_document_footer: str | None = None,
     ) -> BusinessProfile:
         if not first_name.strip():
             raise ValidationFailed("first_name is required")
@@ -294,8 +302,12 @@ class BusinessProfileService:
             bank_account_name=_blank_to_none(bank_account_name),
             bank_sort_code=_blank_to_none(bank_sort_code),
             bank_account_number=_blank_to_none(bank_account_number),
-            document_header=_blank_to_none(document_header),
-            document_footer=_blank_to_none(document_footer),
+            quote_document_header=_blank_to_none(quote_document_header),
+            quote_document_footer=_blank_to_none(quote_document_footer),
+            invoice_document_header=_blank_to_none(invoice_document_header),
+            invoice_document_footer=_blank_to_none(invoice_document_footer),
+            expense_document_header=_blank_to_none(expense_document_header),
+            expense_document_footer=_blank_to_none(expense_document_footer),
             created_at=created_at,
             updated_at=self._clock(),
         )

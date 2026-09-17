@@ -1182,7 +1182,9 @@ def test_settings_show_defaults_then_set_and_show_again(tmp_path):
     assert "Currency: GBP" in result.output
     assert "Business name: -" in result.output
     assert "Bank account name: -" in result.output
-    assert "Document header: -" in result.output
+    assert "Quote header: -" in result.output
+    assert "Invoice header: -" in result.output
+    assert "Expense header: -" in result.output
 
     result = runner.invoke(
         cli,
@@ -1211,10 +1213,18 @@ def test_settings_show_defaults_then_set_and_show_again(tmp_path):
             "12-34-56",
             "--bank-account-number",
             "12345678",
-            "--document-header",
+            "--quote-header",
             "Acme Consulting",
-            "--document-footer",
+            "--quote-footer",
+            "Valid for 30 days.",
+            "--invoice-header",
+            "Acme Consulting",
+            "--invoice-footer",
             "Thank you!",
+            "--expense-header",
+            "Acme Consulting",
+            "--expense-footer",
+            "Internal use only.",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -1242,8 +1252,12 @@ def test_settings_show_defaults_then_set_and_show_again(tmp_path):
     assert "Bank account name: Acme Consulting Ltd" in result.output
     assert "Bank sort code: 12-34-56" in result.output
     assert "Bank account number: 12345678" in result.output
-    assert "Document header: Acme Consulting" in result.output
-    assert "Document footer: Thank you!" in result.output
+    assert "Quote header: Acme Consulting" in result.output
+    assert "Quote footer: Valid for 30 days." in result.output
+    assert "Invoice header: Acme Consulting" in result.output
+    assert "Invoice footer: Thank you!" in result.output
+    assert "Expense header: Acme Consulting" in result.output
+    assert "Expense footer: Internal use only." in result.output
 
 
 def test_settings_set_requires_first_name(tmp_path):

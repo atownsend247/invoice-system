@@ -23,6 +23,8 @@ def render_quote_pdf(account: Account, quote: Quote, from_profile: BusinessProfi
         line_items=quote.line_items,
         currency=quote.currency,
         from_profile=from_profile,
+        header_lines=quote_header_lines(from_profile),
+        footer_lines=quote_footer_lines(from_profile),
     )
 
 
@@ -40,6 +42,14 @@ def render_invoice_pdf(
         line_items=invoice.line_items,
         currency=invoice.currency,
         from_profile=from_profile,
+        header_lines=invoice_header_lines(from_profile),
+        footer_lines=invoice_footer_lines(from_profile),
+        # Bank details are only ever useful on an actual invoice - there's
+        # nothing to pay yet against a quote, and an expense is a record of
+        # money already spent, not something billed to the account (see
+        # models.Expense) - so this is the one place `show_bank_details`
+        # is True.
+        show_bank_details=True,
     )
 
 
@@ -62,6 +72,8 @@ def render_expense_pdf(
         line_items=expense.line_items,
         currency=expense.currency,
         from_profile=from_profile,
+        header_lines=expense_header_lines(from_profile),
+        footer_lines=expense_footer_lines(from_profile),
     )
 
 
@@ -94,29 +106,74 @@ def account_address_lines(account: Account) -> list[str]:
     return [account.address_line1, *(field for field in address_fields if field and field.strip())]
 
 
+def bank_details_lines(profile: BusinessProfile | None) -> list[str]:
+    """The "Payment details" section shown on generated invoices only,
+    never quotes or expenses (see render_invoice_pdf) - bank_account_name/
+    bank_sort_code/bank_account_number are each independently optional
+    (see BusinessProfile), so this just prints whichever ones are actually
+    set, same "print whichever ones exist" pattern as
+    business_profile_lines/account_address_lines above. Pulled out as a
+    pure function for the same reason those are."""
+    if profile is None:
+        return []
+    fields = (
+        ("Account name", profile.bank_account_name),
+        ("Sort code", profile.bank_sort_code),
+        ("Account number", profile.bank_account_number),
+    )
+    return [f"{label}: {value}" for label, value in fields if value and value.strip()]
+
+
 def _text_lines(text: str | None) -> list[str]:
     """Splits free text into its non-blank lines, each individually
-    stripped - shared by document_header_lines/document_footer_lines below.
-    A blank line (just whitespace, or empty) is dropped rather than
+    stripped - shared by quote_header_lines/quote_footer_lines and their
+    invoice_/expense_ equivalents below. A blank line (just whitespace, or
+    empty) is dropped rather than
     rendered as an empty Paragraph."""
     if not text:
         return []
     return [line.strip() for line in text.splitlines() if line.strip()]
 
 
-def document_header_lines(profile: BusinessProfile | None) -> list[str]:
-    """The free text shown above the title on every quote/invoice PDF this
-    user generates (see BusinessProfile.document_header) - deliberately not
-    a per-page running header, just fixed text once at the top of the
-    document (see BusinessProfile's docstring for why)."""
-    return _text_lines(profile.document_header if profile is not None else None)
+def quote_header_lines(profile: BusinessProfile | None) -> list[str]:
+    """The free text shown above the title on every quote PDF this user
+    generates (see BusinessProfile.quote_document_header) - deliberately
+    not a per-page running header, just fixed text once at the top of the
+    document (see BusinessProfile's docstring for why). One independent
+    pair per document type - see invoice_header_lines/expense_header_lines
+    below - so each can say something different."""
+    return _text_lines(profile.quote_document_header if profile is not None else None)
 
 
-def document_footer_lines(profile: BusinessProfile | None) -> list[str]:
-    """The free text shown below the totals table on every quote/invoice
-    PDF this user generates (see BusinessProfile.document_footer) - same
-    "fixed text once," not per-page, as document_header_lines above."""
-    return _text_lines(profile.document_footer if profile is not None else None)
+def quote_footer_lines(profile: BusinessProfile | None) -> list[str]:
+    """The free text shown below the totals table on every quote PDF this
+    user generates (see BusinessProfile.quote_document_footer) - same
+    "fixed text once," not per-page, as quote_header_lines above."""
+    return _text_lines(profile.quote_document_footer if profile is not None else None)
+
+
+def invoice_header_lines(profile: BusinessProfile | None) -> list[str]:
+    """Same as quote_header_lines, for invoices - see
+    BusinessProfile.invoice_document_header."""
+    return _text_lines(profile.invoice_document_header if profile is not None else None)
+
+
+def invoice_footer_lines(profile: BusinessProfile | None) -> list[str]:
+    """Same as quote_footer_lines, for invoices - see
+    BusinessProfile.invoice_document_footer."""
+    return _text_lines(profile.invoice_document_footer if profile is not None else None)
+
+
+def expense_header_lines(profile: BusinessProfile | None) -> list[str]:
+    """Same as quote_header_lines, for expenses - see
+    BusinessProfile.expense_document_header."""
+    return _text_lines(profile.expense_document_header if profile is not None else None)
+
+
+def expense_footer_lines(profile: BusinessProfile | None) -> list[str]:
+    """Same as quote_footer_lines, for expenses - see
+    BusinessProfile.expense_document_footer."""
+    return _text_lines(profile.expense_document_footer if profile is not None else None)
 
 
 def _render(
@@ -131,13 +188,15 @@ def _render(
     line_items: list[LineItem],
     currency: str,
     from_profile: BusinessProfile | None,
+    header_lines: list[str],
+    footer_lines: list[str],
+    show_bank_details: bool = False,
 ) -> bytes:
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, title=f"{title} {number}")
     styles = getSampleStyleSheet()
 
     story = []
-    header_lines = document_header_lines(from_profile)
     if header_lines:
         for line in header_lines:
             story.append(Paragraph(line, styles["Normal"]))
@@ -154,20 +213,46 @@ def _render(
         story.append(Paragraph(f"{due_or_expiry_label}: {due_or_expiry_date.isoformat()}", styles["Normal"]))
     story.append(Spacer(1, 8 * mm))
 
+    bill_to_flowables = [
+        Paragraph("Bill to", styles["Heading3"]),
+        Paragraph(account.business_name, styles["Normal"]),
+    ]
+    if account.contact_name:
+        bill_to_flowables.append(Paragraph(account.contact_name, styles["Normal"]))
+    for line in account_address_lines(account):
+        bill_to_flowables.append(Paragraph(line, styles["Normal"]))
+    bill_to_flowables.append(Paragraph(account.email, styles["Normal"]))
+
     from_lines = business_profile_lines(from_profile)
     if from_lines:
-        story.append(Paragraph("From", styles["Heading3"]))
-        for line in from_lines:
-            story.append(Paragraph(line, styles["Normal"]))
-        story.append(Spacer(1, 8 * mm))
-
-    story.append(Paragraph("Bill to", styles["Heading3"]))
-    story.append(Paragraph(account.business_name, styles["Normal"]))
-    if account.contact_name:
-        story.append(Paragraph(account.contact_name, styles["Normal"]))
-    for line in account_address_lines(account):
-        story.append(Paragraph(line, styles["Normal"]))
-    story.append(Paragraph(account.email, styles["Normal"]))
+        # From stays on the left where it's always been; Bill to moves to
+        # sit alongside it on the right instead of stacking below it - a
+        # single-row, two-column Table with each side's Paragraphs as a
+        # cell's flowable list (not text - platypus table cells accept
+        # either). Only done when there's a "From" to show at all: with no
+        # business profile set, Bill to just stays exactly where it was
+        # (top-left, right after the title/dates), same as before this
+        # layout existed.
+        from_flowables = [Paragraph("From", styles["Heading3"])]
+        from_flowables.extend(Paragraph(line, styles["Normal"]) for line in from_lines)
+        story.append(
+            Table(
+                [[from_flowables, bill_to_flowables]],
+                colWidths=[85 * mm, 85 * mm],
+                style=TableStyle(
+                    [
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                        ("RIGHTPADDING", (0, 0), (0, 0), 10 * mm),  # gutter between the two columns
+                        ("TOPPADDING", (0, 0), (-1, -1), 0),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                    ]
+                ),
+            )
+        )
+    else:
+        story.extend(bill_to_flowables)
     story.append(Spacer(1, 8 * mm))
 
     table_data = [["Description", "Qty", "Unit price", "VAT", "Total"]]
@@ -203,7 +288,14 @@ def _render(
     )
     story.append(table)
 
-    footer_lines = document_footer_lines(from_profile)
+    if show_bank_details:
+        bank_lines = bank_details_lines(from_profile)
+        if bank_lines:
+            story.append(Spacer(1, 8 * mm))
+            story.append(Paragraph("Payment details", styles["Heading3"]))
+            for line in bank_lines:
+                story.append(Paragraph(line, styles["Normal"]))
+
     if footer_lines:
         story.append(Spacer(1, 8 * mm))
         for line in footer_lines:

@@ -15,7 +15,8 @@ later "send" step, and line items can be added at any time, not gated
 behind a status check (see ExpenseService). A `BusinessProfile` holds the
 logged-in user's *own* business
 details (name/address/payment terms/reporting currency/UTR/VAT/bank
-details/a document header & footer shown on every PDF they generate) — see
+details/a separate document header & footer per document type - quote,
+invoice, expense - shown on the matching PDFs they generate) — see
 below for why that's a third, deliberately separate thing from both
 `Account` and sessionkit's `User`.
 Every `Account`/`Quote`/`Invoice`/`Expense` also belongs to exactly one
@@ -101,13 +102,17 @@ Four separate things are easy to conflate here — don't:
   the home dashboard's monthly-totals chart sums in, defaults `"GBP"`,
   independent of the currency chosen per quote/invoice - `utr`/`vat_number`/
   `bank_account_name`/`bank_sort_code`/`bank_account_number` all optional,
-  all purely informational - nothing validates a sort code's format or
-  checks an account exists, and none of them currently render on a PDF);
-  **document settings** (`document_header`/`document_footer`, free text,
-  each independently optional - the one place free text actually gets
-  injected into every quote/invoice PDF this user generates, see
-  Conventions below for where and why it's not a per-page running
-  header/footer). One per
+  all purely informational except that whichever are set render as a
+  "Payment details" section on generated **invoices only** — never
+  quotes or expenses, see Conventions below); **document settings**
+  (`quote_document_header`/`quote_document_footer`,
+  `invoice_document_header`/`invoice_document_footer`,
+  `expense_document_header`/`expense_document_footer` — three independent
+  pairs of free text, one per document type so each can say something
+  different, each field independently optional - the one place free text
+  actually gets injected into the matching quote/invoice/expense PDF this
+  user generates, see Conventions below for where and why it's not a
+  per-page running header/footer). One per
   user, keyed by `user_id` = sessionkit's `User.id` — deliberately still
   per-*user*, not per-`Organisation`, even after `Organisation` was
   introduced (see `docs/data-model.md`'s "Multi-tenancy": today it's a
@@ -281,32 +286,57 @@ Four separate things are easy to conflate here — don't:
   (both API and CLI do, when there's no profile/`--user-id`) to fall back to
   the fixed `DEFAULT_INVOICE_DUE_DAYS`. `business_name` + whichever address
   lines are set appear as a "From" section on generated PDFs (`pdf.py`'s
-  `business_profile_lines()`), **above** "Bill to", in the standard UK
-  order (`address_line1`, `address_line2`, `town_or_city`, `county`,
-  `postcode`) — only when `business_name` is actually set, never
-  empty/blank. Neither `pdf.py` nor
+  `business_profile_lines()`), in the standard UK order (`address_line1`,
+  `address_line2`, `town_or_city`, `county`, `postcode`) — only when
+  `business_name` is actually set, never empty/blank. When it *is* set,
+  "Bill to" sits beside it, not below it — a single-row, two-column
+  `Table` (`_render()` in `pdf.py`) with each side's `Paragraph`s as a
+  cell's flowable list; with no business profile set, "Bill to" just
+  stays where it's always been, top-left under the title/dates, since
+  there's no "From" to sit alongside. Neither `pdf.py` nor
   `InvoiceService` import `BusinessProfileService` or know what a "user" is
   — the API/CLI layers resolve the profile and pass plain values in
   (`payment_terms_days: int | None`, `from_profile: BusinessProfile | None`),
   keeping the "whose profile" question entirely at the entry-point layer.
   **Deliberately not shown on a PDF**: `title`/`first_name`/`last_name` —
-  only `business_name` and the address were asked for. Bank details
-  (`bank_account_name`/`bank_sort_code`/`bank_account_number`) are also not
-  currently rendered anywhere - they're settings-only for now, see the
-  "Four separate things" section above.
-- `BusinessProfile.document_header`/`document_footer` (see "Four separate
-  things" above) get inserted into every quote/invoice PDF this user
-  generates - `pdf.py`'s `document_header_lines()`/`document_footer_lines()`
-  split the free text into its non-blank lines (each individually
-  stripped), the header rendered above the title, the footer below the
-  totals table. Deliberately **not** a per-page running header/footer
-  (that needs reportlab page templates/canvas callbacks - a bigger lift
-  than asked for) - just fixed text once at the top and bottom of the
-  document, which is enough on the short, mostly-single-page documents
-  this app generates. Uses the same `from_profile: BusinessProfile | None`
-  parameter `business_profile_lines()` already takes, not a separate one -
-  `pdf.py` still doesn't import `BusinessProfileService` or know what a
-  "user" is, same reasoning as the paragraph above.
+  only `business_name` and the address were asked for.
+  `bank_account_name`/`bank_sort_code`/`bank_account_number` (`pdf.py`'s
+  `bank_details_lines()`) render as a "Payment details" section, after the
+  totals table and before the document footer — but **only on an
+  invoice** (`render_invoice_pdf`'s `show_bank_details=True`, the only
+  caller that sets it), never a quote or an expense: there's nothing to
+  pay yet against a quote, and an expense is money already spent, not
+  billed to the account. Whichever of the three fields are actually set,
+  same "print what's there" pattern as the address lines above.
+- `BusinessProfile`'s document header/footer (see "Four separate things"
+  above) is three **independent** pairs -
+  `quote_document_header`/`quote_document_footer`,
+  `invoice_document_header`/`invoice_document_footer`,
+  `expense_document_header`/`expense_document_footer` - not one shared
+  pair, so each document type can say something different (e.g. a quote's
+  footer noting it's only valid for 30 days, while an invoice's footer
+  gives payment terms). `pdf.py`'s `quote_header_lines()`/
+  `quote_footer_lines()` and their `invoice_`/`expense_` equivalents each
+  split their own field's free text into its non-blank lines (each
+  individually stripped) - `_render()` no longer decides which field to
+  read itself; it takes plain `header_lines`/`footer_lines` params, and
+  `render_quote_pdf`/`render_invoice_pdf`/`render_expense_pdf` each pass
+  in the pair matching their own type before calling it (the header
+  rendered above the title, the footer below the totals table). Migration
+  12 copied whatever single `document_header`/`document_footer` value a
+  profile already had into all three new header fields and all three new
+  footer fields (not dropped) before removing the two old columns.
+  Deliberately **not** a per-page running header/footer (that needs
+  reportlab page templates/canvas callbacks - a bigger lift than asked
+  for) - just fixed text once at the top and bottom of the document,
+  which is enough on the short, mostly-single-page documents this app
+  generates. Each of the six functions still takes the same `profile:
+  BusinessProfile | None` parameter `business_profile_lines()`/
+  `bank_details_lines()` already do, not a separate shape - `pdf.py` still
+  doesn't import `BusinessProfileService` or know what a "user" is, same
+  reasoning as the paragraph above. The Settings page's Document tab
+  (see the tabs bullet below) has three nested sub-groups - Quotes,
+  Invoices, Expenses - one per pair, rather than two bare textareas.
 - Quote/invoice detail pages (`QuoteDetailPage.tsx`/`InvoiceDetailPage.tsx`)
   have two separate PDF actions: "Download PDF" (unchanged, forces a
   browser download via a throwaway `<a download>`) and "View PDF" (opens
@@ -379,16 +409,33 @@ Four separate things are easy to conflate here — don't:
   `expenseMonths` - rather than merging them server-side; the chart looks
   each month's expense total up by key, not by array position, since the
   two reports aren't guaranteed to line up 1:1 by index alone).
-- The settings page (`web/src/pages/SettingsPage.tsx`) groups
-  `BusinessProfile` fields into four `<fieldset>`/`<legend>` sections
-  matching the model's own four groups (user settings, business settings,
-  payment and tax settings, document settings) — a real semantic/accessible
-  grouping (Playwright's `getByRole('group', { name: ... })` finds them via
-  the `<legend>`), not just a visual one. Add a new field to whichever
-  group it actually belongs to, not wherever's convenient. Document
-  header/footer use `<textarea>` (the only multi-line fields in this form)
-  with a `.form-field-wide` class (`flex-basis: 100%`) so they span the
-  full form width rather than squeezing into the same narrow column as the
+- The settings page (`web/src/pages/SettingsPage.tsx`) presents
+  `BusinessProfile`'s four groups (user settings, business settings,
+  payment and tax settings, document settings) as actual **tabs**, not
+  four sections stacked on one long page — a `role="tablist"` of four
+  `role="tab"` buttons (`aria-selected`/`aria-controls`) drives a single
+  `activeTab` state; each tab's content sits in a `role="tabpanel"` `<div>`
+  using the native `hidden` attribute for the inactive ones, **not**
+  conditional unmounting, so every field's React state survives switching
+  tabs and the one "Save settings" button (always visible below the
+  tabpanels, not per-tab) still submits every field regardless of which
+  tab happens to be showing — there's no per-tab independent save, since
+  the required fields (`first_name`/`last_name`/`business_name`) span
+  tabs and a single `PUT` already saves the whole profile atomically. No
+  URL involvement and no roving-tabindex arrow-key nav - a plain
+  click/Tab-focus/Enter-activate button already covers basic keyboard
+  operability for a 4-item tab bar. Each tab's original `<fieldset>/
+  <legend>` moved inside its `tabpanel` unchanged, so the same semantic/
+  accessible grouping as before still holds (Playwright's
+  `getByRole('group', { name: ... })` finds it via the `<legend>` exactly
+  as it did when these were plain stacked sections) — add a new field to
+  whichever group/tab it actually belongs to, not wherever's convenient.
+  The Document tab's fieldset additionally nests three `<fieldset>/
+  <legend>` sub-groups (Quotes/Invoices/Expenses, `.form-subsection`), one
+  per document-type header/footer pair. Header/footer fields use
+  `<textarea>` (the only multi-line fields in this form) with a
+  `.form-field-wide` class (`flex-basis: 100%`) so they span the full tab
+  width rather than squeezing into the same narrow column as the
   single-line inputs around them.
 - `AccountService.update_account(account_id, ...)` is a full replace, not a
   partial patch — same required fields (`business_name`/`email`/
@@ -662,7 +709,16 @@ Four separate things are easy to conflate here — don't:
   `GET /quotes`/`GET /invoices` (see the Conventions bullet below); no
   rebuild needed, an index is never a rebuild-and-swap case. Migration 11
   added `registration_invites` (see the invite-gated registration
-  Conventions bullet) - one more new table, no rebuild needed.)
+  Conventions bullet) - one more new table, no rebuild needed. Migration
+  12 is the third rebuild-and-swap-free reference example (alongside
+  migrations 4/5): `business_profiles.document_header`/`document_footer`
+  (added by migration 6 above) split into three independent pairs, one
+  per document type - same shape as migration 5's `accounts.address`
+  split - `ADD COLUMN` × 6 for the new `quote_`/`invoice_`/
+  `expense_document_header`/`document_footer` columns, an `UPDATE` copying
+  the one old value into all three new header columns and all three new
+  footer columns (existing values preserved, not dropped), then `DROP
+  COLUMN` × 2 for the old `document_header`/`document_footer`.)
 - Storage is a single shared SQLite connection/file — **serialise every
   access on a lock** inside the repository implementation rather than
   assuming the caller will. That lock is per-*call*, not across a sequence
