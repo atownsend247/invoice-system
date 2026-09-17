@@ -660,6 +660,23 @@ flow," not a restructuring, whenever it's actually needed.
       (`GET /accounts?page=&page_size=`, `GET
       /quotes?status=&account_name=&page=&page_size=`) before wiring the
       frontend up, per the plan's verification step.
+- [x] Follow-up: shipping server-side pagination didn't automatically make
+      the demo instance *show* it - the original demo dataset (5 accounts,
+      14 curated quote/invoice scenarios) never crossed the 20-row page
+      size, so pagination stayed invisible outside e2e (which builds its
+      own bulk data per test). `demo_data.py`'s `_filler_accounts()` adds
+      20 more accounts (25 total) and `_FILLER_INVOICE_TYPES` adds one
+      more invoice-producing scenario per filler account (34 quotes/28
+      invoices total) - enumerated combinations of a name/location/contact,
+      not randomly generated, so re-running `init-db` still seeds
+      byte-for-byte the same data. The filler scenarios deliberately only
+      use draft/paid/void outcomes, not overdue/outstanding - those two are
+      timing-sensitive against `months_ago`, and the fourteen curated
+      scenarios already guarantee at least one of each without needing to
+      re-derive that timing math for twenty more. Verified against a
+      running instance (`GET /accounts|quotes|invoices?page_size=1` →
+      `total` 25/34/28); full backend suite (266 tests, 98.24% coverage,
+      100% on `demo_data.py`) still passing.
 
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

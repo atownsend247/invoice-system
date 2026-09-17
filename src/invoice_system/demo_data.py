@@ -7,7 +7,13 @@ an Account/Quote/Invoice/BusinessProfile can look like (a new field, a new
 status, a new line-item property), update the data here so the demo still
 shows it off - a stale demo dataset that only exercises last year's feature
 set is worse than none, because it quietly stops being a smoke test for
-anything new.
+anything new. Volume matters too, not just variety: accounts/quotes/
+invoices are each seeded past 20 rows (`_filler_accounts`/
+`_FILLER_INVOICE_TYPES` below, on top of the five named accounts and
+fourteen curated quote/invoice scenarios) specifically so the demo instance
+actually shows a second page on `AccountsPage.tsx`/`QuotesPage.tsx`/
+`InvoicesPage.tsx` (`PAGE_SIZE=20`) rather than pagination only ever being
+exercised by e2e tests that create their own bulk data.
 
 Idempotent: re-running `init-db --demo` against a database that already has
 the demo user does nothing further (checked via sessionkit's DuplicateUser),
@@ -66,7 +72,7 @@ class _DemoAccount:
     postcode: str | None = None
 
 
-_ACCOUNTS = [
+_NAMED_ACCOUNTS = [
     _DemoAccount(
         "Northwind Traders",
         "Priya Patel",
@@ -115,6 +121,87 @@ _ACCOUNTS = [
         postcode="NW1 7JR",
     ),
 ]
+
+# Extra accounts, on top of the five named ones above, purely to push the
+# accounts list past one page (PAGE_SIZE=20 - see web/src/pages/
+# AccountsPage.tsx) so the demo instance actually exercises pagination
+# instead of only ever showing a single page. Plain enumerated combinations
+# of a name/location/contact below, not randomly generated, so re-running
+# `init-db` seeds byte-for-byte the same data every time (see this module's
+# idempotency note) - see `_filler_accounts()`.
+_FILLER_ACCOUNT_NAMES = [
+    "Ashgrove Interiors",
+    "Kestrel Media",
+    "Thornbury Legal Services",
+    "Riverside Bakery",
+    "Granite Engineering",
+    "Silver Birch Landscaping",
+    "Harborview Photography",
+    "Meadowfield Architects",
+    "Ironbridge Metalworks",
+    "Willowmere Events",
+    "Cobblestone Coffee Roasters",
+    "Lantern Hill Publishing",
+    "Oakleaf Accountancy",
+    "Brightwater Marine Surveys",
+    "Cinderpath Motors",
+    "Foxglove Floristry",
+    "Hollybank Care Services",
+    "Pemberton & Rye",
+    "Quayside Boatworks",
+    "Redwood Tree Surgery",
+]
+
+# (town_or_city, postcode, phone area code) - cycled through for the filler
+# accounts, the same UK-city-and-postcode flavour as the five named accounts
+# above, without hand-writing a full unique address for each one.
+_FILLER_LOCATIONS = [
+    ("Bristol", "BS2 0JX", "0117"),
+    ("Leeds", "LS2 7HY", "0113"),
+    ("Birmingham", "B1 2JX", "0121"),
+    ("York", "YO1 6EF", "01904"),
+    ("Glasgow", "G1 3AB", "0141"),
+    ("Cardiff", "CF10 1EP", "029"),
+    ("Newcastle upon Tyne", "NE1 4ST", "0191"),
+    ("Nottingham", "NG1 5FS", "0115"),
+]
+
+_FILLER_CONTACTS = [
+    "Ella Whitfield",
+    "Daniel Foster",
+    "Amara Okafor",
+    "Liam O'Connor",
+    "Nadia Hussain",
+    "Ben Thackeray",
+    "Rosa Alavi",
+    "Callum Reid",
+]
+
+
+def _filler_accounts() -> list[_DemoAccount]:
+    accounts = []
+    for i, name in enumerate(_FILLER_ACCOUNT_NAMES):
+        town, postcode, area_code = _FILLER_LOCATIONS[i % len(_FILLER_LOCATIONS)]
+        slug = name.lower().replace(" & ", "").replace("'", "").replace(" ", "")
+        # Every third one has no contact name/phone, same "not every field
+        # is filled in" flavour as Orchard Studio/Riverside Bakery above.
+        contact = _FILLER_CONTACTS[i % len(_FILLER_CONTACTS)] if i % 3 != 2 else None
+        phone = f"{area_code} 496 0{200 + i}" if i % 2 == 0 else None
+        accounts.append(
+            _DemoAccount(
+                name,
+                contact,
+                f"hello@{slug}.test",
+                f"{i + 10} {town} Road",
+                phone,
+                town_or_city=town,
+                postcode=postcode,
+            )
+        )
+    return accounts
+
+
+_ACCOUNTS = _NAMED_ACCOUNTS + _filler_accounts()
 
 # (description, quantity, unit_price, tax_rate) - cycled through so the
 # demo shows all three UK VAT rates the web UI's dropdown offers.
@@ -271,7 +358,7 @@ class _Seeder:
 # `overdue_invoice` is pinned far enough back, and `outstanding_invoice`
 # close enough to now, that both stay true regardless of exactly which day
 # `init-db` runs on.
-_SCENARIOS = [
+_CURATED_SCENARIOS = [
     _Scenario(11, 0, "draft_quote"),
     _Scenario(10, 1, "sent_quote"),
     _Scenario(10, 2, "overdue_invoice"),
@@ -286,6 +373,25 @@ _SCENARIOS = [
     _Scenario(1, 1, "outstanding_invoice"),
     _Scenario(0, 2, "outstanding_invoice"),
     _Scenario(0, 3, "draft_quote"),
+]
+
+# One invoice-producing scenario per filler account (see _filler_accounts)
+# - on top of the fourteen curated ones above, enough to push both the
+# quotes and invoices lists past one page too (PAGE_SIZE=20 - see
+# web/src/pages/QuotesPage.tsx/InvoicesPage.tsx), the same reasoning as the
+# filler accounts themselves. Deliberately only draft/paid/void outcomes,
+# not overdue/outstanding - those two are timing-sensitive (a "sent"
+# invoice's due date has to land on the right side of today - see
+# outstanding_invoice/overdue_invoice above), the fourteen curated
+# scenarios already guarantee at least one of each, and spreading more of
+# them across a full year here without the same care about `months_ago`
+# could silently mislabel one (e.g. an "overdue" invoice that isn't
+# actually overdue yet).
+_FILLER_INVOICE_TYPES = ["draft_invoice", "paid_invoice", "void_invoice"]
+
+_SCENARIOS = _CURATED_SCENARIOS + [
+    _Scenario(i % 12, len(_NAMED_ACCOUNTS) + i, _FILLER_INVOICE_TYPES[i % len(_FILLER_INVOICE_TYPES)])
+    for i in range(len(_FILLER_ACCOUNT_NAMES))
 ]
 
 
