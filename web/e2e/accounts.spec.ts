@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures'
+import { apiFetch, expect, test } from './fixtures'
 
 // Each test navigates itself rather than sharing a beforeEach - a fixture
 // referenced only by the test body (like testAccount below) is resolved
@@ -31,7 +31,11 @@ test('creating an account through the form lands on its detail page', async ({
   await expect(page.getByText('London')).toBeVisible()
   await expect(page.getByText('NW1 6XE')).toBeVisible()
 
+  // Search first - the accounts list is paginated, and this account could
+  // otherwise land on a later page once enough other tests/workers have
+  // created accounts of their own in the same shared organisation.
   await page.goto('/accounts')
+  await page.getByLabel('Search accounts').fill(businessName)
   await expect(page.locator('tr', { hasText: businessName })).toBeVisible()
 })
 
@@ -40,6 +44,7 @@ test('accounts created outside the UI (e.g. via the API) still show up', async (
   testAccount,
 }) => {
   await page.goto('/accounts')
+  await page.getByLabel('Search accounts').fill(testAccount.business_name)
   await expect(page.locator('tr', { hasText: testAccount.business_name })).toBeVisible()
 })
 
@@ -48,6 +53,7 @@ test('clicking a row in the accounts list opens its detail page', async ({
   testAccount,
 }) => {
   await page.goto('/accounts')
+  await page.getByLabel('Search accounts').fill(testAccount.business_name)
   await page.locator('tr', { hasText: testAccount.business_name }).click()
 
   await expect(page).toHaveURL(`/accounts/${testAccount.id}`)
@@ -113,4 +119,33 @@ test('cancelling an edit discards changes', async ({ authenticatedPage: page, te
 
   await expect(page.getByRole('heading', { name: testAccount.business_name })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Should not be saved' })).toHaveCount(0)
+})
+
+test('the accounts list paginates when there are enough accounts', async ({
+  authenticatedPage: page,
+  apiToken,
+}, testInfo) => {
+  // Only needs to exceed one page's worth (20) - other tests/workers only
+  // ever add more accounts to this shared organisation, never remove them,
+  // so this comfortably guarantees a second page regardless of run order.
+  await Promise.all(
+    Array.from({ length: 25 }, (_, i) =>
+      apiFetch('/accounts', apiToken, {
+        method: 'POST',
+        body: JSON.stringify({
+          business_name: `${testInfo.testId} Pagination Co ${i}`,
+          email: `e2e-pagination-${testInfo.testId}-${i}@example.test`,
+          address_line1: '1 Test Street',
+        }),
+      }),
+    ),
+  )
+
+  await page.goto('/accounts')
+  await expect(page.getByText(/Page 1 of \d+/)).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Previous' })).toBeDisabled()
+
+  await page.getByRole('button', { name: 'Next' }).click()
+  await expect(page.getByText(/Page 2 of \d+/)).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Previous' })).toBeEnabled()
 })

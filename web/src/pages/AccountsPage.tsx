@@ -3,7 +3,9 @@ import { Link, useNavigate } from 'react-router-dom'
 import { accountAddressLines } from '../accountAddress'
 import * as api from '../api'
 import { AccountForm } from '../components/AccountForm'
+import { Pagination } from '../components/Pagination'
 import { useAsync } from '../hooks/useAsync'
+import { usePagedList } from '../hooks/usePagedList'
 import type { Account } from '../types'
 
 /** Matches a search box query against everything shown in the list -
@@ -34,6 +36,7 @@ export function AccountsPage() {
   const navigate = useNavigate()
 
   const filteredAccounts = accounts?.filter((account) => accountMatchesQuery(account, query))
+  const { page, totalPages, setPage, paged: pagedAccounts } = usePagedList(filteredAccounts)
 
   return (
     <section>
@@ -67,7 +70,10 @@ export function AccountsPage() {
             <input
               type="search"
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => {
+                setQuery(event.target.value)
+                setPage(1)
+              }}
               placeholder="Business name, contact, email, address…"
             />
           </label>
@@ -75,7 +81,7 @@ export function AccountsPage() {
           {filteredAccounts && filteredAccounts.length === 0 && (
             <p className="meta">No accounts match "{query}".</p>
           )}
-          {filteredAccounts && filteredAccounts.length > 0 && (
+          {pagedAccounts && pagedAccounts.length > 0 && (
             <table>
               <thead>
                 <tr>
@@ -87,7 +93,7 @@ export function AccountsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredAccounts.map((account) => (
+                {pagedAccounts.map((account) => (
                   <tr
                     key={account.id}
                     className="row-link"
@@ -110,13 +116,16 @@ export function AccountsPage() {
                       onClick={(event) => event.stopPropagation()}
                       onKeyDown={(event) => event.stopPropagation()}
                     >
-                      <Link to={`/quotes/new?accountId=${account.id}`}>New quote</Link>
+                      <Link className="button" to={`/quotes/new?accountId=${account.id}`}>
+                        New quote
+                      </Link>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </>
       )}
     </section>

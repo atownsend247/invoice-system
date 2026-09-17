@@ -76,3 +76,23 @@ test('a draft invoice cannot be marked as paid', async ({ authenticatedPage: pag
   await page.goto(`/invoices/${draftInvoice.id}`)
   await expect(page.getByRole('button', { name: 'Mark as paid' })).toHaveCount(0)
 })
+
+test('filtering the invoices list by account name and status', async ({
+  authenticatedPage: page,
+  testAccount,
+  sentInvoice,
+}) => {
+  await page.goto('/invoices')
+
+  // testAccount.business_name is unique per test (see fixtures.ts), so this
+  // filter always narrows down to exactly this test's own invoice
+  // regardless of what else exists in the shared organisation.
+  await page.getByLabel('Account').fill(testAccount.business_name)
+  await expect(page.locator('tbody tr', { hasText: sentInvoice.number ?? '' })).toBeVisible()
+
+  await page.getByLabel('Status').selectOption('void')
+  await expect(page.getByText('No invoices match these filters.')).toBeVisible()
+
+  await page.getByLabel('Status').selectOption('sent')
+  await expect(page.locator('tbody tr', { hasText: sentInvoice.number ?? '' })).toBeVisible()
+})

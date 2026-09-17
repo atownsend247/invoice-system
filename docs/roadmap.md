@@ -516,5 +516,42 @@ flow," not a restructuring, whenever it's actually needed.
       and e2e (46 tests, new expense-chart spec in `home.spec.ts`) suites
       updated and passing.
 
+## Phase 22 — List-page filters and pagination (done)
+
+- [x] `AccountsPage.tsx`'s per-row "New quote" link now renders as a
+      `.button` (`className="button"`), matching every other "New X" action
+      in the app (`QuotesPage`'s/`AccountDetailPage`'s own "New quote"/"New
+      expense") instead of being the one plain text link left over from
+      Phase 15.
+- [x] `QuotesPage.tsx`/`InvoicesPage.tsx` gained an account-name text filter
+      and a status dropdown, both client-side over the already-fetched full
+      list (same pattern as `AccountsPage`'s search box) rather than new
+      API query params — `quoteMatchesFilters`/`invoiceMatchesFilters`
+      (unit-tested, exported the same way `accountMatchesQuery` is).
+      `InvoicesPage`'s status dropdown deliberately excludes `overdue` —
+      it's presentation-only (see Phase 7/CLAUDE.md) and never actually
+      written to `Invoice.status`, so it would only ever match zero rows.
+- [x] `AccountsPage.tsx`/`QuotesPage.tsx`/`InvoicesPage.tsx` are now paged
+      client-side, 20 rows at a time (`hooks/usePagedList.ts` +
+      `components/Pagination.tsx`, shared by all three rather than
+      duplicated per page) — filtering first, then paging the filtered
+      result, with the current page clamped back into range whenever a
+      filter shrinks the list rather than needing an explicit reset. Still
+      no `limit`/`offset` on the list endpoints themselves: every list page
+      in this app already fetches its full result set up front (small
+      account/quote/invoice volumes for a freelancer/small-business tool),
+      so pagination only needed to slice what's already in memory.
+- [x] `web/e2e/accounts.spec.ts`: two pre-existing tests that asserted a
+      specific row was visible on `/accounts` without searching first now
+      filter via the search box before asserting — needed once the list
+      could paginate a row out of view in a full parallel e2e run (every
+      test shares one organisation, see CLAUDE.md's Storage gotcha). New
+      test creates 25 accounts to force a second page and exercises
+      Previous/Next. `quotes.spec.ts`/`invoices.spec.ts` each gained one
+      filter test.
+- [x] Full backend (243 tests, 98.14% coverage, unchanged - this phase is
+      frontend-only), frontend (46 unit tests), and e2e (49 tests) suites
+      updated and passing.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

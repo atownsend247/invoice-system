@@ -108,3 +108,23 @@ test('viewing the PDF opens an in-page preview instead of downloading it', async
   await page.getByRole('button', { name: 'Close' }).click()
   await expect(frame).toHaveCount(0)
 })
+
+test('filtering the quotes list by account name and status', async ({
+  authenticatedPage: page,
+  testAccount,
+  sentQuote,
+}) => {
+  await page.goto('/quotes')
+
+  // testAccount.business_name is unique per test (see fixtures.ts), so this
+  // filter always narrows down to exactly this test's own quote regardless
+  // of what else exists in the shared organisation.
+  await page.getByLabel('Account').fill(testAccount.business_name)
+  await expect(page.locator('tbody tr', { hasText: sentQuote.number ?? '' })).toBeVisible()
+
+  await page.getByLabel('Status').selectOption('draft')
+  await expect(page.getByText('No quotes match these filters.')).toBeVisible()
+
+  await page.getByLabel('Status').selectOption('sent')
+  await expect(page.locator('tbody tr', { hasText: sentQuote.number ?? '' })).toBeVisible()
+})
