@@ -2,7 +2,7 @@
 
 **Status: implemented** (`src/invoice_system/models.py`,
 `storage/schema.py`). Keep this table in sync with the actual schema — this
-doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` has ten
+doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` has eleven
 entries: the flattened baseline (2026-09-16), migration 2 (added `tax_rate`
 to both line-item tables), migration 3 (added `Organisation` — the tenant
 boundary — plus nullable `organisation_id` columns on `accounts`/`quotes`/
@@ -26,8 +26,11 @@ no rebuild needed), and migration 10 (added `idx_accounts_organisation`,
 `idx_quotes_organisation_status`/`idx_invoices_organisation_status` —
 plain `CREATE INDEX` statements backing the server-side pagination/
 filtering added to `GET /accounts`/`GET /quotes`/`GET /invoices`, see
-`docs/api.md`'s pagination convention). Schema changes from here on are new
-entries appended to that list, not edits to any of these ten.
+`docs/api.md`'s pagination convention), and migration 11 (added
+`registration_invites` — one more new table, no rebuild needed — see the
+`RegistrationInvite` row below and `docs/api.md`'s invite-gated
+registration convention). Schema changes from here on are new entries
+appended to that list, not edits to any of these eleven.
 
 ## Entities
 
@@ -41,6 +44,7 @@ entries appended to that list, not edits to any of these ten.
 | `Expense` | id, organisation_id, account_id, number, currency, issue_date, created_at | A cost incurred against an `Account` (e.g. a domain renewal paid on the client's behalf) — see `CLAUDE.md`. Unlike `Quote`/`Invoice`, no `status` column: there's no draft/sent lifecycle, so `number` (`EXP-0001`, ..., same per-`organisation_id` composite-unique-index pattern as `Quote.number`/`Invoice.number` — see migration 8) is `NOT NULL` and assigned by `ExpenseService.create_expense` immediately, not deferred to a later `send()`. |
 | `ExpenseAttachment` | id, expense_id, filename, content_type, size, created_at | A supplementary PDF (e.g. a scanned receipt) uploaded against an `Expense` — see `CLAUDE.md`. **Metadata only**: the bytes live on the filesystem (`attachments.py`'s `AttachmentStore`, keyed by `id`), not in this row — `filename`/`content_type`/`size` exist purely for display/validation. Addable at any time, same no-lifecycle reasoning as `Expense.line_items`. No `organisation_id` column, same as `quote_line_items`/`expense_line_items` — tenant ownership is always resolved via the parent `expense_id` first (`ExpenseService.get_attachment_bytes`/`delete_attachment` both call `_get_expense` before touching an attachment). |
 | `BusinessProfile` | id, user_id, title, first_name, last_name, business_name, address_line1, address_line2, town_or_city, county, postcode, payment_terms_days, currency, utr, vat_number, bank_account_name, bank_sort_code, bank_account_number, document_header, document_footer, created_at, updated_at | The logged-in user's *own* details, in four groups (see `CLAUDE.md`): user settings (`title` optional, `first_name`/`last_name` required), business settings (`business_name` required; `address_line1`/`address_line2`/`town_or_city`/`county`/`postcode` — a UK GOV.UK Design System-style address, each line independently optional), payment and tax settings (`payment_terms_days`, `currency` — the home dashboard's *reporting* currency, defaults `"GBP"`, independent of any quote/invoice's own `currency` — `utr`/`vat_number`/`bank_account_name`/`bank_sort_code`/`bank_account_number` all optional and purely informational, not currently rendered on a PDF), document settings (`document_header`/`document_footer`, free text, each independently optional — inserted into every quote/invoice/expense PDF this user generates, see `pdf.py`'s `document_header_lines()`/`document_footer_lines()` and the invariants below). Not `Account` (the client being billed). One per `user_id` (`UNIQUE`), which is sessionkit's `User.id` — a plain column, not an enforced FK (see `CLAUDE.md`, "Login accounts" below). Deliberately still per-*user*, not per-`Organisation` — see "Multi-tenancy" below. Every optional field: blank input is normalised to `NULL`, never stored as `""`. |
+| `RegistrationInvite` | token, created_at, expires_at, used_at | A single-use, time-limited token gating the public `/register` page — see `CLAUDE.md`'s invite-gated registration convention and `docs/api.md`. `token` (a UUID4) is the primary key; nothing else ever looks one up. **No `organisation_id` and no email column** — not scoped to a tenant (an invite exists before any `Organisation` does) and not tied to a specific email (whoever holds a valid token can register with any one). `used_at` is `NULL` until consumed; `RegistrationInviteService.check_invite` treats an unknown token, an expired one, and an already-used one identically. Created **only** via `invoice-system-cli invite create` — no API route creates one. |
 | counters (internal) | name, value | Backs `next_quote_number`/`next_invoice_number`/`next_expense_number`; not a domain entity, not exposed via API/CLI. `name` is `"<organisation_id>:quote"`/`"<organisation_id>:invoice"`/`"<organisation_id>:expense"`, not a bare `"quote"`/`"invoice"`/`"expense"` — each organisation gets its own independent sequence starting from one. |
 
 `MonthlyInvoiceTotals` (`month`, `paid_total`, `unpaid_total`),

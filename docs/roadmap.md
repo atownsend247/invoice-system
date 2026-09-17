@@ -678,5 +678,73 @@ flow," not a restructuring, whenever it's actually needed.
       `total` 25/34/28); full backend suite (266 tests, 98.24% coverage,
       100% on `demo_data.py`) still passing.
 
+## Phase 25 — Invite-gated public registration (done)
+
+- [x] Until now there was no public signup at all - a login could only be
+      created via the bundled `sessionkit` CLI. Added a narrow, controlled
+      exception: `RegistrationInvite` (models.py) - a single-use, 7-day-
+      expiring UUID4 token, stored in `invoice_system.db` (migration 11,
+      `registration_invites` - plain `CREATE TABLE`, no rebuild needed).
+      Deliberately not tied to a specific email or an `Organisation` -
+      whoever holds a valid token can register with any email, and their
+      own `Organisation` is created lazily on first login exactly like
+      every other user.
+- [x] `RegistrationInviteService` (`core.py`, wired into `Application` via
+      `factory.py` like every other service) manages the token itself and
+      - per the architecture rules - never imports `sessionkit`:
+      `create_invite`/`check_invite`/`consume_invite`. `check_invite`/
+      `consume_invite` raise the same `NotFound` for an unknown, expired,
+      *or already-used* token, deliberately, so neither the API nor an
+      attacker probing tokens can tell which. `SqliteRepository.
+      consume_registration_invite` is a single locked `UPDATE ... WHERE
+      used_at IS NULL` - the same atomic check-then-claim shape as
+      `add_organisation_member`'s documented race fix - covered by a
+      dedicated test that monkeypatches the repository to simulate a
+      concurrent winner, not just the common single-request case.
+- [x] `api/auth.py` (the one place that actually calls
+      `sessionkit.AuthService.create_user`) gained `GET
+      /auth/register/validate` and `POST /auth/register`, both public
+      (added to `api/app.py`'s public-routes comment). Registration
+      consumes the invite *before* creating the login - if `create_user`
+      then fails (409 duplicate email, 422 short password), the invite is
+      burned but two concurrent submissions of the same token can never
+      both succeed. No auto-login on success (no token in the response) -
+      matches the decision to redirect to `/login` instead. `api/auth.py`
+      defines its own trivial `get_application` dependency rather than
+      importing `api/app.py`'s, to avoid a circular import (`api/app.py`
+      imports `public_router`/`protected_router` from `api/auth.py`).
+- [x] CLI: `invoice-system-cli invite create [--expires-in-days N]`
+      (default 7) - the **only** way to create an invite, matching the
+      "no unconditional public signup" posture; prints the token and a
+      relative `/register?token=...` link.
+- [x] `web/`: new `RegisterPage.tsx` (route `/register`, a public sibling
+      of `/login`, not behind `ProtectedRoute`) - reads `?token=`, checks
+      it via `GET /auth/register/validate` on mount (shows an invalid-link
+      message immediately if there's no token or the check fails, rather
+      than only at submit time), then an email/password(+confirm,
+      client-side only) form; redirects to `/login` on success. Styled
+      with `LoginPage.tsx`'s existing `login-page`/`login-form` classes -
+      no new CSS.
+- [x] Since invite creation is deliberately CLI-only with no API route,
+      `web/e2e/fixtures.ts`'s new `inviteToken` fixture shells out to the
+      real CLI (`uv run invoice-system-cli --storage-dir <same .tmp
+      start-backend.sh uses> invite create`) and parses the token from
+      stdout - the same "set up state the HTTP API doesn't expose"
+      pattern `start-backend.sh` itself already uses for the e2e login
+      user. New `register.spec.ts`: no token / an unknown token / an
+      already-consumed token all show the same invalid-link message;
+      mismatched passwords are caught client-side; a full register →
+      redirect-to-login → log-in-with-new-credentials loop works.
+- [x] Full backend (285 tests, 98.25% coverage), frontend (32 unit tests,
+      unchanged - no new pure client-side logic to unit-test), and e2e
+      (56 tests) suites updated and passing; `tests/api/test_routes.py`'s
+      `client` fixture was split to expose the underlying `application`
+      object too, since setting up an invite for a test means calling
+      `application.registration_invites.create_invite(...)` directly
+      (there's no HTTP route to do it). Manually verified against a
+      running instance (`invoice-system-cli invite create`, then the
+      no-token/invalid-token/valid-token-and-submit/reused-token cases)
+      before trusting the e2e coverage alone.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

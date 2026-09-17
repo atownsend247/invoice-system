@@ -673,6 +673,26 @@ def stats(application: Application, user_id: str) -> None:
     click.echo(f"Total paid: {result.total_paid} {profile.currency}")
 
 
+@cli.group()
+def invite() -> None:
+    pass
+
+
+@invite.command("create")
+@click.option(
+    "--expires-in-days",
+    default=7,
+    show_default=True,
+    help="How many days the invite stays valid for - it's also single-use, consumed on the first "
+    "successful registration regardless of this expiry.",
+)
+@click.pass_obj
+def invite_create(application: Application, expires_in_days: int) -> None:
+    created = application.registration_invites.create_invite(expires_in_days=expires_in_days)
+    click.echo(f"Created invite {created.token} (expires {created.expires_at.isoformat()})")
+    click.echo(f"Registration link: /register?token={created.token}")
+
+
 def main() -> None:
     try:
         cli(standalone_mode=False)

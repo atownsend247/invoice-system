@@ -21,6 +21,7 @@ from .models import (
     Page,
     Quote,
     QuoteStatus,
+    RegistrationInvite,
     Stats,
 )
 from .repository import Repository
@@ -33,6 +34,7 @@ DEFAULT_ORGANISATION_NAME = "My Organisation"
 MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024  # 10 MiB - see ExpenseService.add_attachment
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 200  # see AccountService.list_accounts/QuoteService.list_quotes/InvoiceService.list_invoices
+DEFAULT_INVITE_EXPIRY_DAYS = 7  # see RegistrationInviteService.create_invite
 
 
 def _validate_pagination(page: int, page_size: int) -> None:
@@ -820,3 +822,49 @@ class StatsService:
             quotes_converted_count=quotes_converted_count,
             total_paid=total_paid,
         )
+
+
+class RegistrationInviteService:
+    """Single-use, time-limited tokens gating the public `/register` page -
+    see models.RegistrationInvite. Deliberately never imports or knows
+    about `sessionkit` (see CLAUDE.md's architecture rules) - it only
+    manages the invite row itself; the one place that actually creates a
+    login (`sessionkit.AuthService.create_user`) is `api/auth.py`'s `POST
+    /auth/register` route handler, which calls `consume_invite` here
+    first."""
+
+    def __init__(
+        self, repository: Repository, clock: Clock = system_clock, new_id: IdGenerator = default_new_id
+    ) -> None:
+        self._repository = repository
+        self._clock = clock
+        self._new_id = new_id
+
+    def create_invite(self, *, expires_in_days: int = DEFAULT_INVITE_EXPIRY_DAYS) -> RegistrationInvite:
+        now = self._clock()
+        invite = RegistrationInvite(
+            token=self._new_id(),
+            created_at=now,
+            expires_at=now + timedelta(days=expires_in_days),
+            used_at=None,
+        )
+        return self._repository.create_registration_invite(invite)
+
+    def check_invite(self, token: str) -> None:
+        """Raises NotFound if `token` is unknown, expired, or already used
+        - the same error either way, deliberately (see
+        models.RegistrationInvite's docstring on why)."""
+        invite = self._repository.get_registration_invite(token)
+        if invite is None or invite.used_at is not None or invite.expires_at < self._clock():
+            raise NotFound("invite is invalid or has expired")
+
+    def consume_invite(self, token: str) -> None:
+        """Claims `token` for use, atomically - see
+        SqliteRepository.consume_registration_invite. Called before the
+        sessionkit user is actually created (`api/auth.py`'s `POST
+        /auth/register`), not after: if that later step fails (e.g. a
+        duplicate email), the invite is burned but no two callers can ever
+        both succeed with the same one-time token."""
+        self.check_invite(token)
+        if not self._repository.consume_registration_invite(token, used_at=self._clock()):
+            raise NotFound("invite is invalid or has expired")

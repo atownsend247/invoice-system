@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Protocol
 
 from .models import (
@@ -11,6 +12,7 @@ from .models import (
     Organisation,
     Quote,
     QuoteStatus,
+    RegistrationInvite,
 )
 
 
@@ -73,3 +75,7 @@ class Repository(Protocol):
     def list_expense_attachments(self, expense_id: str) -> list[ExpenseAttachment]: ...
     def get_expense_attachment(self, expense_id: str, attachment_id: str) -> ExpenseAttachment | None: ...
     def delete_expense_attachment(self, expense_id: str, attachment_id: str) -> None: ...
+
+    def create_registration_invite(self, invite: RegistrationInvite) -> RegistrationInvite: ...
+    def get_registration_invite(self, token: str) -> RegistrationInvite | None: ...
+    def consume_registration_invite(self, token: str, used_at: datetime) -> bool: ...

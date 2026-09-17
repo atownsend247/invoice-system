@@ -4,9 +4,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from invoice_system.api.app import app, get_application
+from invoice_system.api.auth import get_application as get_application_for_auth_routes
 from invoice_system.api.auth import get_auth_service
 from invoice_system.auth import build_auth
-from invoice_system.factory import build_application
+from invoice_system.factory import Application, build_application
 
 
 @pytest.fixture
@@ -19,7 +20,14 @@ def auth(tmp_path):
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch, auth):
+def application(tmp_path) -> Application:
+    app_ = build_application(tmp_path / "test.db", attachments_dir=tmp_path / "attachments")
+    yield app_
+    app_.close()
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch, auth, application):
     # The lifespan builds its own Application/Auth from env vars even though
     # the dependency overrides below replace them for route handlers - point
     # both at throwaway paths so it doesn't touch the real default files.
@@ -27,13 +35,17 @@ def client(tmp_path, monkeypatch, auth):
     monkeypatch.setenv("INVOICE_SYSTEM_AUTH_DB", str(tmp_path / "lifespan-auth.db"))
     monkeypatch.setenv("INVOICE_SYSTEM_ATTACHMENTS_DIR", str(tmp_path / "lifespan-attachments"))
 
-    application = build_application(tmp_path / "test.db", attachments_dir=tmp_path / "attachments")
+    # api/auth.py can't import api/app.py's get_application (circular import
+    # - see its own comment), so it defines its own identical one-liner;
+    # FastAPI's dependency_overrides is keyed by the exact function object,
+    # so both need overriding for a route on either router to see this
+    # test's `application` instead of the lifespan's real one.
     app.dependency_overrides[get_application] = lambda: application
+    app.dependency_overrides[get_application_for_auth_routes] = lambda: application
     app.dependency_overrides[get_auth_service] = lambda: auth.service
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
-    application.close()
 
 
 @pytest.fixture
@@ -104,6 +116,90 @@ def test_logout_revokes_token(client, auth_headers):
 
     response = client.get("/auth/me", headers=auth_headers)
     assert response.status_code == 401
+
+
+def test_register_validate_and_full_flow(client, application):
+    # There's deliberately no API route to create an invite (CLI-only, see
+    # CLAUDE.md) - tests reach into the service directly, same as the CLI
+    # would.
+    invite = application.registration_invites.create_invite()
+
+    response = client.get("/auth/register/validate", params={"token": invite.token})
+    assert response.status_code == 200
+    assert response.json() == {"valid": True}
+
+    response = client.post(
+        "/auth/register",
+        json={"token": invite.token, "email": "new-user@example.test", "password": "correct-horse-1"},
+    )
+    assert response.status_code == 201
+    assert response.json()["email"] == "new-user@example.test"
+
+    # The new login actually works.
+    response = client.post(
+        "/auth/login", json={"email": "new-user@example.test", "password": "correct-horse-1"}
+    )
+    assert response.status_code == 200
+
+
+def test_register_rejects_an_unknown_token(client):
+    response = client.get("/auth/register/validate", params={"token": "does-not-exist"})
+    assert response.status_code == 404
+
+    response = client.post(
+        "/auth/register",
+        json={"token": "does-not-exist", "email": "a@b.test", "password": "correct-horse-1"},
+    )
+    assert response.status_code == 404
+
+
+def test_register_rejects_an_expired_token(client, application):
+    invite = application.registration_invites.create_invite(expires_in_days=-1)
+
+    response = client.get("/auth/register/validate", params={"token": invite.token})
+    assert response.status_code == 404
+
+    response = client.post(
+        "/auth/register",
+        json={"token": invite.token, "email": "a@b.test", "password": "correct-horse-1"},
+    )
+    assert response.status_code == 404
+
+
+def test_register_rejects_reusing_a_consumed_token(client, application):
+    invite = application.registration_invites.create_invite()
+    first = client.post(
+        "/auth/register",
+        json={"token": invite.token, "email": "first@example.test", "password": "correct-horse-1"},
+    )
+    assert first.status_code == 201
+
+    second = client.post(
+        "/auth/register",
+        json={"token": invite.token, "email": "second@example.test", "password": "correct-horse-1"},
+    )
+    assert second.status_code == 404
+
+    response = client.get("/auth/register/validate", params={"token": invite.token})
+    assert response.status_code == 404
+
+
+def test_register_rejects_a_duplicate_email(client, application):
+    invite = application.registration_invites.create_invite()
+    response = client.post(
+        "/auth/register",
+        json={"token": invite.token, "email": "owner@acme.test", "password": "correct-horse-1"},
+    )
+    assert response.status_code == 409
+
+
+def test_register_rejects_a_short_password(client, application):
+    invite = application.registration_invites.create_invite()
+    response = client.post(
+        "/auth/register",
+        json={"token": invite.token, "email": "new-user@example.test", "password": "short"},
+    )
+    assert response.status_code == 422
 
 
 def test_account_quote_invoice_flow(client, auth_headers):

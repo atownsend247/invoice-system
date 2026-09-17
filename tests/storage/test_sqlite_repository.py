@@ -16,6 +16,7 @@ from invoice_system.models import (
     Organisation,
     Quote,
     QuoteStatus,
+    RegistrationInvite,
 )
 from invoice_system.storage.schema import MIGRATIONS
 from invoice_system.storage.sqlite_repository import SqliteRepository
@@ -792,3 +793,46 @@ def test_delete_expense_attachment_removes_it(repo, organisation_id):
 
     assert repo.get_expense_attachment(expense.id, created.id) is None
     assert repo.list_expense_attachments(expense.id) == []
+
+
+def _invite(**overrides: object) -> RegistrationInvite:
+    defaults: dict = {
+        "token": new_id(),
+        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+        "expires_at": datetime(2026, 1, 8, tzinfo=UTC),
+        "used_at": None,
+    }
+    defaults.update(overrides)
+    return RegistrationInvite(**defaults)
+
+
+def test_registration_invite_round_trip(repo):
+    created = repo.create_registration_invite(_invite())
+
+    fetched = repo.get_registration_invite(created.token)
+    assert fetched.token == created.token
+    assert fetched.created_at == created.created_at
+    assert fetched.expires_at == created.expires_at
+    assert fetched.used_at is None
+
+
+def test_get_registration_invite_returns_none_when_missing(repo):
+    assert repo.get_registration_invite("does-not-exist") is None
+
+
+def test_consume_registration_invite_is_single_use(repo):
+    created = repo.create_registration_invite(_invite())
+    used_at = datetime(2026, 1, 2, tzinfo=UTC)
+
+    assert repo.consume_registration_invite(created.token, used_at) is True
+    fetched = repo.get_registration_invite(created.token)
+    assert fetched.used_at == used_at
+
+    # A second attempt against the same already-used token must not
+    # succeed - this is what makes the token genuinely single-use under
+    # concurrent submissions, not just in the common case.
+    assert repo.consume_registration_invite(created.token, used_at) is False
+
+
+def test_consume_registration_invite_returns_false_for_an_unknown_token(repo):
+    assert repo.consume_registration_invite("does-not-exist", datetime(2026, 1, 1, tzinfo=UTC)) is False

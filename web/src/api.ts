@@ -163,6 +163,22 @@ export function logout(): Promise<void> {
   return request('/auth/logout', { method: 'POST' })
 }
 
+/** Checks an invite token from a `/register?token=` link is still valid
+ * (unknown/expired/already-used all fail the same way, deliberately - see
+ * CLAUDE.md) - called on page load so RegisterPage can show an error
+ * immediately rather than only at submit time. */
+export function checkRegistrationInvite(token: string): Promise<{ valid: boolean }> {
+  return request(`/auth/register/validate?${new URLSearchParams({ token }).toString()}`)
+}
+
+/** Registration itself always re-validates the token server-side
+ * regardless of the check above - a token could expire or get consumed
+ * by someone else in between. No auto-login on success - the caller
+ * redirects to /login instead (see RegisterPage.tsx). */
+export function register(token: string, email: string, password: string): Promise<User> {
+  return request('/auth/register', { method: 'POST', body: JSON.stringify({ token, email, password }) })
+}
+
 // -- accounts ------------------------------------------------------------
 
 export interface ListAccountsOptions {

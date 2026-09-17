@@ -416,6 +416,27 @@ def test_account_and_invoice_list_paginate(tmp_path):
     assert "Page 1 of 1 (total 1)" in result.output
 
 
+def test_invite_create_prints_a_token_and_registration_link(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
+
+    result = runner.invoke(cli, [*_base_args(db_path), "invite", "create"])
+    assert result.exit_code == 0, result.output
+    token = _id_from(result.output, r"Created invite (\S+) \(expires")
+    assert f"Registration link: /register?token={token}" in result.output
+
+
+def test_invite_create_respects_expires_in_days(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
+
+    result = runner.invoke(cli, [*_base_args(db_path), "invite", "create", "--expires-in-days", "30"])
+    assert result.exit_code == 0, result.output
+    assert "Created invite" in result.output
+
+
 def test_full_expense_cli_flow(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()

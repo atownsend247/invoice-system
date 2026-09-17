@@ -70,7 +70,9 @@ override - see `paths.py`) —
 do not confuse it with this app's own `Account` (a client business being
 billed). `core.py` never imports `sessionkit` — see architecture rules.
 Manage users with the bundled `sessionkit` CLI (`uv run sessionkit add ...`),
-not through this app; there is no public signup route.
+not through this app; there is no *unconditional* public signup route —
+`POST /auth/register` (below) is a narrow, invite-gated exception to that,
+not a general one.
 
 Four separate things are easy to conflate here — don't:
 - **`Account`** (this app's own domain table) — a *client* business being
@@ -523,6 +525,41 @@ Four separate things are easy to conflate here — don't:
   the whole organisation's total data over time, so 200 is a deliberately
   generous cap, not true pagination. Migration 10 (see the migrations
   gotcha below) added the indexes backing all of this.
+- **Invite-gated registration**: `RegistrationInvite` (models.py) is a
+  single-use, 7-day-expiring token (a UUID4, same as every other id here)
+  gating the public `/register` page — `RegistrationInviteService`
+  (`core.py`) manages it and, like every other service, never imports
+  `sessionkit` (see the "Four separate things" section and architecture
+  rules above); the one place that actually calls
+  `sessionkit.AuthService.create_user` is `api/auth.py`'s `POST
+  /auth/register` route handler, which calls `consume_invite` first, then
+  creates the login — in that order, deliberately, so a failed
+  `create_user` (e.g. a duplicate email) only ever burns the invite,
+  never risks two callers succeeding with the same one-time token.
+  `check_invite`/`consume_invite` both raise the same `NotFound` for an
+  unknown, expired, *or already-used* token — deliberately indistinguishable,
+  so a caller (or an attacker probing tokens) can't tell which. Not tied
+  to a specific email nor an `Organisation` — whoever holds a valid token
+  can register with any email, and their own `Organisation` is created
+  lazily on first login exactly like every other user
+  (`OrganisationService.get_or_create_for_user`). Invites are created
+  **only** via the CLI (`invoice-system-cli invite create
+  [--expires-in-days N]`, default 7) — there is deliberately no API route
+  to create one, matching the "no unconditional public signup" posture
+  above; `SqliteRepository.consume_registration_invite` is a single locked
+  `UPDATE ... WHERE used_at IS NULL`, the same atomic
+  check-then-claim shape as `add_organisation_member`'s documented race
+  fix, so the token is genuinely single-use under concurrent submissions,
+  not just in the common case. `api/auth.py` defines its own trivial
+  `get_application` dependency rather than importing `api/app.py`'s
+  (would be a circular import, since `api/app.py` imports
+  `public_router`/`protected_router` from `api/auth.py`). Web UI:
+  `RegisterPage.tsx` (route `/register`, a public sibling of `/login`, not
+  behind `ProtectedRoute`) reads `?token=` from the URL, checks it via
+  `GET /auth/register/validate` on mount (shows an invalid-link message
+  immediately if there's no token or the check fails, rather than only at
+  submit time), then a plain email/password(+confirm, client-side only)
+  form; on success it redirects to `/login` — no auto-login.
 
 ## Gotchas
 
@@ -623,7 +660,9 @@ Four separate things are easy to conflate here — don't:
   `idx_quotes_organisation_status`/`idx_invoices_organisation_status` -
   backing the server-side pagination/filtering added to `GET /accounts`/
   `GET /quotes`/`GET /invoices` (see the Conventions bullet below); no
-  rebuild needed, an index is never a rebuild-and-swap case.)
+  rebuild needed, an index is never a rebuild-and-swap case. Migration 11
+  added `registration_invites` (see the invite-gated registration
+  Conventions bullet) - one more new table, no rebuild needed.)
 - Storage is a single shared SQLite connection/file — **serialise every
   access on a lock** inside the repository implementation rather than
   assuming the caller will. That lock is per-*call*, not across a sequence

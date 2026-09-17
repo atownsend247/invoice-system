@@ -8,14 +8,20 @@ Keep the endpoint table in sync with the actual routes.
 Login/sessions are [sessionkit](https://github.com/atownsend247/bb-py-sessionkit)
 (see `CLAUDE.md`). Every route is behind a single `Authorization: Bearer
 <token>` check (`domain_router`'s `dependencies=[Depends(get_current_user)]`
-in `api/app.py`) except `GET /healthz` and `POST /auth/login`, which are
-public. A missing/invalid/expired token gets `401`.
+in `api/app.py`) except `GET /healthz`, `POST /auth/login`, `GET
+/auth/register/validate`, and `POST /auth/register`, which are public. A
+missing/invalid/expired token gets `401`.
 
-There is no signup route — create the first (and any further) login account
-with the bundled `sessionkit` CLI: `uv run sessionkit add you@example.com`
-(prompts for a password), against the file `INVOICE_SYSTEM_AUTH_DB` points
-at (default `storage/db/auth.db` — see `docs/development.md`'s "Where
-persistent data lives").
+There is no *unconditional* signup route — the normal way to create a login
+is still the bundled `sessionkit` CLI: `uv run sessionkit add
+you@example.com` (prompts for a password), against the file
+`INVOICE_SYSTEM_AUTH_DB` points at (default `storage/db/auth.db` — see
+`docs/development.md`'s "Where persistent data lives"). `POST
+/auth/register` is a narrow, invite-gated exception: it only works with a
+valid `RegistrationInvite` token (single-use, expires after 7 days by
+default), which itself can **only** be created via `invoice-system-cli
+invite create [--expires-in-days N]` — there is deliberately no API route
+to create one. See the Conventions section below for the full flow.
 
 ## CORS
 
@@ -30,6 +36,8 @@ port in dev, and likely a different origin in prod) can call this API at all.
 |---|---|---|---|
 | GET | `/healthz` | public | Liveness check. |
 | POST | `/auth/login` | public | `{email, password, otp?}` → `{token, expires_at, user}`. `401` on bad credentials or a missing/invalid TOTP code. |
+| GET | `/auth/register/validate` | public | `?token=` → `{valid: true}`, or `404` if the token is unknown, expired, or already used (indistinguishable, deliberately). Lets the web UI show an error on page load rather than only at submit time. |
+| POST | `/auth/register` | public | `{token, email, password}` → the created user (same shape as `/auth/login`'s `user`), `201`. Consumes the invite *before* creating the login, so a `409` (duplicate email) or `422` (e.g. password under 8 characters) still burns it — see Conventions below. `404` for the same three invite-invalid cases as the validate route above. |
 | GET | `/auth/me` | required | The current user for this token. |
 | POST | `/auth/logout` | required | Revoke the current token. `204`. |
 | POST | `/accounts` | required | Create an account in the current user's organisation (business_name, email, address_line1 required; contact_name, phone, address_line2, town_or_city, county, postcode optional). |
@@ -104,6 +112,22 @@ stays per-user, not per-organisation (see `docs/data-model.md`'s
 
 ## Conventions
 
+- **Invite-gated registration**: `invoice-system-cli invite create
+  [--expires-in-days N]` (default 7) creates a single-use
+  `RegistrationInvite` and prints its token plus a relative `/register?
+  token=...` link — there's no API route to create one, only to check/
+  consume it. `RegistrationInviteService.check_invite`/`consume_invite`
+  (`core.py`) treat an unknown, expired, and already-used token
+  identically (`NotFound` → `404`), so neither `GET /auth/register/
+  validate` nor `POST /auth/register` ever reveal which of the three
+  applies. `POST /auth/register` consumes the invite *before* calling
+  `sessionkit.AuthService.create_user` — if that then fails (`409`
+  duplicate email, `422` invalid email/password-too-short), the invite is
+  burned but two concurrent submissions of the same token can never both
+  succeed. Registration does **not** auto-login (no token in the
+  response) and doesn't touch `Organisation`/`BusinessProfile` at all —
+  the new user gets their own `Organisation` lazily on first login, same
+  as every other user.
 - `GET /accounts`/`GET /quotes`/`GET /invoices` are the only paginated
   endpoints (`GET /expenses` stays a bare array - there's no standalone
   expenses list page, only `AccountDetailPage`'s per-account sub-list,

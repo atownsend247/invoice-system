@@ -15,6 +15,7 @@ from ..models import (
     Organisation,
     Quote,
     QuoteStatus,
+    RegistrationInvite,
 )
 from .schema import MIGRATIONS
 
@@ -742,6 +743,52 @@ class SqliteRepository:
             content_type=row["content_type"],
             size=row["size"],
             created_at=datetime.fromisoformat(row["created_at"]),
+        )
+
+    # -- Registration invites ---------------------------------------------------
+
+    def create_registration_invite(self, invite: RegistrationInvite) -> RegistrationInvite:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO registration_invites (token, created_at, expires_at, used_at) "
+                "VALUES (?, ?, ?, ?)",
+                (
+                    invite.token,
+                    invite.created_at.isoformat(),
+                    invite.expires_at.isoformat(),
+                    invite.used_at.isoformat() if invite.used_at else None,
+                ),
+            )
+            self._conn.commit()
+            return invite
+
+    def get_registration_invite(self, token: str) -> RegistrationInvite | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM registration_invites WHERE token = ?", (token,)
+            ).fetchone()
+        return self._row_to_registration_invite(row) if row else None
+
+    def consume_registration_invite(self, token: str, used_at: datetime) -> bool:
+        # A single locked UPDATE guarded by `used_at IS NULL`, not a separate
+        # check-then-update - two concurrent submissions of the same token
+        # must not both succeed (see CLAUDE.md's add_organisation_member
+        # race-fix precedent for the same "atomic check-then-claim" shape).
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE registration_invites SET used_at = ? WHERE token = ? AND used_at IS NULL",
+                (used_at.isoformat(), token),
+            )
+            self._conn.commit()
+            return cursor.rowcount > 0
+
+    @staticmethod
+    def _row_to_registration_invite(row: sqlite3.Row) -> RegistrationInvite:
+        return RegistrationInvite(
+            token=row["token"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            expires_at=datetime.fromisoformat(row["expires_at"]),
+            used_at=datetime.fromisoformat(row["used_at"]) if row["used_at"] else None,
         )
 
     # -- Shared --------------------------------------------------------------

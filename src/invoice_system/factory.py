@@ -9,6 +9,7 @@ from .core import (
     InvoiceService,
     OrganisationService,
     QuoteService,
+    RegistrationInviteService,
     StatsService,
 )
 from .repository import Repository
@@ -26,6 +27,7 @@ class Application:
         expenses: ExpenseService,
         business_profiles: BusinessProfileService,
         stats: StatsService,
+        registration_invites: RegistrationInviteService,
         attachment_store: AttachmentStore,
     ) -> None:
         self.repository = repository
@@ -36,6 +38,7 @@ class Application:
         self.expenses = expenses
         self.business_profiles = business_profiles
         self.stats = stats
+        self.registration_invites = registration_invites
         self.attachment_store = attachment_store
 
     def close(self) -> None:
@@ -65,5 +68,6 @@ def build_application(
         expenses=ExpenseService(repository, clock=clock, attachments=attachment_store),
         business_profiles=BusinessProfileService(repository, clock=clock),
         stats=StatsService(repository, clock=clock),
+        registration_invites=RegistrationInviteService(repository, clock=clock),
         attachment_store=attachment_store,
     )

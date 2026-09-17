@@ -1,8 +1,38 @@
+import { execFile } from 'node:child_process'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import { test as base, expect, type Page } from '@playwright/test'
 import { TOKEN_STORAGE_KEY } from '../src/auth/tokenStorageKey'
 import { BACKEND_PORT, TEST_EMAIL, TEST_PASSWORD } from './constants'
 
 export const API_BASE_URL = `http://127.0.0.1:${BACKEND_PORT}`
+
+const execFileAsync = promisify(execFile)
+
+// Same repo-root/.tmp-storage-dir layout start-backend.sh computes from its
+// own location (see that file) - registration invites are deliberately
+// CLI-only, not an API route (see CLAUDE.md), so this is the only way to
+// hand a test a valid one: shell out to the real CLI against the same
+// storage this worker's backend is already running against, the same
+// "set up state the HTTP API doesn't expose" pattern start-backend.sh
+// itself uses (a `uv run python -c "..."` subprocess to seed the e2e login
+// user, not an API call). No __dirname - this file is loaded as an ESM
+// module, not CommonJS.
+const dirname = path.dirname(fileURLToPath(import.meta.url))
+const REPO_ROOT = path.resolve(dirname, '../..')
+const DATA_DIR = path.join(dirname, '.tmp')
+
+async function createInviteToken(): Promise<string> {
+  const { stdout } = await execFileAsync(
+    'uv',
+    ['run', 'invoice-system-cli', '--storage-dir', DATA_DIR, 'invite', 'create'],
+    { cwd: REPO_ROOT },
+  )
+  const match = stdout.match(/Created invite (\S+)/)
+  if (!match) throw new Error(`could not parse invite token from CLI output: ${stdout}`)
+  return match[1]
+}
 
 export interface ApiAccount {
   id: string
@@ -51,6 +81,7 @@ interface TestFixtures {
   sentInvoice: ApiInvoice
   expense: ApiExpense
   reportingCurrency: string
+  inviteToken: string
 }
 
 interface WorkerFixtures {
@@ -151,6 +182,12 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   reportingCurrency: async ({ apiToken }, use) => {
     const profile = await apiFetch<{ currency: string }>('/settings/business-profile', apiToken)
     await use(profile.currency)
+  },
+
+  // No `apiToken` dependency - creating an invite needs no login at all
+  // (see CLAUDE.md), just the CLI against this worker's backend storage.
+  inviteToken: async ({}, use) => {
+    await use(await createInviteToken())
   },
 })
 

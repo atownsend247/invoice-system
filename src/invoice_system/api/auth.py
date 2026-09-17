@@ -4,9 +4,20 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 from sessionkit import AuthService, OtpInvalid, User
 
+from ..factory import Application
+
 
 def get_auth_service(request: Request) -> AuthService:
     return request.app.state.auth.service
+
+
+def get_application(request: Request) -> Application:
+    # A duplicate of api/app.py's own one-liner of the same name, not an
+    # import of it - api/app.py imports `public_router`/`protected_router`
+    # from this module, so the reverse import would be circular. Kept
+    # trivial deliberately rather than moving it to a third shared module
+    # for one line.
+    return request.app.state.application
 
 
 def get_current_user(
@@ -49,6 +60,16 @@ class LoginOut(BaseModel):
     user: UserOut
 
 
+class RegisterCheckOut(BaseModel):
+    valid: bool
+
+
+class RegisterIn(BaseModel):
+    token: str
+    email: str
+    password: str
+
+
 public_router = APIRouter(prefix="/auth", tags=["auth"])
 protected_router = APIRouter(prefix="/auth", tags=["auth"], dependencies=[Depends(get_current_user)])
 
@@ -63,6 +84,33 @@ def login(body: LoginIn, auth: AuthService = Depends(get_auth_service)) -> Login
         # thing as bad credentials to the caller.
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     return LoginOut(token=result.token, expires_at=result.expires_at, user=UserOut.from_model(result.user))
+
+
+@public_router.get("/register/validate", response_model=RegisterCheckOut)
+def validate_register_invite(
+    token: str, application: Application = Depends(get_application)
+) -> RegisterCheckOut:
+    # Lets the frontend show an error immediately on page load rather than
+    # only at submit time - RegistrationInviteService.check_invite raises
+    # NotFound (-> 404, via api/app.py's handle_app_error) for an unknown,
+    # expired, or already-used token alike, so this never reveals which.
+    application.registration_invites.check_invite(token)
+    return RegisterCheckOut(valid=True)
+
+
+@public_router.post("/register", response_model=UserOut, status_code=201)
+def register(
+    body: RegisterIn,
+    application: Application = Depends(get_application),
+    auth: AuthService = Depends(get_auth_service),
+) -> UserOut:
+    # Consume the invite *before* creating the login - if create_user then
+    # fails (e.g. a duplicate email), the invite is burned but two callers
+    # can never both succeed with the same single-use token (see
+    # RegistrationInviteService.consume_invite).
+    application.registration_invites.consume_invite(body.token)
+    user = auth.create_user(body.email, body.password)
+    return UserOut.from_model(user)
 
 
 @protected_router.get("/me", response_model=UserOut)

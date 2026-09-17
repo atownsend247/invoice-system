@@ -444,4 +444,23 @@ MIGRATIONS: list[str] = [
     CREATE INDEX idx_quotes_organisation_status ON quotes (organisation_id, status);
     CREATE INDEX idx_invoices_organisation_status ON invoices (organisation_id, status);
     """,
+    """
+    -- Registration invites - single-use, time-limited tokens gating the
+    -- public /register page (see models.RegistrationInvite,
+    -- RegistrationInviteService, api/auth.py's POST /auth/register). Not
+    -- tied to an organisation_id or account_id - an invite exists before
+    -- any Organisation does, and isn't scoped to one once consumed either
+    -- (the resulting sessionkit user gets their own Organisation lazily on
+    -- first login, same as every other user). `token` is the primary key
+    -- (a UUID4, see ids.py) - nothing else ever looks one of these up.
+    -- `used_at` is NULL until consumed. New table, so a plain CREATE
+    -- TABLE, no rebuild needed, same as every other pure-addition
+    -- migration in this file.
+    CREATE TABLE registration_invites (
+        token TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT
+    );
+    """,
 ]

@@ -140,7 +140,9 @@ app.include_router(auth_public_router)
 app.include_router(auth_protected_router)
 
 # Every route below requires a valid session - see CLAUDE.md architecture
-# rules. /healthz and POST /auth/login (mounted above) are the only exemptions.
+# rules. /healthz, POST /auth/login, GET /auth/register/validate, and POST
+# /auth/register (all mounted above, the last two on api/auth.py's own
+# public_router) are the only exemptions.
 domain_router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
