@@ -18,7 +18,11 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  /* Followed only until useTheme.ts sets an explicit data-theme - see
+     :root[data-theme="dark"] below for the manual override this guards
+     against being overridden right back by a light system preference. */
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
     --bg: #17171b;
     --surface: #202024;
     --border: #33333a;
@@ -31,6 +35,21 @@
     --chart-paid: #4cbf78;
     --chart-unpaid: #7c93f0;
   }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #17171b;
+  --surface: #202024;
+  --border: #33333a;
+  --text: #f0f0f2;
+  --text-muted: #a0a0aa;
+  --brand: #7c93f0;
+  --brand-contrast: #101018;
+  --danger: #ff8b82;
+  --danger-bg: #3a1f1d;
+  --chart-paid: #4cbf78;
+  --chart-unpaid: #7c93f0;
 }
 
 * {
@@ -291,6 +310,11 @@ button.secondary {
   background: transparent;
   color: var(--text);
   border: 1px solid var(--border);
+}
+
+.icon-button {
+  padding: 0.5rem;
+  line-height: 0;
 }
 
 .app-shell {

@@ -553,5 +553,41 @@ flow," not a restructuring, whenever it's actually needed.
       frontend-only), frontend (46 unit tests), and e2e (49 tests) suites
       updated and passing.
 
+## Phase 23 — Header icon buttons, manual light/dark toggle (done)
+
+- [x] `Layout.tsx`'s "Settings" link is now an icon-only button (a cog,
+      `components/icons.tsx`'s `CogIcon`) instead of a text link — `.button
+      icon-button`, same brand-filled look as every other "New X" button in
+      the app (Phase 22), just square instead of a text pill. Accessible
+      name preserved via `aria-label="Settings"` (plus a `title` tooltip),
+      so nothing that finds it by role/name broke.
+- [x] A second icon button next to it toggles light/dark mode
+      (`hooks/useTheme.ts` + `SunIcon`/`MoonIcon`) — shows the *current*
+      theme (sun in light mode, moon in dark), `aria-label`/`title`
+      describing the action a click takes ("Switch to dark/light mode").
+      Falls under the existing `.user-menu button` rule (transparent,
+      bordered) that already styled "Log out", so it reads as a lesser
+      utility action next to the brand-colored Settings button without a
+      new CSS variant.
+- [x] No new dependency for the three icons — hand-written inline SVGs
+      (stroke-based, 24×24 viewBox, `aria-hidden` on the `<svg>` since the
+      wrapping button/link carries the accessible name) rather than pulling
+      in an icon library for three glyphs.
+- [x] `index.css`'s dark palette, previously only reachable via
+      `@media (prefers-color-scheme: dark)`, gained an explicit
+      `:root[data-theme="dark"]` override (plus a `:not([data-theme="light"])`
+      guard on the media-query block) so a manual choice can override the
+      OS setting without losing the no-JS/pre-hydration fallback. `useTheme`
+      applies the choice as `document.documentElement.dataset.theme` and
+      persists it to `localStorage` (guarded against private-browsing/
+      storage-blocked exceptions) — once toggled, it stops following the OS
+      setting for that browser, by design.
+- [x] New `web/e2e/theme.spec.ts`: toggling flips `data-theme` and survives
+      a reload; the icon-only Settings button still navigates to
+      `/settings` by its accessible name.
+- [x] Full backend (243 tests, 98.14% coverage, unchanged - this phase is
+      frontend-only), frontend (46 unit tests), and e2e (51 tests) suites
+      updated and passing.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.
