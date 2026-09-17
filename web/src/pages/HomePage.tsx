@@ -37,8 +37,20 @@ export function conversionRate(stats: Pick<Stats, 'quotes_sent_count' | 'quotes_
 }
 
 export function HomePage() {
-  const { data: invoices, loading, error } = useAsync(() => api.listInvoices(), [])
-  const { data: accounts } = useAsync(() => api.listAccounts(), [])
+  // status: 'sent' - both isOverdue/isOutstanding below require it anyway,
+  // so filtering server-side keeps this to "invoices currently awaiting
+  // payment" (naturally small - most invoices eventually get paid/voided)
+  // rather than every invoice this organisation has ever issued. pageSize:
+  // 200 is then a comfortably generous cap on that smaller set, not on the
+  // organisation's whole invoice history.
+  const {
+    data: invoicesResult,
+    loading,
+    error,
+  } = useAsync(() => api.listInvoices({ status: 'sent', pageSize: 200 }), [])
+  const invoices = invoicesResult?.items
+  const { data: accountsResult } = useAsync(() => api.listAccounts({ pageSize: 200 }), [])
+  const accounts = accountsResult?.items
   const { data: monthlyTotals, error: monthlyTotalsError } = useAsync(
     () => api.getMonthlyInvoiceTotals(),
     [],
@@ -147,7 +159,7 @@ function InvoiceSection({
 }: {
   title: string
   invoices: Invoice[]
-  accounts: Account[] | null
+  accounts: Account[] | null | undefined
   emptyMessage: string
 }) {
   const accountName = (accountId: string) =>

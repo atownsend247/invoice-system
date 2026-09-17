@@ -28,8 +28,19 @@ export function AccountDetailPage() {
     error,
     refetch,
   } = useAsync(() => api.getAccount(accountId ?? ''), [accountId])
-  const { data: quotes } = useAsync(() => api.listQuotes(accountId), [accountId])
-  const { data: invoices } = useAsync(() => api.listInvoices(accountId), [accountId])
+  // pageSize: 200 - this account's own full history, not a paginated list
+  // page - see CLAUDE.md/roadmap on why that's a comfortably-generous cap
+  // rather than truly unbounded.
+  const { data: quotesResult } = useAsync(
+    () => api.listQuotes({ accountId, pageSize: 200 }),
+    [accountId],
+  )
+  const { data: invoicesResult } = useAsync(
+    () => api.listInvoices({ accountId, pageSize: 200 }),
+    [accountId],
+  )
+  const quotes = quotesResult?.items
+  const invoices = invoicesResult?.items
   const { data: expenses } = useAsync(() => api.listExpenses(accountId), [accountId])
   const [editing, setEditing] = useState(false)
 

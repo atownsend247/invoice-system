@@ -6,7 +6,10 @@ import { errorMessage, useAsync } from '../hooks/useAsync'
 export function QuoteNewPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { data: accounts, loading } = useAsync(() => api.listAccounts(), [])
+  // pageSize: 200 - every account in the organisation belongs in this
+  // dropdown, not just a paginated list page's first page.
+  const { data: accountsResult, loading } = useAsync(() => api.listAccounts({ pageSize: 200 }), [])
+  const accounts = accountsResult?.items
   const { data: profile } = useAsync(() => api.getBusinessProfile(), [])
   const [accountId, setAccountId] = useState(searchParams.get('accountId') ?? '')
   // null until the user actually edits it, so the field can default to the

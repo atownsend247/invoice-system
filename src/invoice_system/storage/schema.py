@@ -429,4 +429,19 @@ MIGRATIONS: list[str] = [
         created_at TEXT NOT NULL
     );
     """,
+    """
+    -- Indexes supporting server-side pagination/filtering of the
+    -- accounts/quotes/invoices list pages (see sqlite_repository.py's
+    -- list_accounts/list_quotes/list_invoices) - every one of those
+    -- queries filters by organisation_id at minimum, and optionally by
+    -- account_id/status too, and until now none of that had any index
+    -- backing it (only the per-organisation number-uniqueness indexes
+    -- existed). Plain CREATE INDEX statements, no rebuild needed, same as
+    -- every other pure-addition migration in this file.
+    CREATE INDEX idx_accounts_organisation ON accounts (organisation_id);
+    CREATE INDEX idx_quotes_organisation_account ON quotes (organisation_id, account_id);
+    CREATE INDEX idx_invoices_organisation_account ON invoices (organisation_id, account_id);
+    CREATE INDEX idx_quotes_organisation_status ON quotes (organisation_id, status);
+    CREATE INDEX idx_invoices_organisation_status ON invoices (organisation_id, status);
+    """,
 ]

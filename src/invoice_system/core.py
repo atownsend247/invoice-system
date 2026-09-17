@@ -18,6 +18,7 @@ from .models import (
     MonthlyExpenseTotals,
     MonthlyInvoiceTotals,
     Organisation,
+    Page,
     Quote,
     QuoteStatus,
     Stats,
@@ -30,6 +31,15 @@ DEFAULT_CURRENCY = "GBP"
 MONTHLY_TOTALS_MONTHS = 12
 DEFAULT_ORGANISATION_NAME = "My Organisation"
 MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024  # 10 MiB - see ExpenseService.add_attachment
+DEFAULT_PAGE_SIZE = 20
+MAX_PAGE_SIZE = 200  # see AccountService.list_accounts/QuoteService.list_quotes/InvoiceService.list_invoices
+
+
+def _validate_pagination(page: int, page_size: int) -> None:
+    if page < 1:
+        raise ValidationFailed("page must be at least 1")
+    if not (1 <= page_size <= MAX_PAGE_SIZE):
+        raise ValidationFailed(f"page_size must be between 1 and {MAX_PAGE_SIZE}")
 
 
 class OrganisationService:
@@ -109,8 +119,23 @@ class AccountService:
             raise NotFound(f"account {account_id} not found")
         return account
 
-    def list_accounts(self, organisation_id: str) -> list[Account]:
-        return self._repository.list_accounts(organisation_id)
+    def list_accounts(
+        self,
+        organisation_id: str,
+        *,
+        query: str | None = None,
+        page: int = 1,
+        page_size: int = DEFAULT_PAGE_SIZE,
+    ) -> Page[Account]:
+        """`query` matches (case-insensitively) against business/contact
+        name, email, phone, or any set address line - the same fields the
+        accounts list page's search box checks, now applied server-side
+        rather than fetching everything and filtering client-side."""
+        _validate_pagination(page, page_size)
+        items, total = self._repository.list_accounts(
+            organisation_id, query=query, limit=page_size, offset=(page - 1) * page_size
+        )
+        return Page(items=items, total=total)
 
     def update_account(
         self,
@@ -309,8 +334,29 @@ class QuoteService:
     def get_quote(self, organisation_id: str, quote_id: str) -> Quote:
         return self._get_quote(organisation_id, quote_id)
 
-    def list_quotes(self, organisation_id: str, account_id: str | None = None) -> list[Quote]:
-        return self._repository.list_quotes(organisation_id, account_id=account_id)
+    def list_quotes(
+        self,
+        organisation_id: str,
+        *,
+        account_id: str | None = None,
+        account_name: str | None = None,
+        status: QuoteStatus | None = None,
+        page: int = 1,
+        page_size: int = DEFAULT_PAGE_SIZE,
+    ) -> Page[Quote]:
+        """`account_name` matches (case-insensitively) against the linked
+        account's business_name - the quotes list page's account filter,
+        applied server-side."""
+        _validate_pagination(page, page_size)
+        items, total = self._repository.list_quotes(
+            organisation_id,
+            account_id=account_id,
+            account_name=account_name,
+            status=status,
+            limit=page_size,
+            offset=(page - 1) * page_size,
+        )
+        return Page(items=items, total=total)
 
     def add_line_item(
         self,
@@ -431,8 +477,33 @@ class InvoiceService:
     def get_invoice(self, organisation_id: str, invoice_id: str) -> Invoice:
         return self._get_invoice(organisation_id, invoice_id)
 
-    def list_invoices(self, organisation_id: str, account_id: str | None = None) -> list[Invoice]:
-        return self._repository.list_invoices(organisation_id, account_id=account_id)
+    def list_invoices(
+        self,
+        organisation_id: str,
+        *,
+        account_id: str | None = None,
+        account_name: str | None = None,
+        status: InvoiceStatus | None = None,
+        page: int = 1,
+        page_size: int = DEFAULT_PAGE_SIZE,
+    ) -> Page[Invoice]:
+        """`account_name` matches (case-insensitively) against the linked
+        account's business_name - the invoices list page's account filter,
+        applied server-side. `status` is whatever's actually stored
+        (draft/sent/paid/void) - `overdue` is presentation-only and never
+        written to Invoice.status (see monthly_totals below), so filtering
+        by it would only ever match zero rows; nothing stops a caller
+        passing it, it just isn't useful."""
+        _validate_pagination(page, page_size)
+        items, total = self._repository.list_invoices(
+            organisation_id,
+            account_id=account_id,
+            account_name=account_name,
+            status=status,
+            limit=page_size,
+            offset=(page - 1) * page_size,
+        )
+        return Page(items=items, total=total)
 
     def add_line_item(
         self,
@@ -514,7 +585,8 @@ class InvoiceService:
             cursor = _previous_month(cursor)
         order.reverse()
 
-        for invoice in self._repository.list_invoices(organisation_id):
+        invoices, _ = self._repository.list_invoices(organisation_id)
+        for invoice in invoices:
             if invoice.currency != currency:
                 continue
             if invoice.status in (InvoiceStatus.DRAFT, InvoiceStatus.VOID):
@@ -729,9 +801,9 @@ class StatsService:
         InvoiceService.monthly_totals - an invoice in a different currency
         is excluded rather than naively summed in. This service doesn't
         know whose profile `currency` came from, same as monthly_totals."""
-        accounts = self._repository.list_accounts(organisation_id)
-        quotes = self._repository.list_quotes(organisation_id)
-        invoices = self._repository.list_invoices(organisation_id)
+        accounts, _ = self._repository.list_accounts(organisation_id)
+        quotes, _ = self._repository.list_quotes(organisation_id)
+        invoices, _ = self._repository.list_invoices(organisation_id)
 
         quotes_sent_count = sum(1 for q in quotes if q.status != QuoteStatus.DRAFT)
         quotes_converted_count = sum(1 for q in quotes if q.status == QuoteStatus.CONVERTED)

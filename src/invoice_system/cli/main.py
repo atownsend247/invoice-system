@@ -1,3 +1,4 @@
+import math
 import mimetypes
 import os
 import sys
@@ -149,10 +150,16 @@ def account_create(
 
 @account.command("list")
 @click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option("--page", default=1, show_default=True)
+@click.option("--page-size", default=100, show_default=True, help="Max 200.")
 @click.pass_obj
-def account_list(application: Application, user_id: str) -> None:
-    for acc in application.accounts.list_accounts(_organisation_id(application, user_id)):
+def account_list(application: Application, user_id: str, page: int, page_size: int) -> None:
+    result = application.accounts.list_accounts(
+        _organisation_id(application, user_id), page=page, page_size=page_size
+    )
+    for acc in result.items:
         click.echo(f"{acc.id}\t{acc.business_name}\t{acc.email}")
+    click.echo(f"Page {page} of {max(1, math.ceil(result.total / page_size))} (total {result.total})")
 
 
 @account.command("update")
@@ -293,11 +300,19 @@ def invoice() -> None:
 @invoice.command("list")
 @click.option("--user-id", required=True, help=_USER_ID_HELP)
 @click.option("--account-id", default=None)
+@click.option("--page", default=1, show_default=True)
+@click.option("--page-size", default=100, show_default=True, help="Max 200.")
 @click.pass_obj
-def invoice_list(application: Application, user_id: str, account_id: str | None) -> None:
+def invoice_list(
+    application: Application, user_id: str, account_id: str | None, page: int, page_size: int
+) -> None:
     organisation_id = _organisation_id(application, user_id)
-    for inv in application.invoices.list_invoices(organisation_id, account_id=account_id):
+    result = application.invoices.list_invoices(
+        organisation_id, account_id=account_id, page=page, page_size=page_size
+    )
+    for inv in result.items:
         click.echo(f"{inv.id}\t{inv.number or 'draft'}\t{inv.status.value}")
+    click.echo(f"Page {page} of {max(1, math.ceil(result.total / page_size))} (total {result.total})")
 
 
 @invoice.command("send")

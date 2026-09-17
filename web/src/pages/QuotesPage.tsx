@@ -4,38 +4,44 @@ import * as api from '../api'
 import { Pagination } from '../components/Pagination'
 import { StatusBadge } from '../components/StatusBadge'
 import { useAsync } from '../hooks/useAsync'
-import { usePagedList } from '../hooks/usePagedList'
-import type { Quote, QuoteStatus } from '../types'
+import { useDebouncedValue } from '../hooks/useDebouncedValue'
+import type { QuoteStatus } from '../types'
 
+const PAGE_SIZE = 20
 const QUOTE_STATUSES: QuoteStatus[] = ['draft', 'sent', 'accepted', 'rejected', 'expired', 'converted']
 
-/** Matches a quote against the account-name and status filters on this
- * page. Exported (like AccountsPage's accountMatchesQuery) so the matching
- * logic is unit-testable without rendering the page. */
-export function quoteMatchesFilters(
-  quote: Quote,
-  accountName: string,
-  filters: { accountQuery: string; status: QuoteStatus | '' },
-): boolean {
-  if (filters.status && quote.status !== filters.status) return false
-  const normalised = filters.accountQuery.trim().toLowerCase()
-  if (!normalised) return true
-  return accountName.toLowerCase().includes(normalised)
-}
-
 export function QuotesPage() {
-  const { data: quotes, loading, error } = useAsync(() => api.listQuotes(), [])
-  const { data: accounts } = useAsync(() => api.listAccounts(), [])
   const [accountQuery, setAccountQuery] = useState('')
   const [status, setStatus] = useState<QuoteStatus | ''>('')
+  const [page, setPage] = useState(1)
+
+  const debouncedAccountQuery = useDebouncedValue(accountQuery)
+  const {
+    data: result,
+    loading,
+    error,
+  } = useAsync(
+    () =>
+      api.listQuotes({
+        accountName: debouncedAccountQuery || undefined,
+        status: status || undefined,
+        page,
+        pageSize: PAGE_SIZE,
+      }),
+    [debouncedAccountQuery, status, page],
+  )
+  // pageSize: 200 - this is only for resolving id -> business_name below,
+  // not the page shown, so it needs every account in the organisation, not
+  // just the accounts list page's own first page (see CLAUDE.md/roadmap on
+  // why 200 is the accepted cap rather than truly unbounded).
+  const { data: accounts } = useAsync(() => api.listAccounts({ pageSize: 200 }), [])
 
   const accountName = (accountId: string) =>
-    accounts?.find((account) => account.id === accountId)?.business_name ?? `#${accountId}`
+    accounts?.items.find((account) => account.id === accountId)?.business_name ?? `#${accountId}`
 
-  const filteredQuotes = quotes?.filter((quote) =>
-    quoteMatchesFilters(quote, accountName(quote.account_id), { accountQuery, status }),
-  )
-  const { page, totalPages, setPage, paged: pagedQuotes } = usePagedList(filteredQuotes)
+  const quotes = result?.items
+  const totalPages = Math.max(1, Math.ceil((result?.total ?? 0) / PAGE_SIZE))
+  const hasFilters = accountQuery.trim().length > 0 || status !== ''
 
   return (
     <section>
@@ -52,8 +58,8 @@ export function QuotesPage() {
           {error}
         </p>
       )}
-      {quotes && quotes.length === 0 && <p>No quotes yet.</p>}
-      {quotes && quotes.length > 0 && (
+      {result && result.total === 0 && !hasFilters && <p>No quotes yet.</p>}
+      {result && (result.total > 0 || hasFilters) && (
         <>
           <div className="filters">
             <label className="search-box">
@@ -87,8 +93,8 @@ export function QuotesPage() {
             </label>
           </div>
 
-          {filteredQuotes && filteredQuotes.length === 0 && <p className="meta">No quotes match these filters.</p>}
-          {pagedQuotes && pagedQuotes.length > 0 && (
+          {quotes && quotes.length === 0 && <p className="meta">No quotes match these filters.</p>}
+          {quotes && quotes.length > 0 && (
             <table>
               <thead>
                 <tr>
@@ -100,7 +106,7 @@ export function QuotesPage() {
                 </tr>
               </thead>
               <tbody>
-                {pagedQuotes.map((quote) => (
+                {quotes.map((quote) => (
                   <tr key={quote.id}>
                     <td>{quote.number ?? `draft #${quote.id}`}</td>
                     <td>{accountName(quote.account_id)}</td>

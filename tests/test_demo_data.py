@@ -55,8 +55,14 @@ def test_seed_demo_data_spans_a_mix_of_quote_and_invoice_statuses(application, a
     seed_demo_data(application, auth, now=FIXED_NOW)
     organisation_id = _demo_organisation_id(application, auth)
 
-    quote_statuses = {q.status.value for q in application.quotes.list_quotes(organisation_id)}
-    invoice_statuses = {i.status.value for i in application.invoices.list_invoices(organisation_id)}
+    # page_size=100 - these dataset-wide assertions need every seeded row,
+    # not just the default first page.
+    quote_statuses = {
+        q.status.value for q in application.quotes.list_quotes(organisation_id, page_size=100).items
+    }
+    invoice_statuses = {
+        i.status.value for i in application.invoices.list_invoices(organisation_id, page_size=100).items
+    }
 
     # Not asserting the exact set - just that it's not a single-status pile,
     # which is the whole point of "various states and combinations".
@@ -69,7 +75,11 @@ def test_seed_demo_data_produces_both_an_overdue_and_an_outstanding_invoice(appl
     organisation_id = _demo_organisation_id(application, auth)
     today = FIXED_NOW.date()
 
-    sent = [i for i in application.invoices.list_invoices(organisation_id) if i.status.value == "sent"]
+    sent = [
+        i
+        for i in application.invoices.list_invoices(organisation_id, page_size=100).items
+        if i.status.value == "sent"
+    ]
     assert any(i.due_date and i.due_date < today for i in sent), "expected at least one overdue invoice"
     assert any(i.due_date and i.due_date >= today for i in sent), "expected at least one outstanding invoice"
 
@@ -77,20 +87,33 @@ def test_seed_demo_data_produces_both_an_overdue_and_an_outstanding_invoice(appl
 def test_seed_demo_data_produces_at_least_one_paid_invoice(application, auth):
     seed_demo_data(application, auth, now=FIXED_NOW)
     organisation_id = _demo_organisation_id(application, auth)
-    assert any(i.status.value == "paid" for i in application.invoices.list_invoices(organisation_id))
+    assert any(
+        i.status.value == "paid"
+        for i in application.invoices.list_invoices(organisation_id, page_size=100).items
+    )
 
 
 def test_seed_demo_data_every_line_item_is_in_the_demo_currency(application, auth):
     seed_demo_data(application, auth, now=FIXED_NOW)
     organisation_id = _demo_organisation_id(application, auth)
-    assert all(q.currency == DEMO_CURRENCY for q in application.quotes.list_quotes(organisation_id))
-    assert all(i.currency == DEMO_CURRENCY for i in application.invoices.list_invoices(organisation_id))
+    assert all(
+        q.currency == DEMO_CURRENCY
+        for q in application.quotes.list_quotes(organisation_id, page_size=100).items
+    )
+    assert all(
+        i.currency == DEMO_CURRENCY
+        for i in application.invoices.list_invoices(organisation_id, page_size=100).items
+    )
 
 
 def test_seed_demo_data_uses_more_than_one_vat_rate(application, auth):
     seed_demo_data(application, auth, now=FIXED_NOW)
     organisation_id = _demo_organisation_id(application, auth)
-    rates = {item.tax_rate for q in application.quotes.list_quotes(organisation_id) for item in q.line_items}
+    rates = {
+        item.tax_rate
+        for q in application.quotes.list_quotes(organisation_id, page_size=100).items
+        for item in q.line_items
+    }
     assert len(rates) >= 2
 
 

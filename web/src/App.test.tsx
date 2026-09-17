@@ -58,8 +58,8 @@ describe('App', () => {
         totp_enabled: false,
       },
     })
-    mockedApi.listAccounts.mockResolvedValue([])
-    mockedApi.listInvoices.mockResolvedValue([])
+    mockedApi.listAccounts.mockResolvedValue({ items: [], total: 0 })
+    mockedApi.listInvoices.mockResolvedValue({ items: [], total: 0 })
     mockedApi.getMonthlyInvoiceTotals.mockResolvedValue({ currency: 'GBP', months: [] })
     mockedApi.getMonthlyExpenseTotals.mockResolvedValue({ currency: 'GBP', months: [] })
     mockedApi.getStats.mockResolvedValue({

@@ -331,3 +331,17 @@ class Stats:
     quotes_sent_count: int
     quotes_converted_count: int
     total_paid: Decimal
+
+
+@dataclass
+class Page[T]:
+    """One page of a `list_*` service method's results, alongside `total` -
+    the number of rows matching the same filters across *every* page, not
+    just this one - see AccountService.list_accounts/QuoteService.
+    list_quotes/InvoiceService.list_invoices. `total` lets a caller compute
+    how many pages exist without a second round trip. One small generic
+    wrapper reused by all three rather than three near-identical bespoke
+    classes."""
+
+    items: list[T]
+    total: int

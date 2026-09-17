@@ -149,6 +149,97 @@ def test_account_quote_invoice_flow(client, auth_headers):
     assert response.json()["number"] == "INV-0001"
 
 
+def test_list_accounts_paginates_and_filters_by_query(client, auth_headers):
+    for name, email in [("Northwind Traders", "billing@northwind.test"), ("Acme Ltd", "a@acme.test")]:
+        client.post(
+            "/accounts",
+            json={"business_name": name, "email": email, "address_line1": "1 Main St"},
+            headers=auth_headers,
+        )
+
+    response = client.get("/accounts?page=1&page_size=1", headers=auth_headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["items"]) == 1
+    assert body["total"] == 2
+
+    response = client.get("/accounts?query=northwind", headers=auth_headers)
+    body = response.json()
+    assert [a["business_name"] for a in body["items"]] == ["Northwind Traders"]
+    assert body["total"] == 1
+
+
+def test_list_accounts_rejects_invalid_page_size(client, auth_headers):
+    response = client.get("/accounts?page_size=0", headers=auth_headers)
+    assert response.status_code == 422
+
+
+def test_list_quotes_paginates_and_filters_by_account_name_and_status(client, auth_headers):
+    acme_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme Ltd", "email": "a@acme.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    northwind_id = client.post(
+        "/accounts",
+        json={
+            "business_name": "Northwind Traders",
+            "email": "a@northwind.test",
+            "address_line1": "2 Kings Road",
+        },
+        headers=auth_headers,
+    ).json()["id"]
+    draft_id = client.post("/quotes", json={"account_id": acme_id}, headers=auth_headers).json()["id"]
+    sent_id = client.post("/quotes", json={"account_id": northwind_id}, headers=auth_headers).json()["id"]
+    client.post(
+        f"/quotes/{sent_id}/line-items",
+        json={"description": "Work", "quantity": "1", "unit_price": "100.00"},
+        headers=auth_headers,
+    )
+    client.post(f"/quotes/{sent_id}/send", headers=auth_headers)
+
+    response = client.get("/quotes?account_name=northwind", headers=auth_headers)
+    body = response.json()
+    assert [q["id"] for q in body["items"]] == [sent_id]
+    assert body["total"] == 1
+
+    response = client.get("/quotes?status=draft", headers=auth_headers)
+    body = response.json()
+    assert [q["id"] for q in body["items"]] == [draft_id]
+    assert body["total"] == 1
+
+    response = client.get("/quotes?page=1&page_size=1", headers=auth_headers)
+    assert response.json()["total"] == 2
+
+
+def test_list_invoices_paginates_and_filters_by_account_name_and_status(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme Ltd", "email": "a@acme.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+    client.post(
+        f"/quotes/{quote_id}/line-items",
+        json={"description": "Work", "quantity": "1", "unit_price": "100.00"},
+        headers=auth_headers,
+    )
+    client.post(f"/quotes/{quote_id}/send", headers=auth_headers)
+    invoice_id = client.post(f"/quotes/{quote_id}/convert", headers=auth_headers).json()["id"]
+
+    response = client.get("/invoices?account_name=acme", headers=auth_headers)
+    body = response.json()
+    assert [i["id"] for i in body["items"]] == [invoice_id]
+    assert body["total"] == 1
+
+    response = client.get("/invoices?status=draft", headers=auth_headers)
+    body = response.json()
+    assert [i["id"] for i in body["items"]] == [invoice_id]
+
+    response = client.get("/invoices?status=paid", headers=auth_headers)
+    assert response.json()["items"] == []
+
+
 def test_account_expense_flow(client, auth_headers):
     account_id = client.post(
         "/accounts",
@@ -305,8 +396,10 @@ def test_accounts_are_isolated_between_login_users(client, auth_headers, other_a
         headers=other_auth_headers,
     )
 
-    owner_names = {a["business_name"] for a in client.get("/accounts", headers=auth_headers).json()}
-    other_names = {a["business_name"] for a in client.get("/accounts", headers=other_auth_headers).json()}
+    owner_names = {a["business_name"] for a in client.get("/accounts", headers=auth_headers).json()["items"]}
+    other_names = {
+        a["business_name"] for a in client.get("/accounts", headers=other_auth_headers).json()["items"]
+    }
     assert owner_names == {"Owner's Client"}
     assert other_names == {"Other's Client"}
 

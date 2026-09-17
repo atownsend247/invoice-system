@@ -54,6 +54,16 @@ class AccountOut(BaseModel):
         )
 
 
+class AccountListOut(BaseModel):
+    """One page of `GET /accounts` - `total` is the count matching the
+    request's filters across every page, not just `items` (see
+    AccountService.list_accounts), letting the client compute how many
+    pages exist without a second request."""
+
+    items: list[AccountOut]
+    total: int
+
+
 class LineItemIn(BaseModel):
     description: str
     quantity: str
@@ -127,6 +137,13 @@ class QuoteOut(BaseModel):
         )
 
 
+class QuoteListOut(BaseModel):
+    """One page of `GET /quotes` - see AccountListOut."""
+
+    items: list[QuoteOut]
+    total: int
+
+
 class InvoiceOut(BaseModel):
     id: str
     account_id: str
@@ -159,6 +176,13 @@ class InvoiceOut(BaseModel):
             tax_total=str(invoice.tax_total),
             total=str(invoice.total),
         )
+
+
+class InvoiceListOut(BaseModel):
+    """One page of `GET /invoices` - see AccountListOut."""
+
+    items: list[InvoiceOut]
+    total: int
 
 
 class ExpenseCreateIn(BaseModel):

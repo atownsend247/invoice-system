@@ -14,6 +14,7 @@ from sessionkit import ValidationError as AuthValidationError
 from ..auth import build_auth
 from ..errors import AppError, Duplicate, InvalidTransition, NotFound, ValidationFailed
 from ..factory import Application, build_application
+from ..models import InvoiceStatus, QuoteStatus
 from ..paths import DEFAULT_STORAGE_DIR, StoragePaths
 from ..pdf import render_expense_pdf, render_invoice_pdf, render_quote_pdf
 from .auth import (
@@ -27,17 +28,20 @@ from .auth import (
 )
 from .schemas import (
     AccountIn,
+    AccountListOut,
     AccountOut,
     BusinessProfileIn,
     BusinessProfileOut,
     ExpenseAttachmentOut,
     ExpenseCreateIn,
     ExpenseOut,
+    InvoiceListOut,
     InvoiceOut,
     LineItemIn,
     MonthlyExpenseTotalsReportOut,
     MonthlyTotalsReportOut,
     QuoteCreateIn,
+    QuoteListOut,
     QuoteOut,
     StatsOut,
 )
@@ -166,12 +170,16 @@ def create_account(
     return AccountOut.from_model(account)
 
 
-@domain_router.get("/accounts", response_model=list[AccountOut])
+@domain_router.get("/accounts", response_model=AccountListOut)
 def list_accounts(
+    query: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
     application: Application = Depends(get_application),
     organisation_id: str = Depends(get_organisation_id),
-) -> list[AccountOut]:
-    return [AccountOut.from_model(a) for a in application.accounts.list_accounts(organisation_id)]
+) -> AccountListOut:
+    result = application.accounts.list_accounts(organisation_id, query=query, page=page, page_size=page_size)
+    return AccountListOut(items=[AccountOut.from_model(a) for a in result.items], total=result.total)
 
 
 @domain_router.get("/accounts/{account_id}", response_model=AccountOut)
@@ -221,15 +229,25 @@ def create_quote(
     return QuoteOut.from_model(quote)
 
 
-@domain_router.get("/quotes", response_model=list[QuoteOut])
+@domain_router.get("/quotes", response_model=QuoteListOut)
 def list_quotes(
     account_id: str | None = None,
+    account_name: str | None = None,
+    status: QuoteStatus | None = None,
+    page: int = 1,
+    page_size: int = 20,
     application: Application = Depends(get_application),
     organisation_id: str = Depends(get_organisation_id),
-) -> list[QuoteOut]:
-    return [
-        QuoteOut.from_model(q) for q in application.quotes.list_quotes(organisation_id, account_id=account_id)
-    ]
+) -> QuoteListOut:
+    result = application.quotes.list_quotes(
+        organisation_id,
+        account_id=account_id,
+        account_name=account_name,
+        status=status,
+        page=page,
+        page_size=page_size,
+    )
+    return QuoteListOut(items=[QuoteOut.from_model(q) for q in result.items], total=result.total)
 
 
 @domain_router.get("/quotes/{quote_id}", response_model=QuoteOut)
@@ -290,16 +308,25 @@ def get_quote_pdf(
     return Response(content=render_quote_pdf(account, quote, profile), media_type="application/pdf")
 
 
-@domain_router.get("/invoices", response_model=list[InvoiceOut])
+@domain_router.get("/invoices", response_model=InvoiceListOut)
 def list_invoices(
     account_id: str | None = None,
+    account_name: str | None = None,
+    status: InvoiceStatus | None = None,
+    page: int = 1,
+    page_size: int = 20,
     application: Application = Depends(get_application),
     organisation_id: str = Depends(get_organisation_id),
-) -> list[InvoiceOut]:
-    return [
-        InvoiceOut.from_model(i)
-        for i in application.invoices.list_invoices(organisation_id, account_id=account_id)
-    ]
+) -> InvoiceListOut:
+    result = application.invoices.list_invoices(
+        organisation_id,
+        account_id=account_id,
+        account_name=account_name,
+        status=status,
+        page=page,
+        page_size=page_size,
+    )
+    return InvoiceListOut(items=[InvoiceOut.from_model(i) for i in result.items], total=result.total)
 
 
 @domain_router.get("/invoices/monthly-totals", response_model=MonthlyTotalsReportOut)

@@ -4,41 +4,45 @@ import * as api from '../api'
 import { Pagination } from '../components/Pagination'
 import { StatusBadge } from '../components/StatusBadge'
 import { useAsync } from '../hooks/useAsync'
-import { usePagedList } from '../hooks/usePagedList'
-import type { Invoice, InvoiceStatus } from '../types'
+import { useDebouncedValue } from '../hooks/useDebouncedValue'
+import type { InvoiceStatus } from '../types'
+
+const PAGE_SIZE = 20
 
 // 'overdue' deliberately excluded - it's presentation-only, computed
 // client-side on the home dashboard, and never actually written to
 // Invoice.status (see CLAUDE.md), so it would only ever match zero rows.
 const INVOICE_STATUSES: InvoiceStatus[] = ['draft', 'sent', 'paid', 'void']
 
-/** Matches an invoice against the account-name and status filters on this
- * page. Exported (like AccountsPage's accountMatchesQuery) so the matching
- * logic is unit-testable without rendering the page. */
-export function invoiceMatchesFilters(
-  invoice: Invoice,
-  accountName: string,
-  filters: { accountQuery: string; status: InvoiceStatus | '' },
-): boolean {
-  if (filters.status && invoice.status !== filters.status) return false
-  const normalised = filters.accountQuery.trim().toLowerCase()
-  if (!normalised) return true
-  return accountName.toLowerCase().includes(normalised)
-}
-
 export function InvoicesPage() {
-  const { data: invoices, loading, error } = useAsync(() => api.listInvoices(), [])
-  const { data: accounts } = useAsync(() => api.listAccounts(), [])
   const [accountQuery, setAccountQuery] = useState('')
   const [status, setStatus] = useState<InvoiceStatus | ''>('')
+  const [page, setPage] = useState(1)
+
+  const debouncedAccountQuery = useDebouncedValue(accountQuery)
+  const {
+    data: result,
+    loading,
+    error,
+  } = useAsync(
+    () =>
+      api.listInvoices({
+        accountName: debouncedAccountQuery || undefined,
+        status: status || undefined,
+        page,
+        pageSize: PAGE_SIZE,
+      }),
+    [debouncedAccountQuery, status, page],
+  )
+  // pageSize: 200 - see the same note on QuotesPage.tsx's own accounts fetch.
+  const { data: accounts } = useAsync(() => api.listAccounts({ pageSize: 200 }), [])
 
   const accountName = (accountId: string) =>
-    accounts?.find((account) => account.id === accountId)?.business_name ?? `#${accountId}`
+    accounts?.items.find((account) => account.id === accountId)?.business_name ?? `#${accountId}`
 
-  const filteredInvoices = invoices?.filter((invoice) =>
-    invoiceMatchesFilters(invoice, accountName(invoice.account_id), { accountQuery, status }),
-  )
-  const { page, totalPages, setPage, paged: pagedInvoices } = usePagedList(filteredInvoices)
+  const invoices = result?.items
+  const totalPages = Math.max(1, Math.ceil((result?.total ?? 0) / PAGE_SIZE))
+  const hasFilters = accountQuery.trim().length > 0 || status !== ''
 
   return (
     <section>
@@ -50,8 +54,10 @@ export function InvoicesPage() {
           {error}
         </p>
       )}
-      {invoices && invoices.length === 0 && <p>No invoices yet — convert a sent quote to create one.</p>}
-      {invoices && invoices.length > 0 && (
+      {result && result.total === 0 && !hasFilters && (
+        <p>No invoices yet — convert a sent quote to create one.</p>
+      )}
+      {result && (result.total > 0 || hasFilters) && (
         <>
           <div className="filters">
             <label className="search-box">
@@ -85,10 +91,8 @@ export function InvoicesPage() {
             </label>
           </div>
 
-          {filteredInvoices && filteredInvoices.length === 0 && (
-            <p className="meta">No invoices match these filters.</p>
-          )}
-          {pagedInvoices && pagedInvoices.length > 0 && (
+          {invoices && invoices.length === 0 && <p className="meta">No invoices match these filters.</p>}
+          {invoices && invoices.length > 0 && (
             <table>
               <thead>
                 <tr>
@@ -101,7 +105,7 @@ export function InvoicesPage() {
                 </tr>
               </thead>
               <tbody>
-                {pagedInvoices.map((invoice) => (
+                {invoices.map((invoice) => (
                   <tr key={invoice.id}>
                     <td>{invoice.number ?? `draft #${invoice.id}`}</td>
                     <td>{accountName(invoice.account_id)}</td>

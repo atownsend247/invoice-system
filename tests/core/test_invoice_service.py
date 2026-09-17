@@ -33,6 +33,43 @@ def test_get_missing_invoice_raises_not_found(application, organisation_id):
         application.invoices.get_invoice(organisation_id, 999)
 
 
+def test_list_invoices_filters_by_account_name_and_status_and_paginates(
+    application, organisation_id, draft_invoice
+):
+    northwind = application.accounts.create_account(
+        organisation_id=organisation_id,
+        business_name="Northwind Traders",
+        email="a@northwind.test",
+        address_line1="2 Kings Road",
+    )
+    other_quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=northwind.id)
+    other_quote = application.quotes.add_line_item(
+        organisation_id,
+        other_quote.id,
+        description="Work",
+        quantity=Decimal("1"),
+        unit_price=Decimal("100.00"),
+    )
+    other_quote = application.quotes.send(organisation_id, other_quote.id)
+    other_invoice = application.quotes.convert_to_invoice(organisation_id, other_quote.id)
+
+    by_account_name = application.invoices.list_invoices(organisation_id, account_name="northwind").items
+    assert [i.id for i in by_account_name] == [other_invoice.id]
+
+    by_status = application.invoices.list_invoices(organisation_id, status=InvoiceStatus.DRAFT).items
+    assert {i.id for i in by_status} == {draft_invoice.id, other_invoice.id}
+
+    page = application.invoices.list_invoices(organisation_id, page=1, page_size=1)
+    assert len(page.items) == 1
+    assert page.total == 2
+
+
+@pytest.mark.parametrize(("page", "page_size"), [(0, 20), (1, 0), (1, 201)])
+def test_list_invoices_rejects_invalid_pagination(application, organisation_id, page, page_size):
+    with pytest.raises(ValidationFailed):
+        application.invoices.list_invoices(organisation_id, page=page, page_size=page_size)
+
+
 def test_invoice_from_another_organisation_raises_not_found(application, organisation_id, draft_invoice):
     other_organisation_id = application.organisations.get_or_create_for_user("user-2")
     with pytest.raises(NotFound):

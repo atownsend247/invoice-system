@@ -4,10 +4,13 @@ import type {
   Expense,
   ExpenseAttachment,
   Invoice,
+  InvoiceStatus,
   LoginResult,
   MonthlyExpenseTotalsReport,
   MonthlyTotalsReport,
+  PagedResult,
   Quote,
+  QuoteStatus,
   Stats,
   User,
 } from './types'
@@ -117,6 +120,18 @@ export async function downloadPdf(path: string, filename: string): Promise<void>
   URL.revokeObjectURL(url)
 }
 
+/** Builds a query string from a set of optional params, dropping any that
+ * are undefined/blank - shared by the paginated/filterable list endpoints
+ * below so each one only has to say which params it has, not repeat the
+ * "skip absent ones" logic three times. */
+function buildQuery(params: Record<string, string | number | undefined>): string {
+  const entries = Object.entries(params).filter(
+    (entry): entry is [string, string | number] => entry[1] !== undefined && entry[1] !== '',
+  )
+  if (entries.length === 0) return ''
+  return `?${new URLSearchParams(entries.map(([key, value]) => [key, String(value)])).toString()}`
+}
+
 /** Fetches a PDF and returns an object URL for it, for PdfViewerModal to
  * show in an in-page <iframe> - not a new browser tab. A new tab was the
  * first approach tried here, but modern Chromium refuses to top-level-
@@ -150,8 +165,15 @@ export function logout(): Promise<void> {
 
 // -- accounts ------------------------------------------------------------
 
-export function listAccounts(): Promise<Account[]> {
-  return request('/accounts')
+export interface ListAccountsOptions {
+  query?: string
+  page?: number
+  pageSize?: number
+}
+
+export function listAccounts(options: ListAccountsOptions = {}): Promise<PagedResult<Account>> {
+  const search = buildQuery({ query: options.query, page: options.page, page_size: options.pageSize })
+  return request(`/accounts${search}`)
 }
 
 export function getAccount(id: string): Promise<Account> {
@@ -180,9 +202,23 @@ export function updateAccount(id: string, input: CreateAccountInput): Promise<Ac
 
 // -- quotes ----------------------------------------------------------------
 
-export function listQuotes(accountId?: string): Promise<Quote[]> {
-  const query = accountId ? `?account_id=${accountId}` : ''
-  return request(`/quotes${query}`)
+export interface ListQuotesOptions {
+  accountId?: string
+  accountName?: string
+  status?: QuoteStatus
+  page?: number
+  pageSize?: number
+}
+
+export function listQuotes(options: ListQuotesOptions = {}): Promise<PagedResult<Quote>> {
+  const search = buildQuery({
+    account_id: options.accountId,
+    account_name: options.accountName,
+    status: options.status,
+    page: options.page,
+    page_size: options.pageSize,
+  })
+  return request(`/quotes${search}`)
 }
 
 export function getQuote(id: string): Promise<Quote> {
@@ -218,9 +254,23 @@ export function getQuotePdfUrl(quote: Quote): Promise<string> {
 
 // -- invoices --------------------------------------------------------------
 
-export function listInvoices(accountId?: string): Promise<Invoice[]> {
-  const query = accountId ? `?account_id=${accountId}` : ''
-  return request(`/invoices${query}`)
+export interface ListInvoicesOptions {
+  accountId?: string
+  accountName?: string
+  status?: InvoiceStatus
+  page?: number
+  pageSize?: number
+}
+
+export function listInvoices(options: ListInvoicesOptions = {}): Promise<PagedResult<Invoice>> {
+  const search = buildQuery({
+    account_id: options.accountId,
+    account_name: options.accountName,
+    status: options.status,
+    page: options.page,
+    page_size: options.pageSize,
+  })
+  return request(`/invoices${search}`)
 }
 
 export function getInvoice(id: string): Promise<Invoice> {

@@ -27,6 +27,37 @@ def test_create_quote_requires_account_in_same_organisation(application, organis
         application.quotes.create_quote(organisation_id=other_organisation_id, account_id=account.id)
 
 
+def test_list_quotes_filters_by_account_name_and_status_and_paginates(application, organisation_id, account):
+    northwind = application.accounts.create_account(
+        organisation_id=organisation_id,
+        business_name="Northwind Traders",
+        email="a@northwind.test",
+        address_line1="2 Kings Road",
+    )
+    draft = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    sent = application.quotes.create_quote(organisation_id=organisation_id, account_id=northwind.id)
+    sent = application.quotes.add_line_item(
+        organisation_id, sent.id, description="Work", quantity=Decimal("1"), unit_price=Decimal("100.00")
+    )
+    sent = application.quotes.send(organisation_id, sent.id)
+
+    by_account_name = application.quotes.list_quotes(organisation_id, account_name="northwind").items
+    assert [q.id for q in by_account_name] == [sent.id]
+
+    by_status = application.quotes.list_quotes(organisation_id, status=QuoteStatus.DRAFT).items
+    assert [q.id for q in by_status] == [draft.id]
+
+    page = application.quotes.list_quotes(organisation_id, page=1, page_size=1)
+    assert len(page.items) == 1
+    assert page.total == 2
+
+
+@pytest.mark.parametrize(("page", "page_size"), [(0, 20), (1, 0), (1, 201)])
+def test_list_quotes_rejects_invalid_pagination(application, organisation_id, page, page_size):
+    with pytest.raises(ValidationFailed):
+        application.quotes.list_quotes(organisation_id, page=page, page_size=page_size)
+
+
 def test_quote_lifecycle_through_conversion_to_invoice(application, organisation_id, account):
     quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
     assert quote.status == QuoteStatus.DRAFT

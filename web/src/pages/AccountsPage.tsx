@@ -5,38 +5,28 @@ import * as api from '../api'
 import { AccountForm } from '../components/AccountForm'
 import { Pagination } from '../components/Pagination'
 import { useAsync } from '../hooks/useAsync'
-import { usePagedList } from '../hooks/usePagedList'
-import type { Account } from '../types'
+import { useDebouncedValue } from '../hooks/useDebouncedValue'
 
-/** Matches a search box query against everything shown in the list -
- * business/contact name, email, phone, and every set address line - not
- * just business name, so "SW1A" or "Priya" both find the right row.
- * Exported (like HomePage's isOverdue/isOutstanding) so the matching logic
- * is unit-testable without rendering the page. */
-export function accountMatchesQuery(account: Account, query: string): boolean {
-  const normalised = query.trim().toLowerCase()
-  if (!normalised) return true
-  const haystack = [
-    account.business_name,
-    account.contact_name,
-    account.email,
-    account.phone,
-    ...accountAddressLines(account),
-  ]
-    .filter((value): value is string => Boolean(value))
-    .join(' ')
-    .toLowerCase()
-  return haystack.includes(normalised)
-}
+const PAGE_SIZE = 20
 
 export function AccountsPage() {
-  const { data: accounts, loading, error } = useAsync(() => api.listAccounts(), [])
   const [showForm, setShowForm] = useState(false)
   const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
   const navigate = useNavigate()
 
-  const filteredAccounts = accounts?.filter((account) => accountMatchesQuery(account, query))
-  const { page, totalPages, setPage, paged: pagedAccounts } = usePagedList(filteredAccounts)
+  const debouncedQuery = useDebouncedValue(query)
+  const {
+    data: result,
+    loading,
+    error,
+  } = useAsync(
+    () => api.listAccounts({ query: debouncedQuery || undefined, page, pageSize: PAGE_SIZE }),
+    [debouncedQuery, page],
+  )
+  const accounts = result?.items
+  const totalPages = Math.max(1, Math.ceil((result?.total ?? 0) / PAGE_SIZE))
+  const hasQuery = query.trim().length > 0
 
   return (
     <section>
@@ -62,8 +52,8 @@ export function AccountsPage() {
           {error}
         </p>
       )}
-      {accounts && accounts.length === 0 && <p>No accounts yet.</p>}
-      {accounts && accounts.length > 0 && (
+      {result && result.total === 0 && !hasQuery && <p>No accounts yet.</p>}
+      {result && (result.total > 0 || hasQuery) && (
         <>
           <label className="search-box">
             Search accounts
@@ -78,10 +68,8 @@ export function AccountsPage() {
             />
           </label>
 
-          {filteredAccounts && filteredAccounts.length === 0 && (
-            <p className="meta">No accounts match "{query}".</p>
-          )}
-          {pagedAccounts && pagedAccounts.length > 0 && (
+          {accounts && accounts.length === 0 && <p className="meta">No accounts match "{query}".</p>}
+          {accounts && accounts.length > 0 && (
             <table>
               <thead>
                 <tr>
@@ -93,7 +81,7 @@ export function AccountsPage() {
                 </tr>
               </thead>
               <tbody>
-                {pagedAccounts.map((account) => (
+                {accounts.map((account) => (
                   <tr
                     key={account.id}
                     className="row-link"

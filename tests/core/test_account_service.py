@@ -76,7 +76,51 @@ def test_list_accounts_is_ordered_by_creation(application, organisation_id):
         organisation_id=organisation_id, business_name="B", email="b@b.test", address_line1="y"
     )
 
-    assert [a.business_name for a in application.accounts.list_accounts(organisation_id)] == ["A", "B"]
+    assert [a.business_name for a in application.accounts.list_accounts(organisation_id).items] == ["A", "B"]
+
+
+def test_list_accounts_paginates(application, organisation_id):
+    for name in ["A", "B", "C"]:
+        application.accounts.create_account(
+            organisation_id=organisation_id, business_name=name, email="a@b.test", address_line1="x"
+        )
+
+    first_page = application.accounts.list_accounts(organisation_id, page=1, page_size=2)
+    assert [a.business_name for a in first_page.items] == ["A", "B"]
+    assert first_page.total == 3
+
+    second_page = application.accounts.list_accounts(organisation_id, page=2, page_size=2)
+    assert [a.business_name for a in second_page.items] == ["C"]
+    assert second_page.total == 3
+
+
+def test_list_accounts_query_matches_business_name_email_and_address(application, organisation_id):
+    application.accounts.create_account(
+        organisation_id=organisation_id,
+        business_name="Northwind Traders",
+        email="billing@northwind.test",
+        address_line1="12 Kings Road",
+    )
+    application.accounts.create_account(
+        organisation_id=organisation_id,
+        business_name="Acme Ltd",
+        email="a@acme.test",
+        address_line1="1 Main St",
+    )
+
+    matches = application.accounts.list_accounts(organisation_id, query="northwind").items
+    assert [a.business_name for a in matches] == ["Northwind Traders"]
+
+    matches = application.accounts.list_accounts(organisation_id, query="Kings Road").items
+    assert [a.business_name for a in matches] == ["Northwind Traders"]
+
+    assert application.accounts.list_accounts(organisation_id, query="nonexistent").items == []
+
+
+@pytest.mark.parametrize(("page", "page_size"), [(0, 20), (-1, 20), (1, 0), (1, 201)])
+def test_list_accounts_rejects_invalid_pagination(application, organisation_id, page, page_size):
+    with pytest.raises(ValidationFailed):
+        application.accounts.list_accounts(organisation_id, page=page, page_size=page_size)
 
 
 def test_accounts_are_isolated_per_organisation(application, organisation_id):
@@ -88,8 +132,8 @@ def test_accounts_are_isolated_per_organisation(application, organisation_id):
         organisation_id=other_organisation_id, business_name="B", email="b@b.test", address_line1="y"
     )
 
-    assert [a.business_name for a in application.accounts.list_accounts(organisation_id)] == ["A"]
-    assert [a.business_name for a in application.accounts.list_accounts(other_organisation_id)] == ["B"]
+    assert [a.business_name for a in application.accounts.list_accounts(organisation_id).items] == ["A"]
+    assert [a.business_name for a in application.accounts.list_accounts(other_organisation_id).items] == ["B"]
 
 
 def test_update_account_persists_changes(application, organisation_id):

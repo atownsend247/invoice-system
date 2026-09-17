@@ -10,6 +10,8 @@ from invoice_system.models import (
     BusinessProfile,
     Expense,
     ExpenseAttachment,
+    Invoice,
+    InvoiceStatus,
     LineItem,
     Organisation,
     Quote,
@@ -324,6 +326,39 @@ def _account(organisation_id: str, **overrides: object) -> Account:
     return Account(**defaults)
 
 
+def _quote(organisation_id: str, account_id: str, **overrides: object) -> Quote:
+    defaults: dict = {
+        "id": new_id(),
+        "organisation_id": organisation_id,
+        "account_id": account_id,
+        "number": None,
+        "status": QuoteStatus.DRAFT,
+        "currency": "USD",
+        "issue_date": date(2026, 1, 1),
+        "expiry_date": None,
+        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+    }
+    defaults.update(overrides)
+    return Quote(**defaults)
+
+
+def _invoice(organisation_id: str, account_id: str, **overrides: object) -> Invoice:
+    defaults: dict = {
+        "id": new_id(),
+        "organisation_id": organisation_id,
+        "account_id": account_id,
+        "quote_id": None,
+        "number": None,
+        "status": InvoiceStatus.DRAFT,
+        "currency": "USD",
+        "issue_date": date(2026, 1, 1),
+        "due_date": None,
+        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+    }
+    defaults.update(overrides)
+    return Invoice(**defaults)
+
+
 def test_account_round_trip_preserves_fields_and_tz(repo, organisation_id):
     created = repo.create_account(_account(organisation_id))
     assert created.id is not None
@@ -392,9 +427,71 @@ def test_list_accounts_is_ordered_by_creation_not_by_id(repo, organisation_id):
     first = repo.create_account(_account(organisation_id, business_name="A"))
     second = repo.create_account(_account(organisation_id, business_name="B"))
 
-    fetched = repo.list_accounts(organisation_id)
+    fetched, total = repo.list_accounts(organisation_id)
     assert [a.business_name for a in fetched] == ["A", "B"]
     assert [a.id for a in fetched] == [first.id, second.id]
+    assert total == 2
+
+
+def test_list_accounts_query_matches_multiple_fields(repo, organisation_id):
+    repo.create_account(
+        _account(organisation_id, business_name="Northwind Traders", email="billing@northwind.test")
+    )
+    repo.create_account(_account(organisation_id, business_name="Acme Ltd", email="a@acme.test"))
+
+    matched, total = repo.list_accounts(organisation_id, query="northwind")
+    assert [a.business_name for a in matched] == ["Northwind Traders"]
+    assert total == 1
+
+    matched, total = repo.list_accounts(organisation_id, query="acme.test")
+    assert [a.business_name for a in matched] == ["Acme Ltd"]
+    assert total == 1
+
+    _, total = repo.list_accounts(organisation_id, query="nonexistent")
+    assert total == 0
+
+
+def test_list_accounts_limit_and_offset_paginate_without_disturbing_total(repo, organisation_id):
+    for name in ["A", "B", "C"]:
+        repo.create_account(_account(organisation_id, business_name=name))
+
+    first_page, total = repo.list_accounts(organisation_id, limit=2, offset=0)
+    assert [a.business_name for a in first_page] == ["A", "B"]
+    assert total == 3
+
+    second_page, total = repo.list_accounts(organisation_id, limit=2, offset=2)
+    assert [a.business_name for a in second_page] == ["C"]
+    assert total == 3
+
+
+def test_list_quotes_filters_by_account_name_and_status(repo, organisation_id):
+    acme = repo.create_account(_account(organisation_id, business_name="Acme Ltd"))
+    northwind = repo.create_account(_account(organisation_id, business_name="Northwind Traders"))
+    draft = repo.create_quote(_quote(organisation_id, acme.id, status=QuoteStatus.DRAFT))
+    sent = repo.create_quote(_quote(organisation_id, northwind.id, status=QuoteStatus.SENT))
+
+    matched, total = repo.list_quotes(organisation_id, account_name="northwind")
+    assert [q.id for q in matched] == [sent.id]
+    assert total == 1
+
+    matched, total = repo.list_quotes(organisation_id, status=QuoteStatus.DRAFT)
+    assert [q.id for q in matched] == [draft.id]
+    assert total == 1
+
+
+def test_list_invoices_filters_by_account_name_and_status(repo, organisation_id):
+    acme = repo.create_account(_account(organisation_id, business_name="Acme Ltd"))
+    northwind = repo.create_account(_account(organisation_id, business_name="Northwind Traders"))
+    draft = repo.create_invoice(_invoice(organisation_id, acme.id, status=InvoiceStatus.DRAFT))
+    sent = repo.create_invoice(_invoice(organisation_id, northwind.id, status=InvoiceStatus.SENT))
+
+    matched, total = repo.list_invoices(organisation_id, account_name="northwind")
+    assert [i.id for i in matched] == [sent.id]
+    assert total == 1
+
+    matched, total = repo.list_invoices(organisation_id, status=InvoiceStatus.DRAFT)
+    assert [i.id for i in matched] == [draft.id]
+    assert total == 1
 
 
 def test_next_number_increments_and_is_scoped_by_name(repo, organisation_id):

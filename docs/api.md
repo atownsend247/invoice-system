@@ -33,17 +33,17 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | GET | `/auth/me` | required | The current user for this token. |
 | POST | `/auth/logout` | required | Revoke the current token. `204`. |
 | POST | `/accounts` | required | Create an account in the current user's organisation (business_name, email, address_line1 required; contact_name, phone, address_line2, town_or_city, county, postcode optional). |
-| GET | `/accounts` | required | List accounts in the current user's organisation. |
+| GET | `/accounts` | required | Paginated list of accounts in the current user's organisation - `{items, total}`. `?query=` matches (case-insensitively) business/contact name, email, phone, or any set address line. `?page=`/`?page_size=` (defaults `1`/`20`, `page_size` max `200`) - see Conventions below. |
 | GET | `/accounts/{id}` | required | Fetch one account. 404 if missing *or* it belongs to a different organisation (see `docs/data-model.md`'s "Multi-tenancy"). |
 | PUT | `/accounts/{id}` | required | Replace it (same required/optional fields as create — a full replace, not a partial patch). 404 if missing, 422 on a blank required field. |
 | POST | `/quotes` | required | Create a draft quote (`account_id` required; `currency` defaults `USD`; `expiry_date` optional). |
-| GET | `/quotes` | required | List quotes, optionally filtered by `?account_id=`. |
+| GET | `/quotes` | required | Paginated list of quotes - `{items, total}`. Optionally filtered by `?account_id=` (exact), `?account_name=` (matches the linked account's business_name, case-insensitively), and/or `?status=` (`draft`/`sent`/`accepted`/`rejected`/`expired`/`converted`). `?page=`/`?page_size=`, same as `/accounts` - see Conventions below. |
 | GET | `/quotes/{id}` | required | Fetch one quote with its line items, `subtotal`, `tax_total`, and (gross) `total`. |
 | POST | `/quotes/{id}/line-items` | required | Add a line item to a draft quote (`description`, `quantity`, `unit_price` required; `tax_rate` defaults `"0"`, must be within `[0, 1]`). 409 if not draft, 422 on an out-of-range `tax_rate`. |
 | POST | `/quotes/{id}/send` | required | Assign a quote number, transition `draft → sent`. 422 if no line items. |
 | POST | `/quotes/{id}/convert` | required | Convert a `sent`/`accepted` quote into a new draft invoice, copying line items. 409 otherwise. |
 | GET | `/quotes/{id}/pdf` | required | Render the quote as a PDF (`application/pdf`) - the web UI offers this both as a download and as an in-page preview (see Conventions below), the route itself is the same either way. |
-| GET | `/invoices` | required | List invoices, optionally filtered by `?account_id=`. |
+| GET | `/invoices` | required | Paginated list of invoices - `{items, total}`. Optionally filtered by `?account_id=` (exact), `?account_name=` (matches the linked account's business_name, case-insensitively), and/or `?status=` (`draft`/`sent`/`paid`/`void` - `overdue` is accepted but never matches anything, see Conventions below). `?page=`/`?page_size=`, same as `/accounts`. |
 | GET | `/invoices/{id}` | required | Fetch one invoice with its line items, `subtotal`, `tax_total`, and (gross) `total`. |
 | POST | `/invoices/{id}/send` | required | Assign an invoice number and due date (issue date + the current user's `payment_terms_days`, default 30), transition `draft → sent`. 422 if no line items. |
 | POST | `/invoices/{id}/void` | required | Transition to `void`. 409 if already `paid`. |
@@ -86,7 +86,11 @@ create/list/add-item/monthly-totals/pdf`,
 `organisation_id` (`OrganisationService.get_or_create_for_user`, same
 auto-create-on-first-use as the API) — this is a breaking change from
 before `Organisation` existed, when these commands took no user context at
-all. `quote pdf`/`invoice pdf`/`expense pdf --user-id` and `invoice send
+all. `account list`/`invoice list` additionally take `--page`/`--page-size`
+(default `1`/`100`) mirroring the API's own pagination, printing a
+trailing `Page X of Y (total N)` line - there is no `quote list` command
+at all, so quotes have nothing to paginate on the CLI side.
+`quote pdf`/`invoice pdf`/`expense pdf --user-id` and `invoice send
 --user-id` also
 reuse that same user id for their pre-existing purpose (the PDF "From"
 section, the payment-terms-driven due date) — `settings show`/`settings
@@ -100,6 +104,22 @@ stays per-user, not per-organisation (see `docs/data-model.md`'s
 
 ## Conventions
 
+- `GET /accounts`/`GET /quotes`/`GET /invoices` are the only paginated
+  endpoints (`GET /expenses` stays a bare array - there's no standalone
+  expenses list page, only `AccountDetailPage`'s per-account sub-list,
+  which fetches `?account_id=` at a generously large `page_size` rather
+  than needing true pagination). Response shape is `{items: [...], total}`,
+  not a bare array - `total` is the count matching the request's filters
+  across *every* page, letting the client compute how many pages exist
+  without a second request. `page` defaults to `1`, `page_size` to `20`
+  (max `200` - `422` outside `[1, 200]`, same for `page < 1`). Filtering
+  and pagination compose: a filter narrows what gets paginated, it doesn't
+  run client-side over an unfiltered page. `AccountDetailPage.tsx`'s own
+  `?account_id=`-scoped fetches (one client's full quote/invoice history)
+  request `page_size=200` explicitly rather than relying on the default,
+  since that's inherently bounded by one client relationship, not
+  organisation-wide growth, and 200 is comfortably above any realistic
+  single account's history.
 - Money fields are JSON strings (`"unit_price": "129.99"`), never numbers —
   see `CLAUDE.md` conventions. A non-decimal string is rejected (422), not
   coerced. `tax_rate` is the same convention (a decimal-string fraction,

@@ -492,6 +492,37 @@ Four separate things are easy to conflate here — don't:
   sessionkit's `AuthError` (`handle_auth_error`). Don't merge them into one
   handler or one `except` clause — see `docs/extracting-reusable-packages.md`
   on why a vendored cross-cutting concern keeps its own error base.
+- `AccountService.list_accounts`/`QuoteService.list_quotes`/
+  `InvoiceService.list_invoices` are server-side paginated and filtered —
+  `page`/`page_size` (default `1`/`20`, `page_size` capped at
+  `MAX_PAGE_SIZE` = 200, both `ValidationFailed` outside range), plus
+  `query` (accounts — matches business/contact name, email, phone, or any
+  address line) and `account_name`/`status` (quotes/invoices —
+  `account_name` matches the linked account's business_name via a SQL
+  `JOIN`, both case-insensitive `LIKE`). All three return a `Page[T]`
+  (`models.py` — `items`, `total`), not a bare list; `GET /accounts`/`GET
+  /quotes`/`GET /invoices` wrap that in an `{items, total}` envelope
+  (`AccountListOut`/`QuoteListOut`/`InvoiceListOut`), a breaking response-
+  shape change from the bare array these routes used to return — fine here
+  since the web client and CLI are the only consumers. `Repository.list_*`
+  (the layer below) take `limit`/`offset` instead of `page`/`page_size`,
+  and `limit=None` skips `LIMIT`/`OFFSET` entirely (returning
+  `len(rows)` as `total` rather than a second `COUNT` query) — that's what
+  lets `StatsService.get_stats`/`InvoiceService.monthly_totals` keep
+  calling the repository directly for *every* row, unpaginated, exactly as
+  before. `InvoiceStatus.OVERDUE` is accepted as a `status` filter value
+  but can never match anything, since it's never actually persisted (see
+  the home dashboard bullet above) — not special-cased, just naturally
+  returns zero rows. `AccountDetailPage.tsx`'s three `?account_id=`-scoped
+  sub-list fetches, `HomePage.tsx`'s `sent`-only invoice fetch (for
+  Overdue/Outstanding), and the "select an account" dropdowns on
+  `QuoteNewPage.tsx`/`ExpenseNewPage.tsx` all request `page_size=200`
+  explicitly rather than relying on the `20` default — each is inherently
+  bounded (one client's history, currently-unpaid invoices, or this
+  organisation's own account list) rather than something that grows with
+  the whole organisation's total data over time, so 200 is a deliberately
+  generous cap, not true pagination. Migration 10 (see the migrations
+  gotcha below) added the indexes backing all of this.
 
 ## Gotchas
 
@@ -586,7 +617,13 @@ Four separate things are easy to conflate here — don't:
   same reasoning as every other pure-addition migration in this file.
   Migration 9 added `expense_attachments` - metadata only (the uploaded
   bytes themselves live on disk, not in this table - see `attachments.py`),
-  one more new table, no rebuild needed either.)
+  one more new table, no rebuild needed either. Migration 10 added five
+  plain `CREATE INDEX` statements - `idx_accounts_organisation`,
+  `idx_quotes_organisation_account`/`idx_invoices_organisation_account`,
+  `idx_quotes_organisation_status`/`idx_invoices_organisation_status` -
+  backing the server-side pagination/filtering added to `GET /accounts`/
+  `GET /quotes`/`GET /invoices` (see the Conventions bullet below); no
+  rebuild needed, an index is never a rebuild-and-swap case.)
 - Storage is a single shared SQLite connection/file — **serialise every
   access on a lock** inside the repository implementation rather than
   assuming the caller will. That lock is per-*call*, not across a sequence

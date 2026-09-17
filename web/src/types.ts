@@ -19,6 +19,15 @@ export interface LoginResult {
 // is a real client being billed); the rest are each independently
 // optional. id (like every id in this app) is a UUID4 string, not a
 // sequential integer - see CLAUDE.md.
+// One server-paginated page of a list endpoint (accounts/quotes/invoices) -
+// `total` is the count matching the request's filters across every page,
+// not just `items`, letting the caller compute how many pages exist
+// without a second request.
+export interface PagedResult<T> {
+  items: T[]
+  total: number
+}
+
 export interface Account {
   id: string
   business_name: string

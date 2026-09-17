@@ -118,7 +118,9 @@ class SqliteRepository:
             ).fetchone()
         return self._row_to_account(row) if row else None
 
-    def list_accounts(self, organisation_id: str) -> list[Account]:
+    def list_accounts(
+        self, organisation_id: str, *, query: str | None = None, limit: int | None = None, offset: int = 0
+    ) -> tuple[list[Account], int]:
         # ORDER BY rowid, not id or created_at - id is a random UUID4 (see
         # ids.py) with no ordering relationship to insertion order, and two
         # rows can share the same created_at (a frozen/fake clock in tests,
@@ -127,13 +129,40 @@ class SqliteRepository:
         # rowid regardless of its declared PRIMARY KEY type - it's never
         # selected or exposed to any caller (not part of any dataclass or
         # API response), so ordering by it doesn't reintroduce the
-        # information leak switching to UUIDs was meant to close.
+        # information leak switching to UUIDs was meant to close. It's also
+        # exactly what makes `limit`/`offset` below well-defined - a stable
+        # order, not liable to reshuffle between two calls a page apart.
+        #
+        # `limit=None` (used internally by StatsService/monthly_totals,
+        # which need every row, not one page) skips LIMIT/OFFSET entirely
+        # and returns `len(rows)` as the total rather than issuing a second
+        # COUNT query for a number it already has.
+        where = "organisation_id = ?"
+        params: list[object] = [organisation_id]
+        if query:
+            pattern = f"%{query}%"
+            where += (
+                " AND (business_name LIKE ? OR contact_name LIKE ? OR email LIKE ? OR phone LIKE ? OR "
+                "address_line1 LIKE ? OR address_line2 LIKE ? OR town_or_city LIKE ? OR county LIKE ? OR "
+                "postcode LIKE ?)"
+            )
+            params.extend([pattern] * 9)
+
         with self._lock:
-            rows = self._conn.execute(
-                "SELECT * FROM accounts WHERE organisation_id = ? ORDER BY rowid",
-                (organisation_id,),
-            ).fetchall()
-        return [self._row_to_account(row) for row in rows]
+            if limit is None:
+                rows = self._conn.execute(
+                    f"SELECT * FROM accounts WHERE {where} ORDER BY rowid", params
+                ).fetchall()
+                total = len(rows)
+            else:
+                total = self._conn.execute(f"SELECT COUNT(*) FROM accounts WHERE {where}", params).fetchone()[
+                    0
+                ]
+                rows = self._conn.execute(
+                    f"SELECT * FROM accounts WHERE {where} ORDER BY rowid LIMIT ? OFFSET ?",
+                    [*params, limit, offset],
+                ).fetchall()
+        return [self._row_to_account(row) for row in rows], total
 
     def update_account(self, account: Account) -> Account:
         with self._lock:
@@ -304,18 +333,47 @@ class SqliteRepository:
             ).fetchall()
         return self._row_to_quote(row, item_rows)
 
-    def list_quotes(self, organisation_id: str, account_id: str | None = None) -> list[Quote]:
-        # ORDER BY rowid - see list_accounts' comment above.
+    def list_quotes(
+        self,
+        organisation_id: str,
+        *,
+        account_id: str | None = None,
+        account_name: str | None = None,
+        status: QuoteStatus | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> tuple[list[Quote], int]:
+        # ORDER BY quotes.rowid, limit=None meaning "every row" - see
+        # list_accounts' comment above for both.
+        join = ""
+        where = "quotes.organisation_id = ?"
+        params: list[object] = [organisation_id]
+        if account_id is not None:
+            where += " AND quotes.account_id = ?"
+            params.append(account_id)
+        if status is not None:
+            where += " AND quotes.status = ?"
+            params.append(status.value)
+        if account_name:
+            # A quote's account_id always points at exactly one account, so
+            # this join can never multiply a quote's row - no DISTINCT needed.
+            join = " JOIN accounts ON accounts.id = quotes.account_id"
+            where += " AND accounts.business_name LIKE ?"
+            params.append(f"%{account_name}%")
+
         with self._lock:
-            if account_id is None:
+            if limit is None:
                 rows = self._conn.execute(
-                    "SELECT * FROM quotes WHERE organisation_id = ? ORDER BY rowid",
-                    (organisation_id,),
+                    f"SELECT quotes.* FROM quotes{join} WHERE {where} ORDER BY quotes.rowid", params
                 ).fetchall()
+                total = len(rows)
             else:
+                total = self._conn.execute(
+                    f"SELECT COUNT(*) FROM quotes{join} WHERE {where}", params
+                ).fetchone()[0]
                 rows = self._conn.execute(
-                    "SELECT * FROM quotes WHERE organisation_id = ? AND account_id = ? ORDER BY rowid",
-                    (organisation_id, account_id),
+                    f"SELECT quotes.* FROM quotes{join} WHERE {where} ORDER BY quotes.rowid LIMIT ? OFFSET ?",
+                    [*params, limit, offset],
                 ).fetchall()
             quotes = []
             for row in rows:
@@ -323,7 +381,7 @@ class SqliteRepository:
                     "SELECT * FROM quote_line_items WHERE quote_id = ? ORDER BY position", (row["id"],)
                 ).fetchall()
                 quotes.append(self._row_to_quote(row, item_rows))
-        return quotes
+        return quotes, total
 
     def update_quote(self, quote: Quote) -> Quote:
         with self._lock:
@@ -416,18 +474,49 @@ class SqliteRepository:
             ).fetchall()
         return self._row_to_invoice(row, item_rows)
 
-    def list_invoices(self, organisation_id: str, account_id: str | None = None) -> list[Invoice]:
-        # ORDER BY rowid - see list_accounts' comment above.
+    def list_invoices(
+        self,
+        organisation_id: str,
+        *,
+        account_id: str | None = None,
+        account_name: str | None = None,
+        status: InvoiceStatus | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> tuple[list[Invoice], int]:
+        # ORDER BY invoices.rowid, limit=None meaning "every row" - see
+        # list_accounts' comment above for both.
+        join = ""
+        where = "invoices.organisation_id = ?"
+        params: list[object] = [organisation_id]
+        if account_id is not None:
+            where += " AND invoices.account_id = ?"
+            params.append(account_id)
+        if status is not None:
+            where += " AND invoices.status = ?"
+            params.append(status.value)
+        if account_name:
+            # An invoice's account_id always points at exactly one account,
+            # so this join can never multiply an invoice's row - no DISTINCT
+            # needed.
+            join = " JOIN accounts ON accounts.id = invoices.account_id"
+            where += " AND accounts.business_name LIKE ?"
+            params.append(f"%{account_name}%")
+
         with self._lock:
-            if account_id is None:
+            if limit is None:
                 rows = self._conn.execute(
-                    "SELECT * FROM invoices WHERE organisation_id = ? ORDER BY rowid",
-                    (organisation_id,),
+                    f"SELECT invoices.* FROM invoices{join} WHERE {where} ORDER BY invoices.rowid", params
                 ).fetchall()
+                total = len(rows)
             else:
+                total = self._conn.execute(
+                    f"SELECT COUNT(*) FROM invoices{join} WHERE {where}", params
+                ).fetchone()[0]
                 rows = self._conn.execute(
-                    "SELECT * FROM invoices WHERE organisation_id = ? AND account_id = ? ORDER BY rowid",
-                    (organisation_id, account_id),
+                    f"SELECT invoices.* FROM invoices{join} WHERE {where} "
+                    "ORDER BY invoices.rowid LIMIT ? OFFSET ?",
+                    [*params, limit, offset],
                 ).fetchall()
             invoices = []
             for row in rows:
@@ -435,7 +524,7 @@ class SqliteRepository:
                     "SELECT * FROM invoice_line_items WHERE invoice_id = ? ORDER BY position", (row["id"],)
                 ).fetchall()
                 invoices.append(self._row_to_invoice(row, item_rows))
-        return invoices
+        return invoices, total
 
     def update_invoice(self, invoice: Invoice) -> Invoice:
         with self._lock:

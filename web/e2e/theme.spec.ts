@@ -8,11 +8,17 @@ test('the theme toggle switches between light and dark and persists across a rel
   authenticatedPage: page,
 }) => {
   await page.goto('/')
+  // Wait for the app to mount (and its theme effect to run) before reading
+  // the attribute - evaluate() can otherwise run ahead of React rendering,
+  // finding no data-theme attribute set yet (caught by --repeat-each
+  // stress-testing, not a single run - same race as the reload check below).
+  const toggle = page.getByRole('button', { name: /Switch to (dark|light) mode/ })
+  await toggle.waitFor()
 
   const initialTheme = await page.evaluate(() => document.documentElement.dataset.theme)
   expect(['light', 'dark']).toContain(initialTheme)
 
-  await page.getByRole('button', { name: /Switch to (dark|light) mode/ }).click()
+  await toggle.click()
 
   const toggledTheme = await page.evaluate(() => document.documentElement.dataset.theme)
   expect(toggledTheme).not.toBe(initialTheme)

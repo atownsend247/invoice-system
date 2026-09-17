@@ -589,5 +589,77 @@ flow," not a restructuring, whenever it's actually needed.
       frontend-only), frontend (46 unit tests), and e2e (51 tests) suites
       updated and passing.
 
+## Phase 24 — Server-side pagination for accounts/quotes/invoices (done)
+
+- [x] Phase 22's pagination/filtering was entirely client-side - fetch
+      everything, slice/filter in the browser. Moved to the server instead,
+      since that only scales to demo-data-sized organisations:
+      `AccountService.list_accounts`/`QuoteService.list_quotes`/
+      `InvoiceService.list_invoices` now take `page`/`page_size` (default
+      `1`/`20`, capped at `MAX_PAGE_SIZE`=200, `ValidationFailed` outside
+      range) and return a new `Page[T]` dataclass (`models.py`) instead of
+      a bare list. Filtering moved server-side alongside it, since a "page"
+      only means something *after* filtering: `query` (accounts - the same
+      multi-field match `accountMatchesQuery` used to do client-side) and
+      `account_name`/`status` (quotes/invoices - `account_name` via a SQL
+      `JOIN` onto `accounts.business_name`).
+- [x] `Repository.list_accounts`/`list_quotes`/`list_invoices` gained
+      `limit`/`offset`/filter kwargs and now return `tuple[list[T], int]`
+      (rows, total matching count) - `limit=None` skips `LIMIT`/`OFFSET`
+      and returns `len(rows)` as the total instead of a second `COUNT`
+      query, which is what let `StatsService.get_stats`/
+      `InvoiceService.monthly_totals` keep calling the repository directly
+      for *every* row, completely unpaginated, unchanged from before.
+      Migration 10: five plain `CREATE INDEX` statements
+      (`idx_accounts_organisation`, `idx_quotes_organisation_account`/
+      `idx_invoices_organisation_account`,
+      `idx_quotes_organisation_status`/`idx_invoices_organisation_status`)
+      - every one of these list queries filtered by `organisation_id` (and
+      optionally `account_id`/`status`) with no supporting index until now.
+- [x] `GET /accounts`/`GET /quotes`/`GET /invoices` gained `?page=`/
+      `?page_size=` and `?query=` / `?account_name=&status=` respectively,
+      and their response shape changed from a bare `list[XOut]` to
+      `{items, total}` (`AccountListOut`/`QuoteListOut`/`InvoiceListOut`) -
+      a breaking change, acceptable since this repo's own web client and
+      CLI are the only consumers. `account list`/`invoice list` (the CLI's
+      only two list-style commands - there's no `quote list`) gained
+      matching `--page`/`--page-size` options.
+- [x] `web/`: `api.ts`'s `listAccounts`/`listQuotes`/`listInvoices` take an
+      options object and return a new `PagedResult<T>` (`types.ts`).
+      `AccountsPage.tsx`/`QuotesPage.tsx`/`InvoicesPage.tsx` dropped
+      `usePagedList` (deleted) and their client-side filter functions
+      (`accountMatchesQuery`/`quoteMatchesFilters`/`invoiceMatchesFilters`,
+      along with the unit tests that covered them) in favour of passing
+      `page`/filters straight into the fetch call; free-text inputs
+      (accounts' search box, quotes/invoices' account-name filter) go
+      through a new `useDebouncedValue` hook (~300ms) first, so typing
+      doesn't fire a request per keystroke - the status dropdown and page
+      clicks stay immediate. `Pagination`/`StatusBadge` unchanged.
+- [x] Every other caller of `listAccounts`/`listQuotes`/`listInvoices` had
+      to move to the new `{items, total}` shape too:
+      `AccountDetailPage.tsx`'s three `?account_id=`-scoped sub-lists,
+      `HomePage.tsx`'s Overdue/Outstanding sections (now also filtered
+      server-side to `status: 'sent'`, since both derived checks require
+      it anyway - shrinking "every invoice this organisation has ever
+      issued" down to "invoices currently awaiting payment", which stays
+      small regardless of total history), and the "select an account"
+      dropdowns on `QuoteNewPage.tsx`/`ExpenseNewPage.tsx`. All of these
+      request `page_size=200` explicitly - each is inherently bounded (one
+      client's history, currently-unpaid invoices, this organisation's own
+      account list) rather than something that grows with the
+      organisation's total data over time, so 200 is a deliberately
+      generous cap, not real pagination; found by an e2e run that hung
+      waiting for a `<select>` no longer populated correctly, not by
+      review - the fix landed in the same change as the pagination
+      migration itself, not a follow-up.
+- [x] Full backend (266 tests, 98.22% coverage), frontend (32 unit tests -
+      down from 46, since the client-side filter functions and their tests
+      were deleted, not just moved), and e2e (51 tests, updated for real
+      server pagination rather than client-side slicing) suites updated
+      and passing. Manually verified against a running instance
+      (`GET /accounts?page=&page_size=`, `GET
+      /quotes?status=&account_name=&page=&page_size=`) before wiring the
+      frontend up, per the plan's verification step.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

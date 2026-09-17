@@ -351,6 +351,71 @@ def test_full_cli_flow(tmp_path):
     assert invoice_pdf_path.exists()
 
 
+def test_account_and_invoice_list_paginate(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
+
+    account_ids = []
+    for name in ["Acme", "Northwind"]:
+        result = runner.invoke(
+            cli,
+            [
+                *_base_args(db_path),
+                "account",
+                "create",
+                "--user-id",
+                "1",
+                "--business-name",
+                name,
+                "--email",
+                f"{name.lower()}@b.test",
+                "--address-line1",
+                "1 Main St",
+            ],
+        )
+        account_ids.append(_id_from(result.output, r"Created account (\S+):"))
+
+    result = runner.invoke(
+        cli, [*_base_args(db_path), "account", "list", "--user-id", "1", "--page", "1", "--page-size", "1"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Acme" in result.output
+    assert "Northwind" not in result.output
+    assert "Page 1 of 2 (total 2)" in result.output
+
+    quote_id = _id_from(
+        runner.invoke(
+            cli,
+            [*_base_args(db_path), "quote", "create", "--user-id", "1", "--account-id", account_ids[0]],
+        ).output,
+        r"Created quote (\S+) \(draft\)",
+    )
+    runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "quote",
+            "add-item",
+            quote_id,
+            "--user-id",
+            "1",
+            "--description",
+            "Work",
+            "--quantity",
+            "1",
+            "--unit-price",
+            "100.00",
+        ],
+    )
+    runner.invoke(cli, [*_base_args(db_path), "quote", "send", quote_id, "--user-id", "1"])
+    runner.invoke(cli, [*_base_args(db_path), "quote", "convert", quote_id, "--user-id", "1"])
+
+    result = runner.invoke(cli, [*_base_args(db_path), "invoice", "list", "--user-id", "1"])
+    assert result.exit_code == 0, result.output
+    assert "Page 1 of 1 (total 1)" in result.output
+
+
 def test_full_expense_cli_flow(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()

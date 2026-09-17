@@ -2,7 +2,7 @@
 
 **Status: implemented** (`src/invoice_system/models.py`,
 `storage/schema.py`). Keep this table in sync with the actual schema — this
-doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` has nine
+doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` has ten
 entries: the flattened baseline (2026-09-16), migration 2 (added `tax_rate`
 to both line-item tables), migration 3 (added `Organisation` — the tenant
 boundary — plus nullable `organisation_id` columns on `accounts`/`quotes`/
@@ -18,11 +18,16 @@ System structure as `BusinessProfile`'s), migration 6 (added
 autoincrementing `INTEGER` to an opaque UUID4 `TEXT` string — see "Opaque
 ids" below and `CLAUDE.md`'s migrations gotcha), migration 8 (added
 `expenses`/`expense_line_items` — two brand new tables, a plain `CREATE
-TABLE` each, no rebuild needed), and migration 9 (added
+TABLE` each, no rebuild needed), migration 9 (added
 `expense_attachments` — metadata for uploaded supplementary PDFs; the bytes
 themselves live on the filesystem, not in this table — one more new table,
-no rebuild needed). Schema changes from here on are new entries appended to
-that list, not edits to any of these nine.
+no rebuild needed), and migration 10 (added `idx_accounts_organisation`,
+`idx_quotes_organisation_account`/`idx_invoices_organisation_account`, and
+`idx_quotes_organisation_status`/`idx_invoices_organisation_status` —
+plain `CREATE INDEX` statements backing the server-side pagination/
+filtering added to `GET /accounts`/`GET /quotes`/`GET /invoices`, see
+`docs/api.md`'s pagination convention). Schema changes from here on are new
+entries appended to that list, not edits to any of these ten.
 
 ## Entities
 
@@ -84,7 +89,17 @@ or exposed to any caller, so ordering by it doesn't reintroduce the
 information leak switching to UUIDs was meant to close - see
 `sqlite_repository.py`'s comment on `list_accounts` for the full reasoning
 (including why `ORDER BY created_at` alone isn't enough: two rows can share
-a timestamp, notably under a frozen/fake clock in tests).
+a timestamp, notably under a frozen/fake clock in tests). This stable order
+is also what makes `LIMIT`/`OFFSET` pagination well-defined across two
+separate requests a page apart (see `docs/api.md`'s pagination convention)
+- a page boundary that could reshuffle between calls would make "page 2"
+meaningless. `list_accounts`/`list_quotes`/`list_invoices` all support
+`limit=None` (skipping `LIMIT`/`OFFSET` entirely) for the handful of
+internal callers - `StatsService.get_stats`,
+`InvoiceService.monthly_totals` - that genuinely need every row rather than
+one page; migration 10 added the `(organisation_id, ...)` indexes backing
+both that full-scan case and the paginated one (see the migrations list
+below).
 
 Migration 7 is a one-time authorized full reset, not a data-preserving
 migration like every other one in this list: every table is dropped and
