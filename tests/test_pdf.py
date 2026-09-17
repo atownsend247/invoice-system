@@ -328,3 +328,87 @@ def test_rendering_a_quote_pdf_with_taxed_line_items_does_not_error():
     )
     pdf_bytes = render_quote_pdf(account, quote, None)
     assert pdf_bytes.startswith(b"%PDF")
+
+
+def test_rendering_a_long_line_item_description_does_not_error():
+    # A long description (e.g. "Domain Registration - example.co.uk") used
+    # to overflow the "Description" column into "Qty" rather than wrapping
+    # - found from a real generated PDF. The line items table cell is now a
+    # Paragraph, which wraps instead of overflowing; this can't assert the
+    # visual layout without a PDF-parsing library this codebase doesn't
+    # have, but it does prove the long-description path still renders.
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    account = _account(created_at=now)
+    quote = Quote(
+        id=1,
+        organisation_id=1,
+        account_id=1,
+        number="Q-0001",
+        status=QuoteStatus.SENT,
+        currency="USD",
+        issue_date=now.date(),
+        expiry_date=None,
+        created_at=now,
+        line_items=[
+            LineItem(
+                id=1,
+                description="Domain Registration and Renewal - a-very-long-example-domain-name.co.uk",
+                quantity=Decimal("1"),
+                unit_price=Decimal("12.00"),
+                tax_rate=Decimal("0.20"),
+                position=0,
+            )
+        ],
+    )
+    pdf_bytes = render_quote_pdf(account, quote, None)
+    assert pdf_bytes.startswith(b"%PDF")
+
+
+def test_rendering_escapes_special_characters_in_free_text_without_error():
+    # reportlab's Paragraph interprets a small subset of HTML-like markup
+    # in its text - confirmed by hand that an unescaped, unclosed-looking
+    # tag (e.g. a line item description mentioning "<br>", or any other
+    # unmatched "<...>") crashes doc.build() outright with a ValueError
+    # ("syntax error"/"Parse error"), not just renders oddly - plausible
+    # real input, not a contrived edge case (someone pasting from an HTML
+    # source, or just typing "<" as a size comparison). Plain "&" alone
+    # doesn't happen to crash reportlab's parser, but it's the same
+    # unescaped-markup class of bug, so every free-text field below
+    # exercises both. Covers every field that flows through a Paragraph:
+    # line item description, account business/contact name and address,
+    # and the "From" business profile/document header/footer.
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    account = _account(
+        created_at=now,
+        business_name="Smith & Sons <Ltd>",
+        contact_name="Rock & Roll",
+        address_line1="1 Main St & Co",
+    )
+    profile = _profile(
+        business_name="Acme & Co",
+        quote_document_header="Terms & Conditions apply",
+        quote_document_footer="<Thank you> & goodbye",
+    )
+    quote = Quote(
+        id=1,
+        organisation_id=1,
+        account_id=1,
+        number="Q-0001",
+        status=QuoteStatus.SENT,
+        currency="USD",
+        issue_date=now.date(),
+        expiry_date=None,
+        created_at=now,
+        line_items=[
+            LineItem(
+                id=1,
+                description="Domain Registration <br> and Renewal",
+                quantity=Decimal("1"),
+                unit_price=Decimal("100.00"),
+                tax_rate=Decimal("0.20"),
+                position=0,
+            )
+        ],
+    )
+    pdf_bytes = render_quote_pdf(account, quote, profile)
+    assert pdf_bytes.startswith(b"%PDF")

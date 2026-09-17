@@ -2,8 +2,8 @@
 
 **Status: implemented** (`src/invoice_system/models.py`,
 `storage/schema.py`). Keep this table in sync with the actual schema — this
-doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` has twelve
-entries: the flattened baseline (2026-09-16), migration 2 (added `tax_rate`
+doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` has
+thirteen entries: the flattened baseline (2026-09-16), migration 2 (added `tax_rate`
 to both line-item tables), migration 3 (added `Organisation` — the tenant
 boundary — plus nullable `organisation_id` columns on `accounts`/`quotes`/
 `invoices`), migration 4 (rescoped `Quote.number`/`Invoice.number`
@@ -36,8 +36,11 @@ migration 6 above - into three independent pairs, one per document type:
 add-columns/copy-data/drop-old-columns shape as migration 5's
 `accounts.address` split, existing values copied into all three new pairs
 rather than dropped - see `docs/api.md`'s per-document-type header/footer
-convention). Schema changes from here on are new entries appended to that
-list, not edits to any of these twelve.
+convention), and migration 13 (added `idx_invoices_organisation_quote` —
+one more plain `CREATE INDEX`, backing `list_invoices`' new `quote_id`
+filter — see `CLAUDE.md`'s Quote/Invoice conversion note). Schema changes
+from here on are new entries appended to that list, not edits to any of
+these thirteen.
 
 ## Entities
 

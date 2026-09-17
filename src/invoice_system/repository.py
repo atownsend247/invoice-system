@@ -58,6 +58,7 @@ class Repository(Protocol):
         account_id: str | None = None,
         account_name: str | None = None,
         status: InvoiceStatus | None = None,
+        quote_id: str | None = None,
         limit: int | None = None,
         offset: int = 0,
     ) -> tuple[list[Invoice], int]: ...

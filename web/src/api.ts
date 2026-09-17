@@ -274,6 +274,7 @@ export interface ListInvoicesOptions {
   accountId?: string
   accountName?: string
   status?: InvoiceStatus
+  quoteId?: string
   page?: number
   pageSize?: number
 }
@@ -283,6 +284,7 @@ export function listInvoices(options: ListInvoicesOptions = {}): Promise<PagedRe
     account_id: options.accountId,
     account_name: options.accountName,
     status: options.status,
+    quote_id: options.quoteId,
     page: options.page,
     page_size: options.pageSize,
   })

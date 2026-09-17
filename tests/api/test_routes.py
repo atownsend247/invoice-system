@@ -335,6 +335,13 @@ def test_list_invoices_paginates_and_filters_by_account_name_and_status(client, 
     response = client.get("/invoices?status=paid", headers=auth_headers)
     assert response.json()["items"] == []
 
+    # The link a converted quote's own detail page uses to find the
+    # invoice it became (QuoteDetailPage.tsx's "View invoice" button).
+    response = client.get(f"/invoices?quote_id={quote_id}", headers=auth_headers)
+    body = response.json()
+    assert [i["id"] for i in body["items"]] == [invoice_id]
+    assert body["total"] == 1
+
 
 def test_account_expense_flow(client, auth_headers):
     account_id = client.post(

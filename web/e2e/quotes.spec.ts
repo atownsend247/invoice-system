@@ -94,6 +94,24 @@ test('converting a sent quote creates a matching draft invoice', async ({
   await expect(page.getByText(`converted from quote #${sentQuote.id}`)).toBeVisible()
 })
 
+test('a converted quote shows a View invoice button linking back to the resulting invoice', async ({
+  authenticatedPage: page,
+  sentQuote,
+}) => {
+  await page.goto(`/quotes/${sentQuote.id}`)
+  await page.getByRole('button', { name: 'Convert to invoice' }).click()
+  await expect(page.getByRole('heading', { name: /Draft invoice/ })).toBeVisible()
+  const invoiceUrl = page.url()
+
+  // Navigate away and back, rather than checking straight after
+  // converting - the initial "Convert to invoice" click already redirects
+  // there once; this checks the link still works on a later visit too.
+  await page.goto(`/quotes/${sentQuote.id}`)
+  await expect(page.getByRole('button', { name: 'Convert to invoice' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'View invoice' }).click()
+  await expect(page).toHaveURL(invoiceUrl)
+})
+
 test('viewing the PDF opens an in-page preview instead of downloading it', async ({
   authenticatedPage: page,
   draftQuote,

@@ -496,6 +496,7 @@ class SqliteRepository:
         account_id: str | None = None,
         account_name: str | None = None,
         status: InvoiceStatus | None = None,
+        quote_id: str | None = None,
         limit: int | None = None,
         offset: int = 0,
     ) -> tuple[list[Invoice], int]:
@@ -507,6 +508,15 @@ class SqliteRepository:
         if account_id is not None:
             where += " AND invoices.account_id = ?"
             params.append(account_id)
+        if quote_id is not None:
+            # A quote converts to at most one invoice (QuoteService.
+            # convert_to_invoice can only run once per quote - see
+            # CLAUDE.md), so this filter matches at most one row - used by
+            # QuoteDetailPage.tsx to link a converted quote to the invoice
+            # it became, without storing a redundant/dual-write invoice_id
+            # back on Quote itself (Invoice.quote_id already exists).
+            where += " AND invoices.quote_id = ?"
+            params.append(quote_id)
         if status is not None:
             where += " AND invoices.status = ?"
             params.append(status.value)

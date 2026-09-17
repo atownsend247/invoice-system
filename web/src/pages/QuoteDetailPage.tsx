@@ -14,6 +14,20 @@ export function QuoteDetailPage() {
     () => (quote ? api.getAccount(quote.account_id) : Promise.resolve(null)),
     [quote?.account_id],
   )
+  // A quote converts to at most one invoice, so this filtered lookup ever
+  // returns 0 or 1 - only fetched once converted, since before then there's
+  // nothing to find. Lets a converted quote link back to the invoice it
+  // became even after navigating away and back (the initial "Convert to
+  // invoice" action already redirects straight there - see below - but
+  // that redirect only happens once, at conversion time).
+  const { data: convertedInvoices } = useAsync(
+    () =>
+      quote?.status === 'converted'
+        ? api.listInvoices({ quoteId: quote.id, pageSize: 1 })
+        : Promise.resolve(null),
+    [quote?.id, quote?.status],
+  )
+  const convertedInvoice = convertedInvoices?.items[0]
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
@@ -118,6 +132,11 @@ export function QuoteDetailPage() {
             }
           >
             Convert to invoice
+          </button>
+        )}
+        {quote.status === 'converted' && convertedInvoice && (
+          <button type="button" onClick={() => navigate(`/invoices/${convertedInvoice.id}`)}>
+            View invoice
           </button>
         )}
       </div>

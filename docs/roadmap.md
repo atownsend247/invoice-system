@@ -837,5 +837,65 @@ flow," not a restructuring, whenever it's actually needed.
       own distinct header/footer text (and only the invoice shows bank
       details).
 
+## Phase 28 — PDF line item description word-wrap + XML-escaping fix (done)
+
+- [x] A long line item description (e.g. "Domain Registration -
+      example.co.uk") overflowed the "Description" column into "Qty"
+      instead of wrapping - reported from a real generated PDF, not just
+      reasoning about it. `pdf.py`'s line items table now puts each
+      description in a `Paragraph` (`_render()`) instead of a plain
+      string - platypus wraps `Paragraph` content to the cell's width
+      automatically and grows the row height to fit, where a plain string
+      just draws past the column boundary. Added `VALIGN: TOP` to the
+      table style so a wrapped multi-line description doesn't sit oddly
+      against its row's single-line Qty/price/VAT/Total cells.
+- [x] Wrapping free text in a `Paragraph` surfaced a latent, pre-existing
+      bug the same fix had to guard against: reportlab's `Paragraph`
+      interprets a small subset of HTML-like markup in its text, so
+      unescaped user-authored text containing something that looks like
+      an unclosed tag (confirmed by hand: a description mentioning
+      `<br>`, or any unmatched `<...>`) crashes `doc.build()` outright
+      with a `ValueError` - not a hypothetical, a real crash on plausible
+      input (pasted-from-HTML text, or just typing `<` informally). New
+      `pdf.py` helper `_text_paragraph()` (`Paragraph(escape(text),
+      style)`) replaces every direct `Paragraph(...)` call across
+      `_render()` that wraps free text originating from an account,
+      business profile, or line item - not just the new description
+      column - since they all shared the same unescaped-input risk once
+      any one of them started going through `Paragraph`.
+- [x] Full backend suite (295 tests, 98.33% coverage, 100% on `pdf.py`)
+      updated and passing, including a new regression test using the
+      exact confirmed-to-crash-pre-fix input. Manually reproduced the
+      originally reported scenario (a domain-registration line item) via
+      the CLI and confirmed it now wraps onto two lines within its column
+      instead of overflowing.
+
+## Phase 29 — "View invoice" link on a converted quote (done)
+
+- [x] `QuoteDetailPage.tsx`'s "Convert to invoice" action already
+      redirected straight to the new invoice at conversion time, but a
+      converted quote visited later (from the quotes list, an account's
+      detail page, etc.) had no way back to the invoice it became - no
+      button, and no data to link one even if there were, since `Quote`
+      stores no reverse `invoice_id`.
+- [x] Rather than add a redundant, dual-write `invoice_id` field on
+      `Quote` (a quote converts to at most one invoice, and
+      `Invoice.quote_id` already records that relationship the other way),
+      `InvoiceService.list_invoices` gained a `quote_id` filter -
+      `Repository.list_invoices`/`SqliteRepository` down to `api/app.py`'s
+      `GET /invoices?quote_id=`, the exact same "add a filter param"
+      pattern as the existing `account_id`/`account_name`/`status`
+      filters. Migration 13 added `idx_invoices_organisation_quote`,
+      matching the "index every filter column list_invoices actually
+      uses" precedent from Phase 24's pagination work.
+- [x] `QuoteDetailPage.tsx` now fetches `api.listInvoices({ quoteId:
+      quote.id, pageSize: 1 })` once a quote's status is `converted`, and
+      shows a "View invoice" button alongside the existing PDF/Send/
+      Convert actions when that lookup finds one.
+- [x] Full backend (296 tests, 98.34% coverage) and e2e (57 tests,
+      including a new test that navigates away from a just-converted
+      quote and back before clicking "View invoice", not just checking
+      the one-time post-conversion redirect) suites updated and passing.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

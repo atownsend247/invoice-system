@@ -63,6 +63,9 @@ def test_list_invoices_filters_by_account_name_and_status_and_paginates(
     assert len(page.items) == 1
     assert page.total == 2
 
+    by_quote_id = application.invoices.list_invoices(organisation_id, quote_id=draft_invoice.quote_id).items
+    assert [i.id for i in by_quote_id] == [draft_invoice.id]
+
 
 @pytest.mark.parametrize(("page", "page_size"), [(0, 20), (1, 0), (1, 201)])
 def test_list_invoices_rejects_invalid_pagination(application, organisation_id, page, page_size):

@@ -495,6 +495,19 @@ def test_list_invoices_filters_by_account_name_and_status(repo, organisation_id)
     assert total == 1
 
 
+def test_list_invoices_filters_by_quote_id(repo, organisation_id):
+    account = repo.create_account(_account(organisation_id))
+    converted = repo.create_invoice(_invoice(organisation_id, account.id, quote_id="quote-1"))
+    repo.create_invoice(_invoice(organisation_id, account.id, quote_id="quote-2"))
+
+    matched, total = repo.list_invoices(organisation_id, quote_id="quote-1")
+    assert [i.id for i in matched] == [converted.id]
+    assert total == 1
+
+    _, total = repo.list_invoices(organisation_id, quote_id="does-not-exist")
+    assert total == 0
+
+
 def test_next_number_increments_and_is_scoped_by_name(repo, organisation_id):
     assert repo.next_quote_number(organisation_id) == "Q-0001"
     assert repo.next_quote_number(organisation_id) == "Q-0002"

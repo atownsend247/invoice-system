@@ -498,6 +498,7 @@ class InvoiceService:
         account_id: str | None = None,
         account_name: str | None = None,
         status: InvoiceStatus | None = None,
+        quote_id: str | None = None,
         page: int = 1,
         page_size: int = DEFAULT_PAGE_SIZE,
     ) -> Page[Invoice]:
@@ -507,13 +508,18 @@ class InvoiceService:
         (draft/sent/paid/void) - `overdue` is presentation-only and never
         written to Invoice.status (see monthly_totals below), so filtering
         by it would only ever match zero rows; nothing stops a caller
-        passing it, it just isn't useful."""
+        passing it, it just isn't useful. `quote_id` matches at most one
+        invoice - a quote converts to at most one invoice
+        (convert_to_invoice can only run once per quote) - used to find
+        the invoice a given quote became, without storing a redundant
+        reverse reference back on Quote (Invoice.quote_id already exists)."""
         _validate_pagination(page, page_size)
         items, total = self._repository.list_invoices(
             organisation_id,
             account_id=account_id,
             account_name=account_name,
             status=status,
+            quote_id=quote_id,
             limit=page_size,
             offset=(page - 1) * page_size,
         )

@@ -1,6 +1,7 @@
 from datetime import date
 from decimal import Decimal
 from io import BytesIO
+from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -176,6 +177,20 @@ def expense_footer_lines(profile: BusinessProfile | None) -> list[str]:
     return _text_lines(profile.expense_document_footer if profile is not None else None)
 
 
+def _text_paragraph(text: str, style) -> Paragraph:
+    """A `Paragraph` for free text that ultimately came from a user
+    (business/account names, addresses, a line item description, document
+    header/footer, bank details) - reportlab's `Paragraph` interprets a
+    small subset of HTML-like markup in its text, so an unescaped
+    `&`/`<`/`>` (all unremarkable in a real business name like "Smith &
+    Sons" or a line item description) would corrupt the rendered output or
+    crash `doc.build()` outright. Only needed for this reportlab-specific
+    "how this gets drawn" concern - the pure line-selection functions
+    above (business_profile_lines etc.) return plain, unescaped strings,
+    which is what their own unit tests assert against."""
+    return Paragraph(escape(text), style)
+
+
 def _render(
     *,
     title: str,
@@ -199,7 +214,7 @@ def _render(
     story = []
     if header_lines:
         for line in header_lines:
-            story.append(Paragraph(line, styles["Normal"]))
+            story.append(_text_paragraph(line, styles["Normal"]))
         story.append(Spacer(1, 8 * mm))
 
     story.extend(
@@ -215,13 +230,13 @@ def _render(
 
     bill_to_flowables = [
         Paragraph("Bill to", styles["Heading3"]),
-        Paragraph(account.business_name, styles["Normal"]),
+        _text_paragraph(account.business_name, styles["Normal"]),
     ]
     if account.contact_name:
-        bill_to_flowables.append(Paragraph(account.contact_name, styles["Normal"]))
+        bill_to_flowables.append(_text_paragraph(account.contact_name, styles["Normal"]))
     for line in account_address_lines(account):
-        bill_to_flowables.append(Paragraph(line, styles["Normal"]))
-    bill_to_flowables.append(Paragraph(account.email, styles["Normal"]))
+        bill_to_flowables.append(_text_paragraph(line, styles["Normal"]))
+    bill_to_flowables.append(_text_paragraph(account.email, styles["Normal"]))
 
     from_lines = business_profile_lines(from_profile)
     if from_lines:
@@ -234,7 +249,7 @@ def _render(
         # (top-left, right after the title/dates), same as before this
         # layout existed.
         from_flowables = [Paragraph("From", styles["Heading3"])]
-        from_flowables.extend(Paragraph(line, styles["Normal"]) for line in from_lines)
+        from_flowables.extend(_text_paragraph(line, styles["Normal"]) for line in from_lines)
         story.append(
             Table(
                 [[from_flowables, bill_to_flowables]],
@@ -259,7 +274,14 @@ def _render(
     for item in line_items:
         table_data.append(
             [
-                item.description,
+                # A Paragraph, not a plain string - a long description (e.g.
+                # "Domain Registration - example.co.uk") needs to wrap
+                # within the column instead of overflowing into "Qty"
+                # (found from a real generated PDF, not just reasoning
+                # about it). The other cells stay plain strings: short,
+                # numeric-ish, and never user-authored free text, so
+                # there's nothing for them to wrap or need escaping.
+                _text_paragraph(item.description, styles["Normal"]),
                 str(item.quantity),
                 f"{item.unit_price} {currency}",
                 f"{item.tax_rate:.0%}",
@@ -283,6 +305,10 @@ def _render(
                 ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
                 ("GRID", (0, 0), (-1, summary_rows_from - 1), 0.25, colors.grey),
                 ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+                # TOP, not the default - a wrapped multi-line description
+                # would otherwise sit oddly against its row's other,
+                # single-line cells.
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ]
         )
     )
@@ -294,12 +320,12 @@ def _render(
             story.append(Spacer(1, 8 * mm))
             story.append(Paragraph("Payment details", styles["Heading3"]))
             for line in bank_lines:
-                story.append(Paragraph(line, styles["Normal"]))
+                story.append(_text_paragraph(line, styles["Normal"]))
 
     if footer_lines:
         story.append(Spacer(1, 8 * mm))
         for line in footer_lines:
-            story.append(Paragraph(line, styles["Normal"]))
+            story.append(_text_paragraph(line, styles["Normal"]))
 
     doc.build(story)
     return buffer.getvalue()

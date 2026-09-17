@@ -270,7 +270,17 @@ Four separate things are easy to conflate here — don't:
   per-entity counter in the `counters` table) and freezes line items — issue
   a new quote/invoice rather than editing history afterwards. A Quote can
   only convert to an Invoice once, from `sent`/`accepted`, copying its line
-  items; converting flips the Quote to `converted`.
+  items; converting flips the Quote to `converted`. There's no reverse
+  `invoice_id` stored on `Quote` (that would be a redundant, dual-write
+  field alongside `Invoice.quote_id`, which already exists) — finding
+  "the invoice this quote became" is a `GET /invoices?quote_id=` lookup
+  instead (`InvoiceService.list_invoices`' `quote_id` filter, backed by
+  `idx_invoices_organisation_quote`), which matches at most one row since
+  conversion can only happen once. `QuoteDetailPage.tsx`'s "Convert to
+  invoice" action already navigates straight to the new invoice at
+  conversion time; the `quote_id` filter is what lets a *converted* quote
+  show a "View invoice" button that still works after navigating away and
+  back later, once that one-time redirect is long past.
 - Client (web UI): **one module is the only thing that talks HTTP** to the
   backend (`web/src/api.ts`) — no `fetch`/`axios` calls scattered through
   components. `web/src/hooks/useAsync.ts` is the shared data-fetching hook

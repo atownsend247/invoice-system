@@ -315,6 +315,7 @@ def list_invoices(
     account_id: str | None = None,
     account_name: str | None = None,
     status: InvoiceStatus | None = None,
+    quote_id: str | None = None,
     page: int = 1,
     page_size: int = 20,
     application: Application = Depends(get_application),
@@ -325,6 +326,7 @@ def list_invoices(
         account_id=account_id,
         account_name=account_name,
         status=status,
+        quote_id=quote_id,
         page=page,
         page_size=page_size,
     )

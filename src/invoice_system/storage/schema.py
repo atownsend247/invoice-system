@@ -491,4 +491,12 @@ MIGRATIONS: list[str] = [
     ALTER TABLE business_profiles DROP COLUMN document_header;
     ALTER TABLE business_profiles DROP COLUMN document_footer;
     """,
+    """
+    -- Backs list_invoices' new quote_id filter (find the invoice a given
+    -- quote converted into - QuoteDetailPage.tsx's "View invoice" link on
+    -- a converted quote) - same "index every filter column list_invoices/
+    -- list_quotes/list_accounts actually use" pattern as migration 10's
+    -- indexes. Plain CREATE INDEX, no rebuild needed.
+    CREATE INDEX idx_invoices_organisation_quote ON invoices (organisation_id, quote_id);
+    """,
 ]
