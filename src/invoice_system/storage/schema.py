@@ -526,4 +526,21 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_domains_account ON domains (account_id);
     """,
+    """
+    -- A business's managed list of domain registrars, used to populate
+    -- the Domain form's registrar dropdown (see models.Registrar) -
+    -- organisation-scoped, not account-scoped, so it carries its own
+    -- organisation_id (unlike domains above). New table, so a plain
+    -- CREATE TABLE + one CREATE INDEX on the column it's actually
+    -- queried by, no rebuild needed.
+    CREATE TABLE registrars (
+        id TEXT PRIMARY KEY,
+        organisation_id TEXT NOT NULL REFERENCES organisations(id),
+        name TEXT NOT NULL,
+        notes TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX idx_registrars_organisation ON registrars (organisation_id);
+    """,
 ]

@@ -12,6 +12,7 @@ import type {
   PagedResult,
   Quote,
   QuoteStatus,
+  Registrar,
   Stats,
   User,
 } from './types'
@@ -243,6 +244,29 @@ export function updateDomain(accountId: string, domainId: string, input: SaveDom
 
 export function deleteDomain(accountId: string, domainId: string): Promise<void> {
   return request(`/accounts/${accountId}/domains/${domainId}`, { method: 'DELETE' })
+}
+
+// -- registrars ----------------------------------------------------------------
+
+export interface SaveRegistrarInput {
+  name: string
+  notes?: string
+}
+
+export function listRegistrars(): Promise<Registrar[]> {
+  return request('/registrars')
+}
+
+export function createRegistrar(input: SaveRegistrarInput): Promise<Registrar> {
+  return request('/registrars', { method: 'POST', body: JSON.stringify(input) })
+}
+
+export function updateRegistrar(id: string, input: SaveRegistrarInput): Promise<Registrar> {
+  return request(`/registrars/${id}`, { method: 'PUT', body: JSON.stringify(input) })
+}
+
+export function deleteRegistrar(id: string): Promise<void> {
+  return request(`/registrars/${id}`, { method: 'DELETE' })
 }
 
 // -- quotes ----------------------------------------------------------------

@@ -23,6 +23,7 @@ from .models import (
     Page,
     Quote,
     QuoteStatus,
+    Registrar,
     RegistrationInvite,
     Stats,
 )
@@ -279,6 +280,66 @@ class DomainService:
         if domain is None:
             raise NotFound(f"domain {domain_id} not found")
         return domain
+
+
+class RegistrarService:
+    """A business's managed list of domain registrars, used to populate
+    the Domain form's registrar dropdown (see models.Registrar).
+    Organisation-scoped, not account-scoped like DomainService -
+    structurally closest to AccountService: its own organisation_id,
+    tenant ownership checked directly rather than through a parent.
+    Unlike AccountService though, this supports delete - nothing holds a
+    foreign key to a Registrar (Domain.registrar stores the chosen name
+    as a plain string, not a reference - see models.Domain), so there's
+    no cascade to worry about."""
+
+    def __init__(
+        self, repository: Repository, clock: Clock = system_clock, new_id: IdGenerator = default_new_id
+    ) -> None:
+        self._repository = repository
+        self._clock = clock
+        self._new_id = new_id
+
+    def create_registrar(self, organisation_id: str, *, name: str, notes: str | None = None) -> Registrar:
+        if not name.strip():
+            raise ValidationFailed("name is required")
+        now = self._clock()
+        registrar = Registrar(
+            id=self._new_id(),
+            organisation_id=organisation_id,
+            name=name,
+            notes=_blank_to_none(notes),
+            created_at=now,
+            updated_at=now,
+        )
+        return self._repository.create_registrar(registrar)
+
+    def get_registrar(self, organisation_id: str, registrar_id: str) -> Registrar:
+        return self._get_registrar(organisation_id, registrar_id)
+
+    def list_registrars(self, organisation_id: str) -> list[Registrar]:
+        return self._repository.list_registrars(organisation_id)
+
+    def update_registrar(
+        self, organisation_id: str, registrar_id: str, *, name: str, notes: str | None = None
+    ) -> Registrar:
+        existing = self._get_registrar(organisation_id, registrar_id)
+        if not name.strip():
+            raise ValidationFailed("name is required")
+        existing.name = name
+        existing.notes = _blank_to_none(notes)
+        existing.updated_at = self._clock()
+        return self._repository.update_registrar(existing)
+
+    def delete_registrar(self, organisation_id: str, registrar_id: str) -> None:
+        self._get_registrar(organisation_id, registrar_id)  # 404s if missing/wrong organisation
+        self._repository.delete_registrar(organisation_id, registrar_id)
+
+    def _get_registrar(self, organisation_id: str, registrar_id: str) -> Registrar:
+        registrar = self._repository.get_registrar(organisation_id, registrar_id)
+        if registrar is None:
+            raise NotFound(f"registrar {registrar_id} not found")
+        return registrar
 
 
 def _month_start(d: date_) -> date_:

@@ -48,6 +48,10 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | GET | `/accounts/{id}/domains` | required | List this account's domains, soonest-expiry-first (not the newest-first convention every other list here uses) - a plain array, not paginated (see Conventions below). No single-domain `GET` route - the list is the only read path. |
 | PUT | `/accounts/{id}/domains/{domain_id}` | required | Replace a domain (same fields as create - a full replace). 404 if missing/wrong account, 422 on a blank `domain_name`/`registrar`. |
 | DELETE | `/accounts/{id}/domains/{domain_id}` | required | Delete it. 204, 404 if missing/wrong account. |
+| POST | `/registrars` | required | Add a registrar to the current user's organisation (`name` required; `notes` optional). 422 on a blank `name`. |
+| GET | `/registrars` | required | List the organisation's registrars, alphabetically by name (not the newest-first convention most lists here use) - a plain array, not paginated (see Conventions below). Populates the Domain form's registrar `<select>`. |
+| PUT | `/registrars/{id}` | required | Replace a registrar (same fields as create - a full replace). 404 if missing/wrong organisation, 422 on a blank `name`. |
+| DELETE | `/registrars/{id}` | required | Delete it. 204, 404 if missing/wrong organisation. Safe with no cascade - `Domain.registrar` stores the chosen name as a plain string, not a reference to this row (see Conventions below). |
 | POST | `/quotes` | required | Create a draft quote (`account_id` required; `currency` defaults `USD`; `expiry_date` optional). |
 | GET | `/quotes` | required | Paginated list of quotes - `{items, total}`. Optionally filtered by `?account_id=` (exact), `?account_name=` (matches the linked account's business_name, case-insensitively), and/or `?status=` (`draft`/`sent`/`accepted`/`rejected`/`expired`/`converted`). `?page=`/`?page_size=`, same as `/accounts` - see Conventions below. |
 | GET | `/quotes/{id}` | required | Fetch one quote with its line items, `subtotal`, `tax_total`, and (gross) `total`. |
@@ -140,6 +144,16 @@ stays per-user, not per-organisation (see `docs/data-model.md`'s
   `domain_name` beyond non-blank, same as `Account.email`/`business_name`.
   Editable in place (`PUT`), not add-only - a domain's expiry changes on
   every renewal and its registrar can change on a transfer.
+- **`Registrar`**: a business's managed list of domain registrars, used to
+  populate the Domain form's registrar `<select>` (strictly select-from-
+  list, no free-text option). Top-level (`/registrars`), not nested under
+  `/accounts` like `Domain` - a registrar has no parent, it's
+  organisation-wide. `name` required, `notes` optional free text (e.g. a
+  support URL). Editable in place and deletable - unlike `Account`,
+  deleting a `Registrar` has no cascade to worry about, since
+  `Domain.registrar` stores the chosen name as a plain string rather than
+  referencing this row's id (renaming or deleting a registrar later never
+  needs to touch domains that already recorded its name).
 - **Invite-gated registration**: `invoice-system-cli invite create
   [--expires-in-days N]` (default 7) creates a single-use
   `RegistrationInvite` and prints its token plus a relative `/register?
@@ -157,11 +171,11 @@ stays per-user, not per-organisation (see `docs/data-model.md`'s
   the new user gets their own `Organisation` lazily on first login, same
   as every other user.
 - `GET /accounts`/`GET /quotes`/`GET /invoices` are the only paginated
-  endpoints (`GET /expenses` and `GET /accounts/{id}/domains` both stay a
-  bare array - neither has a standalone list page of its own, only
-  `AccountDetailPage`'s per-account sub-list, and one client's own domain
-  count is inherently small - see the `Domain` bullet below). Response
-  shape is `{items: [...], total}`,
+  endpoints (`GET /expenses`, `GET /accounts/{id}/domains`, and `GET
+  /registrars` all stay a bare array - none has a standalone list page of
+  its own, and each is inherently small: one client's own domain count,
+  or one business's own registrar list - see the `Domain`/`Registrar`
+  bullets below). Response shape is `{items: [...], total}`,
   not a bare array - `total` is the count matching the request's filters
   across *every* page, letting the client compute how many pages exist
   without a second request. `page` defaults to `1`, `page_size` to `20`

@@ -124,30 +124,47 @@ test('cancelling an edit discards changes', async ({ authenticatedPage: page, te
 test('adding, editing, and deleting a domain on an account', async ({
   authenticatedPage: page,
   testAccount,
-}) => {
+  apiToken,
+}, testInfo) => {
+  // The Registrar field is a strict <select> sourced from the managed
+  // Registrar list (see CLAUDE.md/DomainForm.tsx), not free text - create
+  // two via the API first, uniquely named per test run (registrars are a
+  // shared organisation-wide list, same reasoning as testAccount's own
+  // business_name in fixtures.ts).
+  const registrarA = `${testInfo.testId} 123-Reg`
+  const registrarB = `${testInfo.testId} GoDaddy`
+  await apiFetch('/registrars', apiToken, {
+    method: 'POST',
+    body: JSON.stringify({ name: registrarA }),
+  })
+  await apiFetch('/registrars', apiToken, {
+    method: 'POST',
+    body: JSON.stringify({ name: registrarB }),
+  })
+
   await page.goto(`/accounts/${testAccount.id}`)
   await expect(page.getByText('No domains recorded yet.')).toBeVisible()
 
   await page.getByRole('button', { name: 'Add domain' }).click()
   await page.getByLabel('Domain name').fill('example.test')
   await page.getByLabel('Expiry date').fill('2027-06-15')
-  await page.getByLabel('Registrar').fill('123-Reg')
+  await page.getByLabel('Registrar').selectOption(registrarA)
   await page.getByLabel('Auto-renew').check()
   await page.getByRole('button', { name: 'Add' }).click()
 
   const row = page.locator('tbody tr', { hasText: 'example.test' })
   await expect(row).toContainText('2027-06-15')
-  await expect(row).toContainText('123-Reg')
+  await expect(row).toContainText(registrarA)
   await expect(row).toContainText('Yes')
 
   await row.getByRole('button', { name: 'Edit' }).click()
   await page.getByLabel('Domain name').fill('example.co.uk')
-  await page.getByLabel('Registrar').fill('GoDaddy')
+  await page.getByLabel('Registrar').selectOption(registrarB)
   await page.getByLabel('Auto-renew').uncheck()
   await page.getByRole('button', { name: 'Save' }).click()
 
   const updatedRow = page.locator('tbody tr', { hasText: 'example.co.uk' })
-  await expect(updatedRow).toContainText('GoDaddy')
+  await expect(updatedRow).toContainText(registrarB)
   await expect(updatedRow).toContainText('No')
   await expect(page.getByText('example.test', { exact: true })).toHaveCount(0)
 

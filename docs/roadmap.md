@@ -991,5 +991,54 @@ flow," not a restructuring, whenever it's actually needed.
       (58 tests, including a new accounts.spec.ts test covering add/edit/
       delete in one flow) updated and passing.
 
+## Phase 32 — Managed domain registrars + a dropdown on the Domain form (done)
+
+- [x] The `Domain` feature (Phase 31) recorded a registrar as free text -
+      error-prone for a business managing many domains ("GoDaddy" vs
+      "godaddy" vs "Go Daddy"). Added a `Registrar` entity - a managed
+      list, editable from a new Settings tab - and changed the Domain
+      form's Registrar field from a free-text input to a strict `<select>`
+      sourced from that list (no "type a custom value" escape hatch, by
+      request).
+- [x] `Domain.registrar` deliberately **stays a plain string column, not a
+      foreign key** - selecting a registrar submits its name as a string,
+      exactly as before. This sidesteps a migration that would need to
+      reconcile already-recorded free-text values against a new FK, and
+      avoids orphan-handling if a registrar is later renamed/deleted after
+      domains already reference it by name. The one consequence: if a
+      domain's stored registrar string isn't among the current options
+      (recorded before this feature existed, or its registrar was since
+      renamed/deleted), the edit form injects it as an extra `<option>` so
+      opening "Edit" never silently discards it.
+- [x] `Registrar` is organisation-scoped, not account-scoped like `Domain`
+      - it's a business-wide reference list, so it carries its own
+      `organisation_id`, structurally closest to `Account`. Unlike
+      `Account` it supports delete, since nothing holds a foreign key to
+      it. Migration 16 added the `registrars` table plus
+      `idx_registrars_organisation`. `list_registrars` orders
+      alphabetically - the useful default for a dropdown, unlike every
+      other `list_*` method's own ordering convention in this app.
+- [x] API: `POST`/`GET /registrars`, `PUT`/`DELETE /registrars/{id}` -
+      top-level, not nested under `/accounts` like `Domain`, since a
+      registrar has no parent. CLI: `registrar create/list/update/delete`.
+      Web UI: a fifth Settings tab, "Registrars" - deliberately not a
+      fifth `BusinessProfileForm` tabpanel, since its add/edit/delete
+      actions are immediate, each its own `<form>`
+      (`components/RegistrarForm.tsx`), and nesting a `<form>` inside the
+      profile tabs' shared one would be invalid HTML. This meant lifting
+      the tab bar/`activeTab` state out of `BusinessProfileForm` and up
+      into `SettingsPage` itself, so the Registrars panel could render as
+      `BusinessProfileForm`'s sibling (outside its `<form>`) while still
+      switching via the same tab bar.
+- [x] `DomainForm.tsx` now takes the registrar list as a `registrars` prop
+      (fetched once by `AccountDetailPage.tsx`, not per form instance);
+      if the list is empty (and there's no existing value to fall back
+      to), the field and submit button disable with a hint pointing at
+      Settings, rather than presenting a dead-end empty `<select>`.
+- [x] Full backend suite (349 tests, 98%+ coverage) and full e2e suite
+      (59 tests, including a new settings.spec.ts registrar add/edit/
+      delete test and accounts.spec.ts's domain test updated to pick a
+      registrar from the dropdown) updated and passing.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

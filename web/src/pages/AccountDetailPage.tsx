@@ -6,7 +6,7 @@ import { AccountForm } from '../components/AccountForm'
 import { DomainForm } from '../components/DomainForm'
 import { StatusBadge } from '../components/StatusBadge'
 import { errorMessage, useAsync } from '../hooks/useAsync'
-import type { Domain, Expense, Invoice, Quote } from '../types'
+import type { Domain, Expense, Invoice, Quote, Registrar } from '../types'
 
 /** Newest first by issue_date (the "when this was created" convention used
  * throughout - see CLAUDE.md). Ids are random UUID4s now (see CLAUDE.md),
@@ -47,6 +47,10 @@ export function AccountDetailPage() {
     () => api.listDomains(accountId ?? ''),
     [accountId],
   )
+  // Fetched once here, not per DomainForm instance - see DomainForm.tsx's
+  // own comment on why it takes this as a prop instead of fetching it
+  // itself.
+  const { data: registrars } = useAsync(() => api.listRegistrars(), [])
   const [editing, setEditing] = useState(false)
   const [addingDomain, setAddingDomain] = useState(false)
 
@@ -154,6 +158,7 @@ export function AccountDetailPage() {
         </div>
         {addingDomain && (
           <DomainForm
+            registrars={registrars ?? []}
             submitLabel="Add"
             submittingLabel="Adding…"
             onSubmit={(input) => api.createDomain(account.id, input)}
@@ -167,7 +172,12 @@ export function AccountDetailPage() {
         {!domains && <p>Loading…</p>}
         {domains && domains.length === 0 && <p className="meta">No domains recorded yet.</p>}
         {domains && domains.length > 0 && (
-          <DomainsTable accountId={account.id} domains={domains} onChanged={refetchDomains} />
+          <DomainsTable
+            accountId={account.id}
+            domains={domains}
+            registrars={registrars ?? []}
+            onChanged={refetchDomains}
+          />
         )}
       </div>
     </section>
@@ -239,10 +249,12 @@ function ExpensesTable({ expenses }: { expenses: Expense[] }) {
 function DomainsTable({
   accountId,
   domains,
+  registrars,
   onChanged,
 }: {
   accountId: string
   domains: Domain[]
+  registrars: Registrar[]
   onChanged: () => void
 }) {
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -286,6 +298,7 @@ function DomainsTable({
                 <td colSpan={5}>
                   <DomainForm
                     initial={domain}
+                    registrars={registrars}
                     submitLabel="Save"
                     submittingLabel="Saving…"
                     onSubmit={(input) => api.updateDomain(accountId, domain.id, input)}

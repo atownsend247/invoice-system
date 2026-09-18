@@ -291,6 +291,55 @@ def domain_delete(application: Application, account_id: str, domain_id: str, use
 
 
 @cli.group()
+def registrar() -> None:
+    pass
+
+
+@registrar.command("create")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option("--name", required=True)
+@click.option("--notes", default=None)
+@click.pass_obj
+def registrar_create(application: Application, user_id: str, name: str, notes: str | None) -> None:
+    created = application.registrars.create_registrar(
+        _organisation_id(application, user_id), name=name, notes=notes
+    )
+    click.echo(f"Created registrar {created.id}: {created.name}")
+
+
+@registrar.command("list")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.pass_obj
+def registrar_list(application: Application, user_id: str) -> None:
+    for r in application.registrars.list_registrars(_organisation_id(application, user_id)):
+        click.echo(f"{r.id}\t{r.name}\t{r.notes or '-'}")
+
+
+@registrar.command("update")
+@click.argument("registrar_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option("--name", required=True)
+@click.option("--notes", default=None)
+@click.pass_obj
+def registrar_update(
+    application: Application, registrar_id: str, user_id: str, name: str, notes: str | None
+) -> None:
+    updated = application.registrars.update_registrar(
+        _organisation_id(application, user_id), registrar_id, name=name, notes=notes
+    )
+    click.echo(f"Updated registrar {updated.id}: {updated.name}")
+
+
+@registrar.command("delete")
+@click.argument("registrar_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.pass_obj
+def registrar_delete(application: Application, registrar_id: str, user_id: str) -> None:
+    application.registrars.delete_registrar(_organisation_id(application, user_id), registrar_id)
+    click.echo(f"Deleted registrar {registrar_id}")
+
+
+@cli.group()
 def quote() -> None:
     pass
 

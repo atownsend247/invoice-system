@@ -11,7 +11,7 @@ import { expect, test } from './fixtures'
 // after another - the actual guarantee a shared-mutable-state file needs.
 test.describe.configure({ mode: 'serial' })
 
-test('shows the four settings tabs and loads the current profile on visit', async ({
+test('shows the five settings tabs and loads the current profile on visit', async ({
   authenticatedPage: page,
 }) => {
   await page.goto('/settings')
@@ -19,12 +19,13 @@ test('shows the four settings tabs and loads the current profile on visit', asyn
 
   // User tab is active by default - grouped under <fieldset>/<legend>
   // ("group" is the accessible role for a legend) inside a hidden/visible
-  // tabpanel, not four sections all visible at once.
+  // tabpanel, not every section visible at once.
   await expect(page.getByRole('tab', { name: 'User' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('group', { name: 'User settings' })).toBeVisible()
   await expect(page.getByRole('group', { name: 'Business settings' })).not.toBeVisible()
   await expect(page.getByRole('group', { name: 'Payment and tax settings' })).not.toBeVisible()
   await expect(page.getByRole('group', { name: 'Document settings' })).not.toBeVisible()
+  await expect(page.getByRole('group', { name: 'Registrars' })).not.toBeVisible()
 
   await page.getByRole('tab', { name: 'Business' }).click()
   await expect(page.getByRole('group', { name: 'Business settings' })).toBeVisible()
@@ -42,6 +43,14 @@ test('shows the four settings tabs and loads the current profile on visit', asyn
   await expect(page.getByRole('group', { name: 'Expenses' })).toBeVisible()
   await expect(page.getByRole('group', { name: 'Payment and tax settings' })).not.toBeVisible()
 
+  // Registrars isn't a BusinessProfile field group like the other four -
+  // it's a self-contained managed list, rendered outside the profile
+  // <form> entirely (see SettingsPage.tsx) - but still switches via the
+  // same tab bar.
+  await page.getByRole('tab', { name: 'Registrars' }).click()
+  await expect(page.getByRole('group', { name: 'Registrars' })).toBeVisible()
+  await expect(page.getByRole('group', { name: 'Document settings' })).not.toBeVisible()
+
   // Not asserting a specific "default" value here - a business profile is a
   // singleton per user (see CLAUDE.md), and this spec shares its login user
   // with every other test in this file (and, under --repeat-each, with
@@ -52,6 +61,42 @@ test('shows the four settings tabs and loads the current profile on visit', asyn
   await page.getByRole('tab', { name: 'Payment and tax' }).click()
   await expect(page.getByLabel('Payment terms (days)')).not.toHaveValue('')
   await expect(page.getByLabel('Currency')).not.toHaveValue('')
+})
+
+test('adding, editing, and deleting a registrar', async ({ authenticatedPage: page }, testInfo) => {
+  // Unique per test (same reasoning as testAccount's own business_name in
+  // fixtures.ts) - registrars are a shared organisation-wide list, so a
+  // fixed name would collide across repeated runs of this same spec.
+  const name = `${testInfo.testId} 123-Reg`
+  const renamed = `${testInfo.testId} GoDaddy`
+
+  await page.goto('/settings')
+  await page.getByRole('tab', { name: 'Registrars' }).click()
+
+  await page.getByRole('button', { name: 'Add registrar' }).click()
+  // exact: true - "Name" is otherwise a substring match against several
+  // other (currently hidden, but still DOM-present) BusinessProfileForm
+  // fields on this same page, e.g. "First name"/"Business name" - see
+  // SettingsPage.tsx, where every tab's fields stay mounted across
+  // switches, just hidden.
+  await page.getByLabel('Name', { exact: true }).fill(name)
+  await page.getByLabel('Notes (optional)').fill('https://123-reg.co.uk')
+  await page.getByRole('button', { name: 'Add', exact: true }).click()
+
+  const row = page.locator('tbody tr', { hasText: name })
+  await expect(row).toContainText('https://123-reg.co.uk')
+
+  await row.getByRole('button', { name: 'Edit' }).click()
+  await page.getByLabel('Name', { exact: true }).fill(renamed)
+  await page.getByLabel('Notes (optional)').fill('')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+
+  const updatedRow = page.locator('tbody tr', { hasText: renamed })
+  await expect(updatedRow).toBeVisible()
+  await expect(page.getByText(name, { exact: true })).toHaveCount(0)
+
+  await updatedRow.getByRole('button', { name: 'Delete' }).click()
+  await expect(page.getByText(renamed)).toHaveCount(0)
 })
 
 test('saving all fields persists them across a reload', async ({ authenticatedPage: page }) => {

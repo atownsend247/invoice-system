@@ -95,6 +95,29 @@ class DomainOut(BaseModel):
         )
 
 
+class RegistrarIn(BaseModel):
+    name: str
+    notes: str | None = None
+
+
+class RegistrarOut(BaseModel):
+    id: str
+    name: str
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_model(cls, registrar) -> "RegistrarOut":
+        return cls(
+            id=registrar.id,
+            name=registrar.name,
+            notes=registrar.notes,
+            created_at=registrar.created_at,
+            updated_at=registrar.updated_at,
+        )
+
+
 class LineItemIn(BaseModel):
     description: str
     quantity: str

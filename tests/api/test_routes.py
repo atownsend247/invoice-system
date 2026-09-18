@@ -494,6 +494,54 @@ def test_domain_from_another_login_user_returns_404(client, auth_headers, other_
     assert response.status_code == 404
 
 
+def test_registrar_create_list_update_delete_flow(client, auth_headers):
+    response = client.post(
+        "/registrars", json={"name": "123-Reg", "notes": "https://123-reg.co.uk"}, headers=auth_headers
+    )
+    assert response.status_code == 201
+    body = response.json()
+    registrar_id = body["id"]
+    assert body["name"] == "123-Reg"
+    assert body["notes"] == "https://123-reg.co.uk"
+
+    client.post("/registrars", json={"name": "GoDaddy"}, headers=auth_headers)
+
+    response = client.get("/registrars", headers=auth_headers)
+    assert response.status_code == 200
+    # Alphabetical, not creation order (see models.Registrar).
+    assert [r["name"] for r in response.json()] == ["123-Reg", "GoDaddy"]
+
+    response = client.put(
+        f"/registrars/{registrar_id}",
+        json={"name": "123 Reg Ltd", "notes": None},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["name"] == "123 Reg Ltd"
+    assert response.json()["notes"] is None
+
+    response = client.delete(f"/registrars/{registrar_id}", headers=auth_headers)
+    assert response.status_code == 204
+    assert [r["name"] for r in client.get("/registrars", headers=auth_headers).json()] == ["GoDaddy"]
+
+
+def test_registrar_requires_non_blank_name(client, auth_headers):
+    response = client.post("/registrars", json={"name": "   "}, headers=auth_headers)
+    assert response.status_code == 422
+
+
+def test_registrar_from_another_login_user_is_isolated(client, auth_headers, other_auth_headers):
+    registrar_id = client.post("/registrars", json={"name": "123-Reg"}, headers=auth_headers).json()["id"]
+
+    assert client.get("/registrars", headers=other_auth_headers).json() == []
+
+    response = client.put(f"/registrars/{registrar_id}", json={"name": "GoDaddy"}, headers=other_auth_headers)
+    assert response.status_code == 404
+
+    response = client.delete(f"/registrars/{registrar_id}", headers=other_auth_headers)
+    assert response.status_code == 404
+
+
 def test_expense_attachment_upload_view_download_and_delete_flow(client, auth_headers):
     account_id = client.post(
         "/accounts",

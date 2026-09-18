@@ -45,6 +45,8 @@ from .schemas import (
     QuoteCreateIn,
     QuoteListOut,
     QuoteOut,
+    RegistrarIn,
+    RegistrarOut,
     StatsOut,
 )
 
@@ -274,6 +276,47 @@ def delete_domain(
     organisation_id: str = Depends(get_organisation_id),
 ) -> None:
     application.domains.delete_domain(organisation_id, account_id, domain_id)
+
+
+@domain_router.post("/registrars", response_model=RegistrarOut, status_code=201)
+def create_registrar(
+    body: RegistrarIn,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> RegistrarOut:
+    registrar = application.registrars.create_registrar(organisation_id, name=body.name, notes=body.notes)
+    return RegistrarOut.from_model(registrar)
+
+
+@domain_router.get("/registrars", response_model=list[RegistrarOut])
+def list_registrars(
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> list[RegistrarOut]:
+    registrars = application.registrars.list_registrars(organisation_id)
+    return [RegistrarOut.from_model(r) for r in registrars]
+
+
+@domain_router.put("/registrars/{registrar_id}", response_model=RegistrarOut)
+def update_registrar(
+    registrar_id: str,
+    body: RegistrarIn,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> RegistrarOut:
+    registrar = application.registrars.update_registrar(
+        organisation_id, registrar_id, name=body.name, notes=body.notes
+    )
+    return RegistrarOut.from_model(registrar)
+
+
+@domain_router.delete("/registrars/{registrar_id}", status_code=204)
+def delete_registrar(
+    registrar_id: str,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> None:
+    application.registrars.delete_registrar(organisation_id, registrar_id)
 
 
 @domain_router.post("/quotes", response_model=QuoteOut, status_code=201)

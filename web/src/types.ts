@@ -56,6 +56,18 @@ export interface Domain {
   updated_at: string
 }
 
+// A business's managed list of domain registrars, used to populate the
+// Domain form's registrar <select> - see CLAUDE.md. Organisation-wide,
+// not account-scoped like Domain. Domain.registrar stores the chosen
+// name as a plain string, not a reference to this row's id.
+export interface Registrar {
+  id: string
+  name: string
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
 // tax_rate is a fraction ("0.20" for 20% VAT, "0" for none) applied to
 // this line only - see CLAUDE.md. total is *gross* (net_total +
 // tax_amount) - what this line actually adds to what's owed.

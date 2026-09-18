@@ -527,7 +527,12 @@ Four separate things are easy to conflate here — don't:
   no format validation, same "required but unvalidated format" convention
   `Account.email`/`business_name` already use); `auto_renew` is a plain
   informational boolean, defaulting `False` - nothing here talks to a
-  registrar's API. `POST/GET /accounts/{id}/domains`, `PUT`/`DELETE
+  registrar's API. `registrar` is a plain string, **not** a foreign key to
+  `Registrar` below - the web UI's `DomainForm.tsx` populates it from a
+  strict `<select>` sourced from the managed registrar list, but the
+  chosen name is what actually gets stored, so renaming/deleting a
+  `Registrar` later never needs to touch already-recorded `Domain` rows
+  (see the `Registrar` bullet below for why). `POST/GET /accounts/{id}/domains`, `PUT`/`DELETE
   .../domains/{domain_id}` (no single-`GET` route - the list is the only
   read path, same as `GET /expenses?account_id=`). `SqliteRepository.
   list_domains` orders **soonest-expiry-first**, not the newest-created-
@@ -540,6 +545,47 @@ Four separate things are easy to conflate here — don't:
   toggle reveals `components/DomainForm.tsx` (same `initial`/`submitLabel`/
   `onSubmit`/`onDone`/`onCancel` prop shape as `AccountForm.tsx`, reused for
   both add and per-row edit), and each row has its own Edit/Delete actions.
+- `Registrar` (`core.py`'s `RegistrarService`) - a business's managed list
+  of domain registrars, kept so `Domain.registrar` can be picked from a
+  `<select>` instead of typed freehand (avoiding "GoDaddy"/"godaddy"/"Go
+  Daddy" drift across domains - the dropdown is **strictly select-from-
+  list**, no free-text escape hatch). **Organisation-scoped, not
+  account-scoped like `Domain`** - it's a business-wide reference list,
+  not tied to any one client, so unlike `Domain` it carries its own
+  `organisation_id` and is structurally closest to `AccountService`: full
+  CRUD, tenant ownership checked directly rather than through a parent.
+  Unlike `Account` though, it supports **delete** - nothing holds a
+  foreign key to a `Registrar` (`Domain.registrar` stores the chosen name
+  as a plain string, see above), so removing one has no cascade to worry
+  about, unlike an `Account` with `Quote`/`Invoice`/`Expense`/`Domain`
+  rows depending on it. `name` required (`ValidationFailed` if blank);
+  `notes` optional free text (e.g. a support URL), no format validation.
+  `POST/GET /registrars`, `PUT`/`DELETE /registrars/{id}` - top-level, not
+  nested under `/accounts` like `Domain`, since a registrar has no parent.
+  `SqliteRepository.list_registrars` orders **alphabetically**
+  (`ORDER BY name COLLATE NOCASE`), the useful default for a dropdown's
+  option order - yet another `list_*` method with its own non-default
+  ordering, see `Domain`'s own soonest-expiry-first choice above. Web UI:
+  a fifth Settings tab, "Registrars" - deliberately **not** a fifth
+  `BusinessProfileForm` tabpanel (`SettingsPage.tsx`): it's a
+  self-contained list with its own immediate add/edit/delete actions,
+  each backed by its own `<form>` (`components/RegistrarForm.tsx`, same
+  reusable prop shape as `AccountForm.tsx`/`DomainForm.tsx`) - nesting
+  those inside the profile tabs' own shared `<form>`/"Save settings"
+  button would be invalid HTML (a `<form>` can't nest inside another) and
+  semantically wrong (this tab's actions are immediate, not deferred to a
+  save button). The shared tab bar/`activeTab` state now lives in
+  `SettingsPage` itself, not inside `BusinessProfileForm` - the Registrars
+  panel renders as `BusinessProfileForm`'s sibling, outside its `<form>`,
+  switched by the same tab bar. `DomainForm.tsx` takes the registrar list
+  as a `registrars` prop (fetched once by `AccountDetailPage.tsx`, not
+  per form instance) - if a domain's already-recorded `registrar` string
+  isn't in the current list (predates this feature, or its matching
+  `Registrar` was since renamed/deleted), that value is prepended as an
+  extra `<option>` so opening "Edit" never silently changes it; if the
+  list is empty (and there's no such value to fall back to), the field
+  and submit button are disabled with a hint pointing at Settings, rather
+  than presenting a dead-end empty `<select>`.
 - `ExpenseService` (`core.py`) tracks costs incurred against an `Account` -
   e.g. a domain renewal paid on a client's behalf. Deliberately no draft/
   sent status field, unlike `Quote`/`Invoice`: an expense is a record of
@@ -805,7 +851,10 @@ Four separate things are easy to conflate here — don't:
   bullet above). Migration 15 added `domains` - one more brand new table
   plus its own `idx_domains_account` index (see the `Domain` Conventions
   bullet above), no rebuild needed, same reasoning as every other
-  pure-addition migration in this file.)
+  pure-addition migration in this file. Migration 16 added `registrars` -
+  another brand new table plus its own `idx_registrars_organisation`
+  index (see the `Registrar` Conventions bullet above), no rebuild
+  needed either.)
 - Storage is a single shared SQLite connection/file — **serialise every
   access on a lock** inside the repository implementation rather than
   assuming the caller will. That lock is per-*call*, not across a sequence

@@ -17,6 +17,7 @@ from invoice_system.models import (
     Organisation,
     Quote,
     QuoteStatus,
+    Registrar,
     RegistrationInvite,
 )
 from invoice_system.storage.schema import MIGRATIONS
@@ -784,6 +785,52 @@ def test_domain_crud_and_tenant_scoping(repo, organisation_id):
 
     repo.delete_domain(account.id, sooner.id)
     assert repo.get_domain(account.id, sooner.id) is None
+
+
+def _registrar(organisation_id: str, **overrides: object) -> Registrar:
+    defaults: dict = {
+        "id": new_id(),
+        "organisation_id": organisation_id,
+        "name": "123-Reg",
+        "notes": None,
+        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+        "updated_at": datetime(2026, 1, 1, tzinfo=UTC),
+    }
+    defaults.update(overrides)
+    return Registrar(**defaults)
+
+
+def test_registrar_crud_and_tenant_scoping(repo, organisation_id):
+    other_organisation = repo.create_organisation(
+        Organisation(id=new_id(), name="Other Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
+    )
+
+    godaddy = repo.create_registrar(_registrar(organisation_id, name="GoDaddy"))
+    repo.create_registrar(_registrar(organisation_id, name="123-Reg"))
+    repo.create_registrar(_registrar(other_organisation.id, name="Unrelated"))
+
+    # organisation_id-scoped, and ordered alphabetically (see
+    # models.Registrar) - not the newest-created-first convention every
+    # other list_* method in this file uses.
+    registrars = repo.list_registrars(organisation_id)
+    assert [r.name for r in registrars] == ["123-Reg", "GoDaddy"]
+
+    fetched = repo.get_registrar(organisation_id, godaddy.id)
+    assert fetched is not None
+    assert fetched.name == "GoDaddy"
+
+    # Scoped by organisation_id - another organisation can't fetch this
+    # one's registrar by id.
+    assert repo.get_registrar(other_organisation.id, godaddy.id) is None
+
+    godaddy.name = "GoDaddy Ltd"
+    godaddy.notes = "Transferred here"
+    updated = repo.update_registrar(godaddy)
+    assert updated.name == "GoDaddy Ltd"
+    assert repo.get_registrar(organisation_id, godaddy.id).notes == "Transferred here"
+
+    repo.delete_registrar(organisation_id, godaddy.id)
+    assert repo.get_registrar(organisation_id, godaddy.id) is None
 
 
 def test_next_expense_number_increments_and_is_scoped_per_organisation(repo, organisation_id):

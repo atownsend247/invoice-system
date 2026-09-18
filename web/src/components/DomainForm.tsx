@@ -1,10 +1,11 @@
 import { type FormEvent, useState } from 'react'
 import type { SaveDomainInput } from '../api'
 import { errorMessage } from '../hooks/useAsync'
-import type { Domain } from '../types'
+import type { Domain, Registrar } from '../types'
 
 export function DomainForm({
   initial,
+  registrars,
   submitLabel,
   submittingLabel,
   onSubmit,
@@ -12,6 +13,11 @@ export function DomainForm({
   onCancel,
 }: {
   initial?: Domain
+  // The managed registrar list (see Settings > Registrars) - fetched once
+  // by the caller (AccountDetailPage.tsx) and passed down, not re-fetched
+  // per form instance. The Registrar field is a strict <select> sourced
+  // from this list, not free text - see CLAUDE.md.
+  registrars: Registrar[]
   submitLabel: string
   submittingLabel: string
   onSubmit: (input: SaveDomainInput) => Promise<Domain>
@@ -24,6 +30,18 @@ export function DomainForm({
   const [autoRenew, setAutoRenew] = useState(initial?.auto_renew ?? false)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+
+  // A domain recorded before this feature existed - or whose registrar
+  // was since renamed/deleted from the managed list - can hold a
+  // registrar string that isn't one of the current options. Prepend it
+  // rather than silently dropping it, so opening "Edit" never changes the
+  // value just by rendering the form (see CLAUDE.md).
+  const registrarNames = registrars.map((r) => r.name)
+  const registrarOptions =
+    initial?.registrar && !registrarNames.includes(initial.registrar)
+      ? [initial.registrar, ...registrarNames]
+      : registrarNames
+  const noRegistrarsAvailable = registrarOptions.length === 0
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -61,7 +79,21 @@ export function DomainForm({
       </label>
       <label>
         Registrar
-        <input value={registrar} onChange={(event) => setRegistrar(event.target.value)} required />
+        <select
+          value={registrar}
+          onChange={(event) => setRegistrar(event.target.value)}
+          required
+          disabled={noRegistrarsAvailable}
+        >
+          <option value="" disabled>
+            {noRegistrarsAvailable ? 'No registrars configured' : 'Select a registrar'}
+          </option>
+          {registrarOptions.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
       </label>
       <label className="checkbox-field">
         <input
@@ -71,12 +103,15 @@ export function DomainForm({
         />
         Auto-renew
       </label>
+      {noRegistrarsAvailable && (
+        <p className="meta">No registrars configured yet - add one in Settings first.</p>
+      )}
       {error && (
         <p className="form-error" role="alert">
           {error}
         </p>
       )}
-      <button type="submit" disabled={submitting}>
+      <button type="submit" disabled={submitting || noRegistrarsAvailable}>
         {submitting ? submittingLabel : submitLabel}
       </button>
       {onCancel && (

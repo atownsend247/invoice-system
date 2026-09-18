@@ -1,10 +1,24 @@
 import { type FormEvent, useState } from 'react'
 import * as api from '../api'
+import { RegistrarForm } from '../components/RegistrarForm'
 import { errorMessage, useAsync } from '../hooks/useAsync'
-import type { BusinessProfile } from '../types'
+import type { BusinessProfile, Registrar } from '../types'
+
+const TABS = ['User', 'Business', 'Payment and tax', 'Document', 'Registrars'] as const
+type Tab = (typeof TABS)[number]
+
+// Element ids can technically contain spaces, but it's fragile (breaks
+// plain CSS/querySelector id references without escaping) - a slug keeps
+// id/aria-controls values simple while the tab's own visible label (and
+// its accessible name, used by e2e's getByRole('tab', { name: ... })
+// lookups) stays exactly as written above.
+function tabSlug(tab: Tab): string {
+  return tab.toLowerCase().replace(/\s+/g, '-')
+}
 
 export function SettingsPage() {
   const { data: profile, loading, error } = useAsync(() => api.getBusinessProfile(), [])
+  const [activeTab, setActiveTab] = useState<Tab>('User')
 
   return (
     <section>
@@ -17,25 +31,40 @@ export function SettingsPage() {
           {error}
         </p>
       )}
-      {profile && <BusinessProfileForm profile={profile} />}
+      {profile && (
+        <>
+          <div role="tablist" aria-label="Settings sections" className="settings-tabs">
+            {TABS.map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                id={`settings-tab-${tabSlug(tab)}`}
+                aria-selected={activeTab === tab}
+                aria-controls={`settings-panel-${tabSlug(tab)}`}
+                className={activeTab === tab ? 'active' : undefined}
+                onClick={() => setActiveTab(tab)}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          {/* Four profile-field tabs, one shared "Save settings" form - see
+           * BusinessProfileForm. Registrars is deliberately its own
+           * sibling below, not a fifth tabpanel inside that form: it's a
+           * self-contained list with its own immediate add/edit/delete
+           * actions, each its own <form> (RegistrarForm) - nesting those
+           * inside the profile form's own <form> would be invalid HTML. */}
+          <BusinessProfileForm profile={profile} activeTab={activeTab} />
+          <RegistrarsPanel active={activeTab === 'Registrars'} />
+        </>
+      )}
     </section>
   )
 }
 
-const TABS = ['User', 'Business', 'Payment and tax', 'Document'] as const
-type Tab = (typeof TABS)[number]
-
-// Element ids can technically contain spaces, but it's fragile (breaks
-// plain CSS/querySelector id references without escaping) - a slug keeps
-// id/aria-controls values simple while the tab's own visible label (and
-// its accessible name, used by e2e's getByRole('tab', { name: ... })
-// lookups) stays exactly as written above.
-function tabSlug(tab: Tab): string {
-  return tab.toLowerCase().replace(/\s+/g, '-')
-}
-
-function BusinessProfileForm({ profile }: { profile: BusinessProfile }) {
-  const [activeTab, setActiveTab] = useState<Tab>('User')
+function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile; activeTab: Tab }) {
   const [title, setTitle] = useState(profile.title ?? '')
   const [firstName, setFirstName] = useState(profile.first_name)
   const [lastName, setLastName] = useState(profile.last_name)
@@ -129,23 +158,6 @@ function BusinessProfileForm({ profile }: { profile: BusinessProfile }) {
 
   return (
     <form className="settings-form" onSubmit={handleSubmit}>
-      <div role="tablist" aria-label="Settings sections" className="settings-tabs">
-        {TABS.map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            role="tab"
-            id={`settings-tab-${tabSlug(tab)}`}
-            aria-selected={activeTab === tab}
-            aria-controls={`settings-panel-${tabSlug(tab)}`}
-            className={activeTab === tab ? 'active' : undefined}
-            onClick={() => setActiveTab(tab)}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
-
       <div
         role="tabpanel"
         id={`settings-panel-${tabSlug('User')}`}
@@ -378,5 +390,116 @@ function BusinessProfileForm({ profile }: { profile: BusinessProfile }) {
         {submitting ? 'Saving…' : 'Save settings'}
       </button>
     </form>
+  )
+}
+
+function RegistrarsPanel({ active }: { active: boolean }) {
+  const { data: registrars, refetch } = useAsync(() => api.listRegistrars(), [])
+  const [adding, setAdding] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleDelete(registrar: Registrar) {
+    setError(null)
+    setDeletingId(registrar.id)
+    try {
+      await api.deleteRegistrar(registrar.id)
+      refetch()
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  return (
+    <div
+      role="tabpanel"
+      id={`settings-panel-${tabSlug('Registrars')}`}
+      aria-labelledby={`settings-tab-${tabSlug('Registrars')}`}
+      hidden={!active}
+    >
+      <fieldset className="form-section">
+        <legend>Registrars</legend>
+        <div className="page-header">
+          <p className="meta">Populates the Registrar dropdown when adding a domain to an account.</p>
+          {!adding && (
+            <button type="button" onClick={() => setAdding(true)}>
+              Add registrar
+            </button>
+          )}
+        </div>
+        {adding && (
+          <RegistrarForm
+            submitLabel="Add"
+            submittingLabel="Adding…"
+            onSubmit={(input) => api.createRegistrar(input)}
+            onDone={() => {
+              setAdding(false)
+              refetch()
+            }}
+            onCancel={() => setAdding(false)}
+          />
+        )}
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+        {!registrars && <p>Loading…</p>}
+        {registrars && registrars.length === 0 && <p className="meta">No registrars configured yet.</p>}
+        {registrars && registrars.length > 0 && (
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Notes</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {registrars.map((registrar) =>
+                editingId === registrar.id ? (
+                  <tr key={registrar.id}>
+                    <td colSpan={3}>
+                      <RegistrarForm
+                        initial={registrar}
+                        submitLabel="Save"
+                        submittingLabel="Saving…"
+                        onSubmit={(input) => api.updateRegistrar(registrar.id, input)}
+                        onDone={() => {
+                          setEditingId(null)
+                          refetch()
+                        }}
+                        onCancel={() => setEditingId(null)}
+                      />
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={registrar.id}>
+                    <td>{registrar.name}</td>
+                    <td>{registrar.notes ?? '—'}</td>
+                    <td>
+                      <button type="button" onClick={() => setEditingId(registrar.id)}>
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => handleDelete(registrar)}
+                        disabled={deletingId === registrar.id}
+                      >
+                        {deletingId === registrar.id ? 'Deleting…' : 'Delete'}
+                      </button>
+                    </td>
+                  </tr>
+                ),
+              )}
+            </tbody>
+          </table>
+        )}
+      </fieldset>
+    </div>
   )
 }

@@ -95,7 +95,15 @@ class Domain:
     a domain with no known expiry isn't a useful record. `auto_renew`
     defaults `False` and is purely informational, same as everything in
     `BusinessProfile`'s payment-and-tax group - nothing here talks to a
-    registrar's API."""
+    registrar's API.
+
+    `registrar` is a plain string, **not** a foreign key to `Registrar`
+    below, even though the web UI's `DomainForm` populates it by picking
+    from that managed list (a `<select>`, not free text) - storing the
+    chosen name as a string here means a `Registrar` can be renamed or
+    deleted later without needing to migrate or orphan-handle every
+    `Domain` that already recorded its name (see `Registrar`'s own
+    docstring)."""
 
     id: str
     account_id: str
@@ -103,6 +111,35 @@ class Domain:
     expiry_date: date
     registrar: str
     auto_renew: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass
+class Registrar:
+    """A domain registrar a business uses - a managed reference list, kept
+    so `Domain.registrar` can be picked from a `<select>` instead of typed
+    freehand (avoiding "GoDaddy"/"godaddy"/"Go Daddy" drift across
+    domains). Organisation-scoped, not account-scoped like `Domain` - it's
+    a business-wide reference list, not tied to any one client - so unlike
+    `Domain` this carries its own `organisation_id` and is structurally
+    closest to `Account`: full CRUD, tenant ownership checked directly
+    rather than through a parent. Unlike `Account` though, it supports
+    delete - nothing holds a foreign key to a `Registrar` (see `Domain`'s
+    docstring above), so removing one has no cascade to worry about,
+    unlike an `Account` with `Quote`/`Invoice`/`Expense`/`Domain` rows
+    depending on it.
+
+    `name` is required (non-blank, enforced in `RegistrarService`, never
+    in storage); `notes` is optional free text (e.g. a support URL or
+    account login hint) - purely informational, no format validation,
+    same convention as everywhere else in this app that stores a URL or
+    reference note."""
+
+    id: str
+    organisation_id: str
+    name: str
+    notes: str | None
     created_at: datetime
     updated_at: datetime
 

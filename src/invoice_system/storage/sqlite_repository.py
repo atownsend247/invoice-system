@@ -16,6 +16,7 @@ from ..models import (
     Organisation,
     Quote,
     QuoteStatus,
+    Registrar,
     RegistrationInvite,
 )
 from .schema import MIGRATIONS
@@ -276,6 +277,78 @@ class SqliteRepository:
             expiry_date=date.fromisoformat(row["expiry_date"]),
             registrar=row["registrar"],
             auto_renew=bool(row["auto_renew"]),
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+    # -- Registrars --------------------------------------------------------------
+
+    def create_registrar(self, registrar: Registrar) -> Registrar:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO registrars (id, organisation_id, name, notes, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    registrar.id,
+                    registrar.organisation_id,
+                    registrar.name,
+                    registrar.notes,
+                    registrar.created_at.isoformat(),
+                    registrar.updated_at.isoformat(),
+                ),
+            )
+            self._conn.commit()
+        return registrar
+
+    def get_registrar(self, organisation_id: str, registrar_id: str) -> Registrar | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM registrars WHERE id = ? AND organisation_id = ?",
+                (registrar_id, organisation_id),
+            ).fetchone()
+        return self._row_to_registrar(row) if row else None
+
+    def list_registrars(self, organisation_id: str) -> list[Registrar]:
+        # Alphabetical, not newest-first - the useful default for a
+        # dropdown's option order (see models.Registrar).
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM registrars WHERE organisation_id = ? ORDER BY name COLLATE NOCASE",
+                (organisation_id,),
+            ).fetchall()
+        return [self._row_to_registrar(row) for row in rows]
+
+    def update_registrar(self, registrar: Registrar) -> Registrar:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE registrars SET name = ?, notes = ?, updated_at = ? "
+                "WHERE id = ? AND organisation_id = ?",
+                (
+                    registrar.name,
+                    registrar.notes,
+                    registrar.updated_at.isoformat(),
+                    registrar.id,
+                    registrar.organisation_id,
+                ),
+            )
+            self._conn.commit()
+        return registrar
+
+    def delete_registrar(self, organisation_id: str, registrar_id: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM registrars WHERE id = ? AND organisation_id = ?",
+                (registrar_id, organisation_id),
+            )
+            self._conn.commit()
+
+    @staticmethod
+    def _row_to_registrar(row: sqlite3.Row) -> Registrar:
+        return Registrar(
+            id=row["id"],
+            organisation_id=row["organisation_id"],
+            name=row["name"],
+            notes=row["notes"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )

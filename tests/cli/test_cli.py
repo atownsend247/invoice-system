@@ -1261,6 +1261,60 @@ def test_domain_create_requires_existing_account(tmp_path):
     assert result.exit_code != 0
 
 
+def test_registrar_create_list_update_delete(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "registrar",
+            "create",
+            "--user-id",
+            "1",
+            "--name",
+            "123-Reg",
+            "--notes",
+            "https://123-reg.co.uk",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    registrar_id = _id_from(result.output, r"Created registrar (\S+):")
+
+    runner.invoke(cli, [*_base_args(db_path), "registrar", "create", "--user-id", "1", "--name", "GoDaddy"])
+
+    result = runner.invoke(cli, [*_base_args(db_path), "registrar", "list", "--user-id", "1"])
+    assert result.exit_code == 0, result.output
+    # Alphabetical, not creation order (see models.Registrar).
+    assert result.output.index("123-Reg") < result.output.index("GoDaddy")
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "registrar",
+            "update",
+            registrar_id,
+            "--user-id",
+            "1",
+            "--name",
+            "123 Reg Ltd",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert f"Updated registrar {registrar_id}: 123 Reg Ltd" in result.output
+
+    result = runner.invoke(cli, [*_base_args(db_path), "registrar", "delete", registrar_id, "--user-id", "1"])
+    assert result.exit_code == 0, result.output
+    assert f"Deleted registrar {registrar_id}" in result.output
+
+    result = runner.invoke(cli, [*_base_args(db_path), "registrar", "list", "--user-id", "1"])
+    assert "123 Reg Ltd" not in result.output
+    assert "GoDaddy" in result.output
+
+
 def test_settings_show_defaults_then_set_and_show_again(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()
