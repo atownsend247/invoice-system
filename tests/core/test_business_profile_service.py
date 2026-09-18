@@ -170,6 +170,59 @@ def test_save_profile_requires_non_blank_currency(application):
         )
 
 
+def test_accent_color_is_optional_and_defaults_to_none(application):
+    profile = application.business_profiles.save_profile(
+        user_id="user-1", first_name="Ada", last_name="Lovelace", business_name="Acme", payment_terms_days=30
+    )
+    assert profile.accent_color is None
+
+
+def test_accent_color_round_trips_when_a_valid_hex_value_is_given(application):
+    profile = application.business_profiles.save_profile(
+        user_id="user-1",
+        first_name="Ada",
+        last_name="Lovelace",
+        business_name="Acme",
+        payment_terms_days=30,
+        accent_color="#2563EB",
+    )
+    assert profile.accent_color == "#2563EB"
+
+    fetched = application.business_profiles.get_profile(user_id="user-1")
+    assert fetched.accent_color == "#2563EB"
+
+
+def test_blank_accent_color_is_stored_as_none(application):
+    profile = application.business_profiles.save_profile(
+        user_id="user-1",
+        first_name="Ada",
+        last_name="Lovelace",
+        business_name="Acme",
+        payment_terms_days=30,
+        accent_color="   ",
+    )
+    assert profile.accent_color is None
+
+
+@pytest.mark.parametrize("value", ["blue", "2563EB", "#2563EBB", "#2563EG", "#fff", "; } body { color: red"])
+def test_save_profile_rejects_a_malformed_accent_color(application, value):
+    # accent_color is interpolated directly into a CSS declaration by
+    # pdf.py's template rather than shown as escaped body text like every
+    # other free-text field on this model (see BusinessProfile's
+    # docstring) - a strict #RRGGBB format check is a real injection
+    # boundary here, not just a cosmetic nicety, hence the deliberately
+    # CSS-breakout-shaped case in this parametrization.
+    with pytest.raises(ValidationFailed):
+        application.business_profiles.save_profile(
+            user_id="user-1",
+            first_name="Ada",
+            last_name="Lovelace",
+            business_name="Acme",
+            payment_terms_days=30,
+            accent_color=value,
+        )
+
+
 def test_profiles_are_isolated_per_user(application):
     application.business_profiles.save_profile(
         user_id="user-1",

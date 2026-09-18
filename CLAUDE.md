@@ -16,9 +16,9 @@ behind a status check (see ExpenseService). A `BusinessProfile` holds the
 logged-in user's *own* business
 details (name/address/payment terms/reporting currency/UTR/VAT/bank
 details/a separate document header & footer per document type - quote,
-invoice, expense - shown on the matching PDFs they generate) — see
-below for why that's a third, deliberately separate thing from both
-`Account` and sessionkit's `User`.
+invoice, expense - shown on the matching PDFs they generate/an accent
+colour used across all three) — see below for why that's a third,
+deliberately separate thing from both `Account` and sessionkit's `User`.
 Every `Account`/`Quote`/`Invoice`/`Expense` also belongs to exactly one
 `Organisation` — the tenant boundary, auto-created per login user, so one
 user's data is never visible to another (see below and
@@ -112,7 +112,17 @@ Four separate things are easy to conflate here — don't:
   different, each field independently optional - the one place free text
   actually gets injected into the matching quote/invoice/expense PDF this
   user generates, see Conventions below for where and why it's not a
-  per-page running header/footer). One per
+  per-page running header/footer); and `accent_color`, a single
+  `#RRGGBB` hex string used as the brand colour across every
+  quote/invoice/expense PDF this user generates (title, table header,
+  totals highlight) - one shared value, not a third per-document-type
+  triple, since it's "this business's colour" rather than something
+  that varies by document type. Unlike every other field on this
+  model, `accent_color`'s format *is* validated
+  (`BusinessProfileService.save_profile`) rather than accepted as
+  free-form text, since it's interpolated directly into a CSS
+  declaration by `pdf.py`'s template rather than shown as escaped body
+  text - see Conventions below. One per
   user, keyed by `user_id` = sessionkit's `User.id` — deliberately still
   per-*user*, not per-`Organisation`, even after `Organisation` was
   introduced (see `docs/data-model.md`'s "Multi-tenancy": today it's a
@@ -299,9 +309,9 @@ Four separate things are easy to conflate here — don't:
   `business_profile_lines()`), in the standard UK order (`address_line1`,
   `address_line2`, `town_or_city`, `county`, `postcode`) — only when
   `business_name` is actually set, never empty/blank. When it *is* set,
-  "Bill to" sits beside it, not below it — a single-row, two-column
-  `Table` (`_render()` in `pdf.py`) with each side's `Paragraph`s as a
-  cell's flowable list; with no business profile set, "Bill to" just
+  "Bill to" sits beside it, not below it — a two-column CSS layout
+  (`document.html.jinja`, rendered via Jinja2 + WeasyPrint - see the
+  next bullet); with no business profile set, "Bill to" just
   stays where it's always been, top-left under the title/dates, since
   there's no "From" to sit alongside. Neither `pdf.py` nor
   `InvoiceService` import `BusinessProfileService` or know what a "user" is
@@ -318,6 +328,34 @@ Four separate things are easy to conflate here — don't:
   pay yet against a quote, and an expense is money already spent, not
   billed to the account. Whichever of the three fields are actually set,
   same "print what's there" pattern as the address lines above.
+- `pdf.py` renders every quote/invoice/expense PDF via Jinja2 (builds the
+  HTML) + [WeasyPrint](https://weasyprint.org/) (HTML/CSS → PDF bytes),
+  not reportlab/platypus - `_render()`'s own signature/parameters are
+  unchanged from before this switch (`render_quote_pdf`/
+  `render_invoice_pdf`/`render_expense_pdf` don't know or care which
+  engine is underneath), it just builds a context dict and renders the
+  one shared `templates/document.html.jinja` instead of building a
+  platypus flowable list. `_env`'s `autoescape=True` (a module-level
+  `jinja2.Environment`, created once at import time, not per-call) is
+  what keeps every free-text value (business/account names, addresses, a
+  line item description, document header/footer) HTML-safe when
+  interpolated into the template - reportlab's `Paragraph` needed a
+  hand-rolled `escape()` helper for the equivalent concern; Jinja2's
+  autoescaping replaces that entirely. `BusinessProfile.accent_color`
+  (see "Four separate things" above) flows in as `from_profile.accent_color
+  or _ACCENT_FALLBACK` (a neutral near-black constant used when unset) and
+  is interpolated directly into a CSS custom property in the template -
+  the one value in this whole render path that *isn't* just escaped free
+  text, which is exactly why its format is validated at the service layer
+  rather than accepted as-is (see the `accent_color` paragraph above) -
+  `base_url=None` is passed to `weasyprint.HTML(...)` deliberately, so
+  there's no filesystem/network location WeasyPrint could resolve a
+  `url()`/`<img src>` against even in principle, and the template itself
+  never emits one (no logo in scope) - external resource fetching is
+  switched off entirely, not just unexploited. `_lighten()` (pure RGB
+  arithmetic, not a CSS `color-mix()` - too recent a CSS feature to
+  assume WeasyPrint's engine supports) computes the pale tint used behind
+  the status pill and the totals-row highlight.
 - `BusinessProfile`'s document header/footer (see "Four separate things"
   above) is three **independent** pairs -
   `quote_document_header`/`quote_document_footer`,
@@ -336,9 +374,9 @@ Four separate things are easy to conflate here — don't:
   12 copied whatever single `document_header`/`document_footer` value a
   profile already had into all three new header fields and all three new
   footer fields (not dropped) before removing the two old columns.
-  Deliberately **not** a per-page running header/footer (that needs
-  reportlab page templates/canvas callbacks - a bigger lift than asked
-  for) - just fixed text once at the top and bottom of the document,
+  Deliberately **not** a per-page running header/footer (that needs CSS
+  `position: running()`/`@page` margin-box content - a bigger lift than
+  asked for) - just fixed text once at the top and bottom of the document,
   which is enough on the short, mostly-single-page documents this app
   generates. Each of the six functions still takes the same `profile:
   BusinessProfile | None` parameter `business_profile_lines()`/
@@ -763,6 +801,26 @@ Four separate things are easy to conflate here — don't:
   install --list` doesn't show a version you know exists, `node-build`'s
   version definitions are stale — `git -C "$(nodenv root)/plugins/node-build"
   pull` refreshes them.
+- **WeasyPrint (`pdf.py`'s PDF renderer) needs native system libraries**
+  (Pango/HarfBuzz - currently `libpango-1.0-0 libharfbuzz0b
+  libpangoft2-1.0-0 libharfbuzz-subset0` on Ubuntu/Debian, see WeasyPrint's
+  own install docs, since this has changed across their major versions),
+  not just something `uv sync` can install on its own — same shape of
+  gotcha as the Node version pin above ("this needs an extra step, don't
+  assume it just works"), but for a system package rather than a language
+  runtime. Every environment that renders a PDF needs it: local dev (most
+  package managers' Cairo/GTK stack already pulls it in transitively, so
+  this is usually invisible there), GitHub Actions CI (`.github/
+  workflows/ci.yml`'s `backend`/`e2e` jobs each have an explicit
+  `apt-get install` step, since a fresh runner VM has nothing pre-installed
+  and there's no persistent host to provision once), and the deploy
+  target (a one-time `apt-get install` on the Jenkins agent and the
+  Proxmox LXC container - see `docs/deployment.md`'s "WeasyPrint's native
+  dependency" section for the full list of where this is wired up).
+  Missing this produces an import-time error (`OSError` from WeasyPrint's
+  own `cffi` bindings failing to find the shared library), not a subtle
+  rendering bug - noisy and immediate, not the kind of thing that passes
+  silently.
 - `web/src/api.ts`'s `BASE_URL` is **not** a hardcoded `127.0.0.1:8000`
   fallback — `defaultApiBaseUrl()` derives it from `window.location`
   (same host the page itself was loaded from, port 8000), literal

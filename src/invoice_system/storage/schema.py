@@ -499,4 +499,12 @@ MIGRATIONS: list[str] = [
     -- indexes. Plain CREATE INDEX, no rebuild needed.
     CREATE INDEX idx_invoices_organisation_quote ON invoices (organisation_id, quote_id);
     """,
+    """
+    -- A single brand accent colour ("#RRGGBB") used across every
+    -- quote/invoice/expense PDF this user generates (see
+    -- models.BusinessProfile's accent_color docstring and pdf.py) - one
+    -- more nullable ADD COLUMN, no rebuild needed, same shape as every
+    -- other pure-addition migration in this file.
+    ALTER TABLE business_profiles ADD COLUMN accent_color TEXT;
+    """,
 ]

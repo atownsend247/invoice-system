@@ -52,6 +52,7 @@ def _profile(**overrides: object) -> BusinessProfile:
         "invoice_document_footer": None,
         "expense_document_header": None,
         "expense_document_footer": None,
+        "accent_color": None,
         "created_at": now,
         "updated_at": now,
     }
@@ -235,6 +236,48 @@ def test_rendering_a_quote_pdf_with_a_header_and_footer_does_not_error():
     )
     pdf_bytes = render_quote_pdf(account, quote, profile)
     assert pdf_bytes.startswith(b"%PDF")
+
+
+def test_rendering_with_an_accent_color_set_does_not_error():
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    account = _account(created_at=now)
+    quote = Quote(
+        id=1,
+        organisation_id=1,
+        account_id=1,
+        number="Q-0001",
+        status=QuoteStatus.SENT,
+        currency="USD",
+        issue_date=now.date(),
+        expiry_date=None,
+        created_at=now,
+    )
+    profile = _profile(accent_color="#2563EB")
+    pdf_bytes = render_quote_pdf(account, quote, profile)
+    assert pdf_bytes.startswith(b"%PDF")
+
+
+def test_rendering_falls_back_to_a_default_accent_color_when_unset():
+    # No BusinessProfile at all, and a BusinessProfile with accent_color
+    # unset - both are "no profile to read a colour from" as far as
+    # pdf.py's _render is concerned, and both should still render a
+    # finished-looking document rather than erroring or leaving a colour
+    # placeholder unresolved.
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    account = _account(created_at=now)
+    quote = Quote(
+        id=1,
+        organisation_id=1,
+        account_id=1,
+        number="Q-0001",
+        status=QuoteStatus.SENT,
+        currency="USD",
+        issue_date=now.date(),
+        expiry_date=None,
+        created_at=now,
+    )
+    assert render_quote_pdf(account, quote, None).startswith(b"%PDF")
+    assert render_quote_pdf(account, quote, _profile(accent_color=None)).startswith(b"%PDF")
 
 
 def test_no_profile_has_no_bank_details():

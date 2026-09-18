@@ -68,7 +68,7 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | GET | `/expenses/{id}/attachments/{attachment_id}` | required | The uploaded bytes (`Content-Type` is whatever was uploaded, `Content-Disposition: inline` - the web UI's "View"/"Download" both hit this one route, same pattern as the generated PDF routes above). |
 | DELETE | `/expenses/{id}/attachments/{attachment_id}` | required | Delete it. `204`. |
 | GET | `/settings/business-profile` | required | The current user's own profile. Never 404s — returns sensible defaults (`payment_terms_days: 30`, `currency: "GBP"`, everything else blank/`null`) if nothing's been saved yet. |
-| PUT | `/settings/business-profile` | required | Upsert it (`first_name`, `last_name`, `business_name`, `payment_terms_days` required; `currency` defaults `"GBP"`; `title`, `address_line1`, `address_line2`, `town_or_city`, `county`, `postcode`, `utr`, `vat_number`, `bank_account_name`, `bank_sort_code`, `bank_account_number`, `quote_document_header`, `quote_document_footer`, `invoice_document_header`, `invoice_document_footer`, `expense_document_header`, `expense_document_footer` optional — each address line independently optional, and each document header/footer is its own independent pair per document type, not one shared pair). 422 on a blank required field, `payment_terms_days <= 0`, or a blank `currency`. |
+| PUT | `/settings/business-profile` | required | Upsert it (`first_name`, `last_name`, `business_name`, `payment_terms_days` required; `currency` defaults `"GBP"`; `title`, `address_line1`, `address_line2`, `town_or_city`, `county`, `postcode`, `utr`, `vat_number`, `bank_account_name`, `bank_sort_code`, `bank_account_number`, `quote_document_header`, `quote_document_footer`, `invoice_document_header`, `invoice_document_footer`, `expense_document_header`, `expense_document_footer`, `accent_color` optional — each address line independently optional, each document header/footer is its own independent pair per document type, not one shared pair, and `accent_color` (a `#RRGGBB` hex string, one shared value across all three document types) is the one field here whose format is actually validated, not accepted as free-form text - see the Conventions section). 422 on a blank required field, `payment_terms_days <= 0`, a blank `currency`, or a malformed `accent_color`. |
 | GET | `/stats` | required | All-time counters for the home dashboard, scoped to the current user's organisation: `{account_count, quote_count, invoice_count, quotes_sent_count, quotes_converted_count, total_paid, currency}`. `total_paid` is filtered to `currency` (the caller's own business profile's reporting currency, same resolution as `/invoices/monthly-totals`) — a paid invoice in a different currency isn't counted. `quotes_sent_count`/`quotes_converted_count` are raw counts, not a precomputed rate; the web UI derives a conversion percentage from them client-side (`HomePage.tsx`'s `conversionRate`). |
 
 Every account/quote/invoice/expense route above resolves the caller's
@@ -119,6 +119,13 @@ stays per-user, not per-organisation (see `docs/data-model.md`'s
   pair - a quote/invoice/expense PDF only ever shows its own pair, never
   another type's. All six are free text, each independently optional,
   each split into non-blank lines when rendered.
+- **`accent_color`**: one shared `#RRGGBB` hex colour, used as the brand
+  colour across every quote/invoice/expense PDF (unlike the header/footer
+  pairs above, not per-document-type). The one `business-profile` field
+  whose format is actually validated (`^#[0-9a-fA-F]{6}$`, 422 otherwise)
+  rather than accepted as free text — it's interpolated directly into a
+  CSS declaration in the rendered PDF template, not shown as escaped body
+  text. Falls back to a fixed neutral constant when unset.
 - **Invite-gated registration**: `invoice-system-cli invite create
   [--expires-in-days N]` (default 7) creates a single-use
   `RegistrationInvite` and prints its token plus a relative `/register?

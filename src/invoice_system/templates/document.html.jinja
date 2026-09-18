@@ -1,0 +1,220 @@
+<!--
+  Shared quote/invoice/expense PDF template - rendered by pdf.py's
+  _render() via weasyprint.HTML(string=...).write_pdf(). One template for
+  all three document types, mirroring _render's own "one function, three
+  thin callers" shape - which parts show (header/footer lines, the From
+  column, the status pill, the Payment details block) is driven entirely
+  by whether the matching context variable is present/non-empty, decided
+  in pdf.py, not here.
+
+  `accent`/`accent_tint` are always already-validated `#RRGGBB` strings by
+  the time they reach this template (see
+  BusinessProfile.accent_color/BusinessProfileService.save_profile) -
+  every other value below is plain user-authored free text, escaped
+  automatically by Jinja2's autoescape=True (see pdf.py's `_env`).
+-->
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{{ title }} {{ number }}</title>
+<style>
+  @page {
+    size: A4;
+    margin: 20mm 18mm;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 10pt;
+    color: #1f2430;
+    margin: 0;
+  }
+  p { margin: 0 0 1mm; }
+
+  .header-lines {
+    font-size: 9pt;
+    color: #374151;
+    margin-bottom: 6mm;
+  }
+
+  .title-block {
+    border-bottom: 1mm solid {{ accent }};
+    padding-bottom: 5mm;
+    margin-bottom: 8mm;
+  }
+  .title-block h1 {
+    margin: 0;
+    font-size: 22pt;
+    color: {{ accent }};
+  }
+  .status-pill {
+    display: inline-block;
+    margin-top: 2mm;
+    padding: 1mm 3.5mm;
+    border-radius: 999px;
+    background: {{ accent_tint }};
+    color: {{ accent }};
+    font-size: 8pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .dates {
+    margin-top: 3mm;
+    font-size: 9.5pt;
+    color: #374151;
+  }
+
+  .meta-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10mm;
+    margin-bottom: 8mm;
+  }
+  .meta-block { flex: 1; }
+  .meta-block h3 {
+    font-size: 8pt;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #6b7280;
+    margin: 0 0 2mm;
+    font-weight: bold;
+  }
+  .meta-block .name { font-weight: bold; }
+
+  table.items {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 6mm;
+  }
+  table.items thead tr { background: {{ accent }}; }
+  table.items thead th {
+    color: #ffffff;
+    text-align: left;
+    font-size: 9pt;
+    padding: 3mm;
+    font-weight: bold;
+  }
+  table.items thead th:not(:first-child) { text-align: right; }
+  table.items tbody td {
+    padding: 3mm;
+    font-size: 9.5pt;
+    border-bottom: 0.2mm solid #eef0f3;
+    vertical-align: top;
+  }
+  table.items tbody td:not(:first-child) { text-align: right; }
+  table.items tbody tr:nth-child(even) { background: #fafbff; }
+
+  .totals { display: flex; justify-content: flex-end; margin-bottom: 8mm; }
+  .totals-box { width: 75mm; }
+  .totals-box .row {
+    display: flex;
+    justify-content: space-between;
+    padding: 2mm 3mm;
+    font-size: 9.5pt;
+  }
+  .totals-box .grand {
+    background: {{ accent_tint }};
+    color: {{ accent }};
+    font-weight: bold;
+    font-size: 11pt;
+    border-radius: 1.5mm;
+    margin-top: 1mm;
+  }
+
+  .payment-details h3, .footer-lines h3 {
+    font-size: 8pt;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #6b7280;
+    margin: 0 0 2mm;
+    font-weight: bold;
+  }
+  .payment-details { margin-bottom: 6mm; }
+  .footer-lines {
+    font-size: 9pt;
+    color: #374151;
+    border-top: 0.2mm solid #eef0f3;
+    padding-top: 4mm;
+    margin-top: 4mm;
+  }
+</style>
+</head>
+<body>
+  {% if header_lines %}
+  <div class="header-lines">
+    {% for line in header_lines %}<p>{{ line }}</p>{% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="title-block">
+    <h1>{{ title }} {{ number }}</h1>
+    {% if status %}<div class="status-pill">{{ status|capitalize }}</div>{% endif %}
+    <div class="dates">
+      <div>Issue date: {{ issue_date }}</div>
+      {% if due_or_expiry_date %}<div>{{ due_or_expiry_label }}: {{ due_or_expiry_date }}</div>{% endif %}
+    </div>
+  </div>
+
+  <div class="meta-row">
+    {% if from_lines %}
+    <div class="meta-block">
+      <h3>From</h3>
+      {% for line in from_lines %}<p>{{ line }}</p>{% endfor %}
+    </div>
+    {% endif %}
+    <div class="meta-block">
+      <h3>Bill to</h3>
+      <p class="name">{{ bill_to_name }}</p>
+      {% if bill_to_contact_name %}<p>{{ bill_to_contact_name }}</p>{% endif %}
+      {% for line in bill_to_address_lines %}<p>{{ line }}</p>{% endfor %}
+      <p>{{ bill_to_email }}</p>
+    </div>
+  </div>
+
+  <table class="items">
+    <thead>
+      <tr>
+        <th>Description</th>
+        <th>Qty</th>
+        <th>Unit price</th>
+        <th>VAT</th>
+        <th>Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in line_items %}
+      <tr>
+        <td>{{ item.description }}</td>
+        <td>{{ item.quantity }}</td>
+        <td>{{ item.unit_price }}</td>
+        <td>{{ item.tax_rate }}</td>
+        <td>{{ item.total }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="totals">
+    <div class="totals-box">
+      <div class="row"><span>Subtotal</span><span>{{ subtotal }}</span></div>
+      <div class="row"><span>VAT</span><span>{{ tax_total }}</span></div>
+      <div class="row grand"><span>Total</span><span>{{ total }}</span></div>
+    </div>
+  </div>
+
+  {% if bank_lines %}
+  <div class="payment-details">
+    <h3>Payment details</h3>
+    {% for line in bank_lines %}<p>{{ line }}</p>{% endfor %}
+  </div>
+  {% endif %}
+
+  {% if footer_lines %}
+  <div class="footer-lines">
+    {% for line in footer_lines %}<p>{{ line }}</p>{% endfor %}
+  </div>
+  {% endif %}
+</body>
+</html>

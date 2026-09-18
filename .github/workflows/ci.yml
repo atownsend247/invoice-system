@@ -19,6 +19,15 @@ jobs:
         with:
           enable-cache: true
 
+      # pdf.py renders via WeasyPrint, which needs native system libraries
+      # (Pango/HarfBuzz) beyond what `uv sync` installs - see
+      # docs/deployment.md's WeasyPrint gotcha. ubuntu-latest is a fresh VM
+      # per run, so this has to be a step here, not a one-time setup step
+      # the way it is for the Jenkins agent/Proxmox container.
+      - name: Install WeasyPrint's system dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends
+          libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 libharfbuzz-subset0
+
       - name: Install dependencies
         run: uv sync --dev
 
@@ -67,6 +76,13 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+
+      # The live backend this job spins up serves GET .../pdf routes via
+      # pdf.py/WeasyPrint - same native-dependency need as the backend
+      # job above.
+      - name: Install WeasyPrint's system dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends
+          libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 libharfbuzz-subset0
 
       - name: Install backend dependencies
         run: uv sync --dev

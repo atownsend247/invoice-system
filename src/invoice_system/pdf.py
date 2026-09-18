@@ -1,15 +1,31 @@
 from datetime import date
 from decimal import Decimal
-from io import BytesIO
-from xml.sax.saxutils import escape
 
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.units import mm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+import jinja2
+import weasyprint
 
 from .models import Account, BusinessProfile, Expense, Invoice, LineItem, Quote
+
+# The brand colour used across every quote/invoice/expense PDF a user
+# generates when BusinessProfile.accent_color is unset - a neutral, dark
+# near-black rather than presuming any particular brand colour, so a PDF
+# still looks finished before anyone visits Settings (see
+# BusinessProfile.accent_color's docstring).
+_ACCENT_FALLBACK = "#1F2430"
+
+# Rendered once at import time, not per-call - a jinja2.Environment is
+# meant to be reused (it caches compiled templates). autoescape=True is
+# what keeps every free-text value (business/account names, addresses, a
+# line item description, document header/footer lines) HTML-safe when
+# interpolated into document.html.jinja below - the reportlab version of
+# this module needed a hand-rolled escape() helper for the same reason
+# (Paragraph's own markup parsing); Jinja2's autoescaping replaces that
+# entirely; there's nothing bespoke left to remember to call per value.
+_env = jinja2.Environment(
+    loader=jinja2.PackageLoader("invoice_system", "templates"),
+    autoescape=True,
+)
+_template = _env.get_template("document.html.jinja")
 
 
 def render_quote_pdf(account: Account, quote: Quote, from_profile: BusinessProfile | None = None) -> bytes:
@@ -85,8 +101,8 @@ def business_profile_lines(profile: BusinessProfile | None) -> list[str]:
     prints whichever ones are actually set, in the standard UK order.
     Pulled out as a pure function so the decision (what shows, in what
     order, when there's nothing to show at all) is unit-testable without
-    parsing rendered PDF bytes - reportlab has no matching "read a PDF back"
-    half to assert with."""
+    parsing rendered PDF bytes - there's no PDF-content-extraction library
+    in use here to assert against the rendered output directly."""
     if profile is None or not profile.business_name.strip():
         return []
     address_fields = (
@@ -177,18 +193,20 @@ def expense_footer_lines(profile: BusinessProfile | None) -> list[str]:
     return _text_lines(profile.expense_document_footer if profile is not None else None)
 
 
-def _text_paragraph(text: str, style) -> Paragraph:
-    """A `Paragraph` for free text that ultimately came from a user
-    (business/account names, addresses, a line item description, document
-    header/footer, bank details) - reportlab's `Paragraph` interprets a
-    small subset of HTML-like markup in its text, so an unescaped
-    `&`/`<`/`>` (all unremarkable in a real business name like "Smith &
-    Sons" or a line item description) would corrupt the rendered output or
-    crash `doc.build()` outright. Only needed for this reportlab-specific
-    "how this gets drawn" concern - the pure line-selection functions
-    above (business_profile_lines etc.) return plain, unescaped strings,
-    which is what their own unit tests assert against."""
-    return Paragraph(escape(text), style)
+def _lighten(hex_color: str, amount: float) -> str:
+    """Blends `hex_color` towards white by `amount` (0-1) - used for the
+    status pill and totals-row backgrounds, which want a pale tint of the
+    accent colour rather than the full-strength colour itself. Computed in
+    Python rather than via CSS (e.g. `color-mix()`) since that's a very
+    recent CSS Color Module 5 feature WeasyPrint's CSS support can't be
+    assumed to cover - plain RGB arithmetic works everywhere."""
+    r, g, b = (int(hex_color[i : i + 2], 16) for i in (1, 3, 5))
+    r, g, b = (round(c + (255 - c) * amount) for c in (r, g, b))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _money(amount: Decimal, currency: str) -> str:
+    return f"{amount} {currency}"
 
 
 def _render(
@@ -207,125 +225,43 @@ def _render(
     footer_lines: list[str],
     show_bank_details: bool = False,
 ) -> bytes:
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, title=f"{title} {number}")
-    styles = getSampleStyleSheet()
+    accent = (from_profile.accent_color if from_profile is not None else None) or _ACCENT_FALLBACK
 
-    story = []
-    if header_lines:
-        for line in header_lines:
-            story.append(_text_paragraph(line, styles["Normal"]))
-        story.append(Spacer(1, 8 * mm))
-
-    story.extend(
-        [
-            Paragraph(f"{title} {number}", styles["Title"]),
-            *([Paragraph(f"Status: {status}", styles["Normal"])] if status is not None else []),
-            Paragraph(f"Issue date: {issue_date.isoformat()}", styles["Normal"]),
-        ]
-    )
-    if due_or_expiry_date is not None:
-        story.append(Paragraph(f"{due_or_expiry_label}: {due_or_expiry_date.isoformat()}", styles["Normal"]))
-    story.append(Spacer(1, 8 * mm))
-
-    bill_to_flowables = [
-        Paragraph("Bill to", styles["Heading3"]),
-        _text_paragraph(account.business_name, styles["Normal"]),
-    ]
-    if account.contact_name:
-        bill_to_flowables.append(_text_paragraph(account.contact_name, styles["Normal"]))
-    for line in account_address_lines(account):
-        bill_to_flowables.append(_text_paragraph(line, styles["Normal"]))
-    bill_to_flowables.append(_text_paragraph(account.email, styles["Normal"]))
-
-    from_lines = business_profile_lines(from_profile)
-    if from_lines:
-        # From stays on the left where it's always been; Bill to moves to
-        # sit alongside it on the right instead of stacking below it - a
-        # single-row, two-column Table with each side's Paragraphs as a
-        # cell's flowable list (not text - platypus table cells accept
-        # either). Only done when there's a "From" to show at all: with no
-        # business profile set, Bill to just stays exactly where it was
-        # (top-left, right after the title/dates), same as before this
-        # layout existed.
-        from_flowables = [Paragraph("From", styles["Heading3"])]
-        from_flowables.extend(_text_paragraph(line, styles["Normal"]) for line in from_lines)
-        story.append(
-            Table(
-                [[from_flowables, bill_to_flowables]],
-                colWidths=[85 * mm, 85 * mm],
-                style=TableStyle(
-                    [
-                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                        ("RIGHTPADDING", (0, 0), (0, 0), 10 * mm),  # gutter between the two columns
-                        ("TOPPADDING", (0, 0), (-1, -1), 0),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-                    ]
-                ),
-            )
-        )
-    else:
-        story.extend(bill_to_flowables)
-    story.append(Spacer(1, 8 * mm))
-
-    table_data = [["Description", "Qty", "Unit price", "VAT", "Total"]]
-    for item in line_items:
-        table_data.append(
-            [
-                # A Paragraph, not a plain string - a long description (e.g.
-                # "Domain Registration - example.co.uk") needs to wrap
-                # within the column instead of overflowing into "Qty"
-                # (found from a real generated PDF, not just reasoning
-                # about it). The other cells stay plain strings: short,
-                # numeric-ish, and never user-authored free text, so
-                # there's nothing for them to wrap or need escaping.
-                _text_paragraph(item.description, styles["Normal"]),
-                str(item.quantity),
-                f"{item.unit_price} {currency}",
-                f"{item.tax_rate:.0%}",
-                f"{item.total} {currency}",
-            ]
-        )
     subtotal = sum((item.net_total for item in line_items), Decimal("0"))
     tax_total = sum((item.tax_amount for item in line_items), Decimal("0"))
     total = subtotal + tax_total
-    summary_rows_from = len(table_data)
-    table_data.append(["", "", "", "Subtotal", f"{subtotal} {currency}"])
-    table_data.append(["", "", "", "VAT", f"{tax_total} {currency}"])
-    table_data.append(["", "", "", "Total", f"{total} {currency}"])
 
-    table = Table(table_data, colWidths=[65 * mm, 20 * mm, 30 * mm, 20 * mm, 35 * mm])
-    table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-                ("GRID", (0, 0), (-1, summary_rows_from - 1), 0.25, colors.grey),
-                ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
-                # TOP, not the default - a wrapped multi-line description
-                # would otherwise sit oddly against its row's other,
-                # single-line cells.
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ]
-        )
+    bank_lines = bank_details_lines(from_profile) if show_bank_details else []
+
+    html = _template.render(
+        title=title,
+        number=number,
+        status=status,
+        issue_date=issue_date.isoformat(),
+        due_or_expiry_label=due_or_expiry_label,
+        due_or_expiry_date=due_or_expiry_date.isoformat() if due_or_expiry_date is not None else None,
+        header_lines=header_lines,
+        footer_lines=footer_lines,
+        from_lines=business_profile_lines(from_profile),
+        bill_to_name=account.business_name,
+        bill_to_contact_name=account.contact_name,
+        bill_to_address_lines=account_address_lines(account),
+        bill_to_email=account.email,
+        line_items=[
+            {
+                "description": item.description,
+                "quantity": str(item.quantity),
+                "unit_price": _money(item.unit_price, currency),
+                "tax_rate": f"{item.tax_rate:.0%}",
+                "total": _money(item.total, currency),
+            }
+            for item in line_items
+        ],
+        subtotal=_money(subtotal, currency),
+        tax_total=_money(tax_total, currency),
+        total=_money(total, currency),
+        bank_lines=bank_lines,
+        accent=accent,
+        accent_tint=_lighten(accent, 0.9),
     )
-    story.append(table)
-
-    if show_bank_details:
-        bank_lines = bank_details_lines(from_profile)
-        if bank_lines:
-            story.append(Spacer(1, 8 * mm))
-            story.append(Paragraph("Payment details", styles["Heading3"]))
-            for line in bank_lines:
-                story.append(_text_paragraph(line, styles["Normal"]))
-
-    if footer_lines:
-        story.append(Spacer(1, 8 * mm))
-        for line in footer_lines:
-            story.append(_text_paragraph(line, styles["Normal"]))
-
-    doc.build(story)
-    return buffer.getvalue()
+    return weasyprint.HTML(string=html, base_url=None).write_pdf()

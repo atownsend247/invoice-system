@@ -398,6 +398,7 @@ export interface SaveBusinessProfileInput {
   invoice_document_footer?: string
   expense_document_header?: string
   expense_document_footer?: string
+  accent_color?: string
 }
 
 export function saveBusinessProfile(input: SaveBusinessProfileInput): Promise<BusinessProfile> {

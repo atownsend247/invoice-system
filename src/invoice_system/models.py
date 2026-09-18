@@ -120,12 +120,27 @@ class BusinessProfile:
     say something different - inserted into every quote/invoice/expense PDF
     this user generates respectively: the header before the title, the
     footer after the totals table. Deliberately simple - not per-page
-    running headers/footers (that would need reportlab page templates/
-    canvas callbacks, a bigger lift than anything asked for), just fixed
+    running headers/footers (that would need CSS position: running()/
+    @page margin-box content, a bigger lift than anything asked for), just fixed
     text once at the top and bottom of the document, which is enough for
     the common case (a slogan/company registration number up top, payment
     terms or a thank-you note at the bottom) on the short, mostly-single-
-    page documents this app generates."""
+    page documents this app generates.
+
+    accent_color is a single `#RRGGBB` hex string (e.g. "#2563EB") used as
+    the brand colour across every quote/invoice/expense PDF this user
+    generates (the title, the line-items table header, the totals
+    highlight - see pdf.py) - one shared value, not a per-document-type
+    triple like the header/footer pairs above, since it's "this business's
+    colour" rather than something that varies by document type. Nullable -
+    pdf.py falls back to a fixed neutral constant when unset, so a PDF
+    still looks finished before anyone visits Settings. Unlike every other
+    field on this class, its format *is* validated
+    (BusinessProfileService.save_profile) rather than accepted as free-form
+    text: it's interpolated directly into a CSS declaration in the
+    rendered template, not shown as escaped body text, so a malformed
+    value is a real injection boundary, not just a cosmetic format
+    check."""
 
     id: str
     user_id: str
@@ -151,6 +166,7 @@ class BusinessProfile:
     invoice_document_footer: str | None
     expense_document_header: str | None
     expense_document_footer: str | None
+    accent_color: str | None
     created_at: datetime
     updated_at: datetime
 

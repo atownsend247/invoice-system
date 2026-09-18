@@ -1,3 +1,4 @@
+import re
 from datetime import date as date_
 from datetime import timedelta
 from decimal import Decimal
@@ -35,6 +36,11 @@ MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024  # 10 MiB - see ExpenseService.add_attach
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 200  # see AccountService.list_accounts/QuoteService.list_quotes/InvoiceService.list_invoices
 DEFAULT_INVITE_EXPIRY_DAYS = 7  # see RegistrationInviteService.create_invite
+# BusinessProfile.accent_color is interpolated directly into a CSS
+# declaration by pdf.py's template, not shown as escaped body text like
+# every other free-text field on that model - see its docstring - so its
+# format is validated here rather than accepted as-is.
+_HEX_COLOR_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 def _validate_pagination(page: int, page_size: int) -> None:
@@ -239,6 +245,7 @@ class BusinessProfileService:
             invoice_document_footer=None,
             expense_document_header=None,
             expense_document_footer=None,
+            accent_color=None,
             created_at=now,
             updated_at=now,
         )
@@ -269,6 +276,7 @@ class BusinessProfileService:
         invoice_document_footer: str | None = None,
         expense_document_header: str | None = None,
         expense_document_footer: str | None = None,
+        accent_color: str | None = None,
     ) -> BusinessProfile:
         if not first_name.strip():
             raise ValidationFailed("first_name is required")
@@ -280,6 +288,9 @@ class BusinessProfileService:
             raise ValidationFailed("payment_terms_days must be a positive number of days")
         if not currency.strip():
             raise ValidationFailed("currency is required")
+        accent_color = _blank_to_none(accent_color)
+        if accent_color is not None and not _HEX_COLOR_PATTERN.match(accent_color):
+            raise ValidationFailed("accent_color must be a #RRGGBB hex colour")
 
         existing = self._repository.get_business_profile(user_id)
         created_at = existing.created_at if existing is not None else self._clock()
@@ -308,6 +319,7 @@ class BusinessProfileService:
             invoice_document_footer=_blank_to_none(invoice_document_footer),
             expense_document_header=_blank_to_none(expense_document_header),
             expense_document_footer=_blank_to_none(expense_document_footer),
+            accent_color=accent_color,
             created_at=created_at,
             updated_at=self._clock(),
         )

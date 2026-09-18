@@ -555,6 +555,7 @@ def test_upsert_business_profile_round_trip_and_update(repo):
         invoice_document_footer="Thank you!",
         expense_document_header="Expense header",
         expense_document_footer="Expense footer",
+        accent_color="#2563EB",
         created_at=created_at,
         updated_at=created_at,
     )
@@ -583,6 +584,7 @@ def test_upsert_business_profile_round_trip_and_update(repo):
     assert fetched.invoice_document_footer == "Thank you!"
     assert fetched.expense_document_header == "Expense header"
     assert fetched.expense_document_footer == "Expense footer"
+    assert fetched.accent_color == "#2563EB"
 
     updated_at = datetime(2026, 1, 2, tzinfo=UTC)
     second = BusinessProfile(
@@ -610,6 +612,7 @@ def test_upsert_business_profile_round_trip_and_update(repo):
         invoice_document_footer=None,
         expense_document_header=None,
         expense_document_footer=None,
+        accent_color=None,
         created_at=created_at,
         updated_at=updated_at,
     )
@@ -628,6 +631,7 @@ def test_upsert_business_profile_round_trip_and_update(repo):
     assert updated.quote_document_header is None
     assert updated.invoice_document_header is None
     assert updated.expense_document_header is None
+    assert updated.accent_color is None
 
 
 def test_expense_round_trip_with_line_items(repo, organisation_id):

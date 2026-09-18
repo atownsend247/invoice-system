@@ -583,6 +583,7 @@ def settings_show(application: Application, user_id: str) -> None:
     click.echo(f"Invoice footer: {profile.invoice_document_footer or '-'}")
     click.echo(f"Expense header: {profile.expense_document_header or '-'}")
     click.echo(f"Expense footer: {profile.expense_document_footer or '-'}")
+    click.echo(f"Accent colour: {profile.accent_color or '-'}")
 
 
 @settings.command("set")
@@ -617,6 +618,11 @@ def settings_show(application: Application, user_id: str) -> None:
 @click.option(
     "--expense-footer", default=None, help="Free text (multi-line OK) shown below every expense PDF."
 )
+@click.option(
+    "--accent-color",
+    default=None,
+    help="Brand colour used across every quote/invoice/expense PDF, as #RRGGBB.",
+)
 @click.pass_obj
 def settings_set(
     application: Application,
@@ -643,6 +649,7 @@ def settings_set(
     invoice_footer: str | None,
     expense_header: str | None,
     expense_footer: str | None,
+    accent_color: str | None,
 ) -> None:
     application.business_profiles.save_profile(
         user_id,
@@ -668,6 +675,7 @@ def settings_set(
         invoice_document_footer=invoice_footer,
         expense_document_header=expense_header,
         expense_document_footer=expense_footer,
+        accent_color=accent_color,
     )
     click.echo(f"Saved business profile for user {user_id}")
 

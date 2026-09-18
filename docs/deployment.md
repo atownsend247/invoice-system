@@ -34,9 +34,13 @@ Not automated by this pipeline — do this once per container:
    directly, you'll need `pct exec <vmid> -- <command>` wrapping instead of
    the direct `ssh` calls in `deploy/deploy.sh` — a small adjustment to
    that script, not the Jenkinsfile.
-2. Inside the container, install: `nginx`, `curl`, and a `deploy` user:
+2. Inside the container, install: `nginx`, `curl`, a `deploy` user, and the
+   native system libraries `pdf.py` needs to render PDFs via WeasyPrint
+   (Pango/HarfBuzz - not pure Python, see "WeasyPrint's native dependency"
+   below):
    ```
-   apt update && apt install -y nginx curl rsync
+   apt update && apt install -y nginx curl rsync \
+       libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 libharfbuzz-subset0
    useradd -m -s /bin/bash deploy
    ```
 3. As the `deploy` user, install `uv` (same installer as the Jenkins
@@ -114,6 +118,43 @@ Not automated by this pipeline — do this once per container:
 4. Edit the `environment { }` block at the top of the `Jenkinsfile` for
    your actual container hostname/paths — everything under "Proxmox LXC
    deploy target" there.
+5. **Install WeasyPrint's native dependencies on the agent itself** — the
+   `Backend` stage runs `uv run pytest` (which imports `pdf.py`) directly
+   on the Jenkins agent, not inside a fresh container the way a GitHub
+   Actions runner works, so this is a one-time step here rather than a
+   pipeline step in the `Jenkinsfile`:
+   ```
+   sudo apt-get update && sudo apt-get install -y --no-install-recommends \
+       libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 libharfbuzz-subset0
+   ```
+   See "WeasyPrint's native dependency" below.
+
+## WeasyPrint's native dependency
+
+`pdf.py` renders quote/invoice/expense PDFs via
+[WeasyPrint](https://weasyprint.org/) (HTML/CSS in, PDF bytes out) rather
+than a pure-Python library — it needs Pango/HarfBuzz installed as actual
+system libraries, not just something `uv sync`/`pip install` can pull in on
+its own. This needs a step beyond the usual "sync dependencies" in every
+environment that renders a PDF, not just the deployed backend:
+
+- **GitHub Actions CI** (`.github/workflows/ci.yml`): an `apt-get install`
+  step in both the `backend` job (runs `pytest`, which imports `pdf.py`
+  directly) and the `e2e` job (the live backend it spins up serves `GET
+  .../pdf` routes) — a fresh VM per run, so this has to be a workflow step,
+  every run.
+- **The Jenkins agent**: a one-time `apt-get install`, not a `Jenkinsfile`
+  step — see "One-time Jenkins setup" above. The agent is long-lived, not
+  ephemeral like a GitHub Actions runner.
+- **The Proxmox LXC container**: part of the container's one-time
+  provisioning — see "One-time Proxmox LXC container setup" above.
+
+The exact package list (currently `libpango-1.0-0 libharfbuzz0b
+libpangoft2-1.0-0 libharfbuzz-subset0` for Ubuntu ≥ 20.04, per WeasyPrint's
+own install docs) is worth re-checking against WeasyPrint's current docs
+when upgrading it — this has changed across their major versions, and a
+version pin bump is exactly the kind of change that can silently invalidate
+it.
 
 ## Why demo data is never deployed
 

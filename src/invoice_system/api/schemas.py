@@ -261,6 +261,7 @@ class BusinessProfileIn(BaseModel):
     invoice_document_footer: str | None = None
     expense_document_header: str | None = None
     expense_document_footer: str | None = None
+    accent_color: str | None = None
 
 
 class BusinessProfileOut(BaseModel):
@@ -286,6 +287,7 @@ class BusinessProfileOut(BaseModel):
     invoice_document_footer: str | None
     expense_document_header: str | None
     expense_document_footer: str | None
+    accent_color: str | None
     updated_at: datetime
 
     @classmethod
@@ -313,6 +315,7 @@ class BusinessProfileOut(BaseModel):
             invoice_document_footer=profile.invoice_document_footer,
             expense_document_header=profile.expense_document_header,
             expense_document_footer=profile.expense_document_footer,
+            accent_color=profile.accent_color,
             updated_at=profile.updated_at,
         )
 

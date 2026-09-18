@@ -3,7 +3,7 @@
 **Status: implemented** (`src/invoice_system/models.py`,
 `storage/schema.py`). Keep this table in sync with the actual schema — this
 doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` has
-thirteen entries: the flattened baseline (2026-09-16), migration 2 (added `tax_rate`
+fourteen entries: the flattened baseline (2026-09-16), migration 2 (added `tax_rate`
 to both line-item tables), migration 3 (added `Organisation` — the tenant
 boundary — plus nullable `organisation_id` columns on `accounts`/`quotes`/
 `invoices`), migration 4 (rescoped `Quote.number`/`Invoice.number`
@@ -36,11 +36,15 @@ migration 6 above - into three independent pairs, one per document type:
 add-columns/copy-data/drop-old-columns shape as migration 5's
 `accounts.address` split, existing values copied into all three new pairs
 rather than dropped - see `docs/api.md`'s per-document-type header/footer
-convention), and migration 13 (added `idx_invoices_organisation_quote` —
+convention), migration 13 (added `idx_invoices_organisation_quote` —
 one more plain `CREATE INDEX`, backing `list_invoices`' new `quote_id`
-filter — see `CLAUDE.md`'s Quote/Invoice conversion note). Schema changes
+filter — see `CLAUDE.md`'s Quote/Invoice conversion note), and migration 14
+(added a nullable `accent_color TEXT` column to `business_profiles` — one
+more plain `ADD COLUMN`, same shape as migration 6, backing the brand
+colour used across every quote/invoice/expense PDF a user generates — see
+`CLAUDE.md`'s `BusinessProfile` accent colour paragraph). Schema changes
 from here on are new entries appended to that list, not edits to any of
-these thirteen.
+these fourteen.
 
 ## Entities
 
@@ -53,7 +57,7 @@ these thirteen.
 | `LineItem` | id, description, quantity, unit_price, tax_rate, position | One shape, shared by quotes, invoices, and expenses; associated via `quote_line_items`/`invoice_line_items`/`expense_line_items` join tables (`quote_id`/`invoice_id`/`expense_id` + the same columns). `tax_rate` is a fraction (`0.20` = 20% UK VAT; `0` = none), independently set per line. `net_total`/`tax_amount`/`total` (`net_total + tax_amount`, gross) are derived properties, never stored — `tax_amount` is rounded to the minor currency unit, `net_total` is not (see `CLAUDE.md`). |
 | `Expense` | id, organisation_id, account_id, number, currency, issue_date, created_at | A cost incurred against an `Account` (e.g. a domain renewal paid on the client's behalf) — see `CLAUDE.md`. Unlike `Quote`/`Invoice`, no `status` column: there's no draft/sent lifecycle, so `number` (`EXP-0001`, ..., same per-`organisation_id` composite-unique-index pattern as `Quote.number`/`Invoice.number` — see migration 8) is `NOT NULL` and assigned by `ExpenseService.create_expense` immediately, not deferred to a later `send()`. |
 | `ExpenseAttachment` | id, expense_id, filename, content_type, size, created_at | A supplementary PDF (e.g. a scanned receipt) uploaded against an `Expense` — see `CLAUDE.md`. **Metadata only**: the bytes live on the filesystem (`attachments.py`'s `AttachmentStore`, keyed by `id`), not in this row — `filename`/`content_type`/`size` exist purely for display/validation. Addable at any time, same no-lifecycle reasoning as `Expense.line_items`. No `organisation_id` column, same as `quote_line_items`/`expense_line_items` — tenant ownership is always resolved via the parent `expense_id` first (`ExpenseService.get_attachment_bytes`/`delete_attachment` both call `_get_expense` before touching an attachment). |
-| `BusinessProfile` | id, user_id, title, first_name, last_name, business_name, address_line1, address_line2, town_or_city, county, postcode, payment_terms_days, currency, utr, vat_number, bank_account_name, bank_sort_code, bank_account_number, quote_document_header, quote_document_footer, invoice_document_header, invoice_document_footer, expense_document_header, expense_document_footer, created_at, updated_at | The logged-in user's *own* details, in four groups (see `CLAUDE.md`), presented as tabs on the Settings page: user settings (`title` optional, `first_name`/`last_name` required), business settings (`business_name` required; `address_line1`/`address_line2`/`town_or_city`/`county`/`postcode` — a UK GOV.UK Design System-style address, each line independently optional), payment and tax settings (`payment_terms_days`, `currency` — the home dashboard's *reporting* currency, defaults `"GBP"`, independent of any quote/invoice's own `currency` — `utr`/`vat_number` purely informational, not rendered on a PDF; `bank_account_name`/`bank_sort_code`/`bank_account_number` render as a "Payment details" section on generated **invoices only**, never quotes or expenses — see `pdf.py`'s `bank_details_lines()`), document settings (three **independent** pairs, one per document type, not one shared pair — `quote_document_header`/`quote_document_footer`, `invoice_document_header`/`invoice_document_footer`, `expense_document_header`/`expense_document_footer`, each free text, each field independently optional — inserted into the matching quote/invoice/expense PDF this user generates, see `pdf.py`'s `quote_header_lines()`/`quote_footer_lines()` and its `invoice_`/`expense_` equivalents, and the invariants below). Not `Account` (the client being billed). One per `user_id` (`UNIQUE`), which is sessionkit's `User.id` — a plain column, not an enforced FK (see `CLAUDE.md`, "Login accounts" below). Deliberately still per-*user*, not per-`Organisation` — see "Multi-tenancy" below. Every optional field: blank input is normalised to `NULL`, never stored as `""`. |
+| `BusinessProfile` | id, user_id, title, first_name, last_name, business_name, address_line1, address_line2, town_or_city, county, postcode, payment_terms_days, currency, utr, vat_number, bank_account_name, bank_sort_code, bank_account_number, quote_document_header, quote_document_footer, invoice_document_header, invoice_document_footer, expense_document_header, expense_document_footer, accent_color, created_at, updated_at | The logged-in user's *own* details, in four groups (see `CLAUDE.md`), presented as tabs on the Settings page: user settings (`title` optional, `first_name`/`last_name` required), business settings (`business_name` required; `address_line1`/`address_line2`/`town_or_city`/`county`/`postcode` — a UK GOV.UK Design System-style address, each line independently optional), payment and tax settings (`payment_terms_days`, `currency` — the home dashboard's *reporting* currency, defaults `"GBP"`, independent of any quote/invoice's own `currency` — `utr`/`vat_number` purely informational, not rendered on a PDF; `bank_account_name`/`bank_sort_code`/`bank_account_number` render as a "Payment details" section on generated **invoices only**, never quotes or expenses — see `pdf.py`'s `bank_details_lines()`), document settings (three **independent** pairs, one per document type, not one shared pair — `quote_document_header`/`quote_document_footer`, `invoice_document_header`/`invoice_document_footer`, `expense_document_header`/`expense_document_footer`, each free text, each field independently optional — inserted into the matching quote/invoice/expense PDF this user generates, see `pdf.py`'s `quote_header_lines()`/`quote_footer_lines()` and its `invoice_`/`expense_` equivalents, and the invariants below — plus `accent_color`, one shared `#RRGGBB` hex colour across all three document types, the one field on this row whose format is actually validated rather than accepted as free text, since it's interpolated directly into a CSS declaration in the rendered PDF template — see `pdf.py`'s `_render()` and `CLAUDE.md`). Not `Account` (the client being billed). One per `user_id` (`UNIQUE`), which is sessionkit's `User.id` — a plain column, not an enforced FK (see `CLAUDE.md`, "Login accounts" below). Deliberately still per-*user*, not per-`Organisation` — see "Multi-tenancy" below. Every optional field: blank input is normalised to `NULL`, never stored as `""`. |
 | `RegistrationInvite` | token, created_at, expires_at, used_at | A single-use, time-limited token gating the public `/register` page — see `CLAUDE.md`'s invite-gated registration convention and `docs/api.md`. `token` (a UUID4) is the primary key; nothing else ever looks one up. **No `organisation_id` and no email column** — not scoped to a tenant (an invite exists before any `Organisation` does) and not tied to a specific email (whoever holds a valid token can register with any one). `used_at` is `NULL` until consumed; `RegistrationInviteService.check_invite` treats an unknown token, an expired one, and an already-used one identically. Created **only** via `invoice-system-cli invite create` — no API route creates one. |
 | counters (internal) | name, value | Backs `next_quote_number`/`next_invoice_number`/`next_expense_number`; not a domain entity, not exposed via API/CLI. `name` is `"<organisation_id>:quote"`/`"<organisation_id>:invoice"`/`"<organisation_id>:expense"`, not a bare `"quote"`/`"invoice"`/`"expense"` — each organisation gets its own independent sequence starting from one. |
 
@@ -228,9 +232,9 @@ Expense 1──* ExpenseAttachment
   and each of `render_quote_pdf`/`render_invoice_pdf`/`render_expense_pdf`
   passes in its own pair) — the header above the title, the footer below
   the totals table, each split into its non-blank lines. Deliberately not
-  a per-page running header/footer (that needs reportlab page templates/
-  canvas callbacks); just fixed text once at the top and bottom of the
-  document.
+  a per-page running header/footer (that needs CSS `position: running()`/
+  `@page` margin-box content); just fixed text once at the top and bottom
+  of the document.
 
 ## Multi-tenancy
 

@@ -756,6 +756,7 @@ def test_business_profile_defaults_before_first_save(client, auth_headers):
     assert body["invoice_document_footer"] is None
     assert body["expense_document_header"] is None
     assert body["expense_document_footer"] is None
+    assert body["accent_color"] is None
 
 
 def test_saving_business_profile_persists_and_is_returned_on_refetch(client, auth_headers):
@@ -784,6 +785,7 @@ def test_saving_business_profile_persists_and_is_returned_on_refetch(client, aut
             "invoice_document_footer": "Thank you for your business!",
             "expense_document_header": "Acme Consulting",
             "expense_document_footer": "Internal use only.",
+            "accent_color": "#2563EB",
         },
         headers=auth_headers,
     )
@@ -810,6 +812,7 @@ def test_saving_business_profile_persists_and_is_returned_on_refetch(client, aut
     assert response.json()["invoice_document_footer"] == "Thank you for your business!"
     assert response.json()["expense_document_header"] == "Acme Consulting"
     assert response.json()["expense_document_footer"] == "Internal use only."
+    assert response.json()["accent_color"] == "#2563EB"
 
 
 def test_address_fields_are_optional(client, auth_headers):
@@ -867,6 +870,21 @@ def test_saving_business_profile_without_first_name_returns_422(client, auth_hea
     response = client.put(
         "/settings/business-profile",
         json={"first_name": "", "last_name": "Lovelace", "business_name": "Acme", "payment_terms_days": 30},
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
+def test_saving_business_profile_with_a_malformed_accent_color_returns_422(client, auth_headers):
+    response = client.put(
+        "/settings/business-profile",
+        json={
+            "first_name": "Ada",
+            "last_name": "Lovelace",
+            "business_name": "Acme",
+            "payment_terms_days": 30,
+            "accent_color": "not-a-color",
+        },
         headers=auth_headers,
     )
     assert response.status_code == 422

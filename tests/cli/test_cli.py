@@ -1185,6 +1185,7 @@ def test_settings_show_defaults_then_set_and_show_again(tmp_path):
     assert "Quote header: -" in result.output
     assert "Invoice header: -" in result.output
     assert "Expense header: -" in result.output
+    assert "Accent colour: -" in result.output
 
     result = runner.invoke(
         cli,
@@ -1225,6 +1226,8 @@ def test_settings_show_defaults_then_set_and_show_again(tmp_path):
             "Acme Consulting",
             "--expense-footer",
             "Internal use only.",
+            "--accent-color",
+            "#2563EB",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -1258,6 +1261,7 @@ def test_settings_show_defaults_then_set_and_show_again(tmp_path):
     assert "Invoice footer: Thank you!" in result.output
     assert "Expense header: Acme Consulting" in result.output
     assert "Expense footer: Internal use only." in result.output
+    assert "Accent colour: #2563EB" in result.output
 
 
 def test_settings_set_requires_first_name(tmp_path):

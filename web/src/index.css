@@ -524,6 +524,25 @@ button.secondary {
   min-width: 0;
 }
 
+.accent-color-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.accent-color-field input[type='color'] {
+  min-width: 2.4rem;
+  width: 2.4rem;
+  height: 2.2rem;
+  padding: 0.15rem;
+  cursor: pointer;
+}
+
+.accent-color-field input[type='text'] {
+  min-width: 8rem;
+  width: 8rem;
+}
+
 .settings-tabs {
   display: flex;
   gap: 0.5rem;

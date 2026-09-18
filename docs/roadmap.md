@@ -897,5 +897,60 @@ flow," not a restructuring, whenever it's actually needed.
       quote and back before clicking "View invoice", not just checking
       the one-time post-conversion redirect) suites updated and passing.
 
+## Phase 30 — HTML/CSS PDF rendering (WeasyPrint) + a configurable accent colour (done)
+
+- [x] Compared the existing reportlab/platypus PDF output against a rough
+      HTML/CSS mockup (logo mark, rounded status pill, alternating row
+      shading, a tinted totals row) and preferred the HTML/CSS look -
+      that styling isn't realistically achievable in platypus's
+      flowable/table model, so `pdf.py`'s rendering *engine* was replaced
+      wholesale: Jinja2 builds the HTML (`templates/document.html.jinja`,
+      one shared template for quote/invoice/expense, mirroring `_render`'s
+      existing "one function, three thin callers" shape), and
+      [WeasyPrint](https://weasyprint.org/) turns that HTML/CSS into PDF
+      bytes. `_render()`'s own signature is unchanged -
+      `render_quote_pdf`/`render_invoice_pdf`/`render_expense_pdf` didn't
+      need to change at all, and neither did the pure line-selection
+      helpers (`business_profile_lines`/`account_address_lines`/
+      `bank_details_lines`/the six header/footer functions) - only what
+      `_render` does internally swapped engines.
+- [x] `BusinessProfile` gained `accent_color` (migration 14, a nullable
+      `#RRGGBB` hex string) - one shared brand colour across every
+      quote/invoice/expense PDF a user generates (not a third
+      per-document-type triple like the header/footer pairs - "this
+      business's colour" doesn't vary by document type), surfaced as a
+      colour-picker-plus-text-input pair on the Settings page's existing
+      Document tab, above the Quotes/Invoices/Expenses sub-groups since
+      it's shared across all three. Falls back to a fixed neutral
+      constant when unset, so a PDF still looks finished before anyone
+      visits Settings.
+- [x] `accent_color` is the one `BusinessProfile` field whose format is
+      actually validated (`^#[0-9a-fA-F]{6}$`, `ValidationFailed`
+      otherwise) rather than accepted as free-form text like every other
+      optional field on that model - it's interpolated directly into a
+      CSS declaration in the rendered template rather than shown as
+      escaped body text, so a malformed value is a real injection
+      boundary, not just a cosmetic format check.
+- [x] Jinja2's `autoescape=True` replaces `pdf.py`'s old hand-rolled
+      `xml.sax.saxutils.escape()` helper (from the Phase 28 word-wrap fix)
+      entirely - every free-text value flowing into the template is
+      HTML-escaped automatically, with nothing bespoke left to remember
+      to call per value. `weasyprint.HTML(string=html, base_url=None)` is
+      deliberate too: with no filesystem/network base to resolve a
+      `url()`/`<img src>` against, and the template itself never emitting
+      one (no logo in this scope), external resource fetching is switched
+      off entirely rather than merely unexploited.
+- [x] WeasyPrint needs native system libraries (Pango/HarfBuzz), not just
+      a `uv sync`-able package - added an `apt-get install` step to both
+      the `backend` and `e2e` GitHub Actions CI jobs, and documented the
+      equivalent one-time `apt-get install` for the Jenkins agent and the
+      Proxmox LXC deploy target (`docs/deployment.md`'s "WeasyPrint's
+      native dependency" section).
+- [x] Full backend suite (308 tests, 98%+ coverage, 100% on `pdf.py`) and
+      full e2e suite (57 tests, including the existing settings.spec.ts
+      coverage extended to the new colour field) updated and passing;
+      confirmed via `uv build` that the new template file is actually
+      included in the built wheel.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

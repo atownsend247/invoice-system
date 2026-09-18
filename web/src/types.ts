@@ -121,6 +121,10 @@ export interface BusinessProfile {
   invoice_document_footer: string | null
   expense_document_header: string | null
   expense_document_footer: string | null
+  // A single #RRGGBB hex colour used as the brand colour across every
+  // quote/invoice/expense PDF this user generates - one shared value, not
+  // a per-document-type triple like the header/footer pairs above.
+  accent_color: string | null
   updated_at: string
 }
 

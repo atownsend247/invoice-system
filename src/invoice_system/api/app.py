@@ -564,6 +564,7 @@ def save_business_profile(
         invoice_document_footer=body.invoice_document_footer,
         expense_document_header=body.expense_document_header,
         expense_document_footer=body.expense_document_footer,
+        accent_color=body.accent_color,
     )
     return BusinessProfileOut.from_model(profile)
 

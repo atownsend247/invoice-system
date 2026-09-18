@@ -222,8 +222,8 @@ class SqliteRepository:
                 "payment_terms_days, currency, utr, vat_number, bank_account_name, bank_sort_code, "
                 "bank_account_number, quote_document_header, quote_document_footer, "
                 "invoice_document_header, invoice_document_footer, expense_document_header, "
-                "expense_document_footer, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "expense_document_footer, accent_color, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(user_id) DO UPDATE SET "
                 "title = excluded.title, "
                 "first_name = excluded.first_name, "
@@ -247,6 +247,7 @@ class SqliteRepository:
                 "invoice_document_footer = excluded.invoice_document_footer, "
                 "expense_document_header = excluded.expense_document_header, "
                 "expense_document_footer = excluded.expense_document_footer, "
+                "accent_color = excluded.accent_color, "
                 "updated_at = excluded.updated_at",
                 (
                     profile.id,
@@ -273,6 +274,7 @@ class SqliteRepository:
                     profile.invoice_document_footer,
                     profile.expense_document_header,
                     profile.expense_document_footer,
+                    profile.accent_color,
                     profile.created_at.isoformat(),
                     profile.updated_at.isoformat(),
                 ),
@@ -310,6 +312,7 @@ class SqliteRepository:
             invoice_document_footer=row["invoice_document_footer"],
             expense_document_header=row["expense_document_header"],
             expense_document_footer=row["expense_document_footer"],
+            accent_color=row["accent_color"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )

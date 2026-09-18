@@ -58,6 +58,7 @@ function BusinessProfileForm({ profile }: { profile: BusinessProfile }) {
   const [invoiceFooter, setInvoiceFooter] = useState(profile.invoice_document_footer ?? '')
   const [expenseHeader, setExpenseHeader] = useState(profile.expense_document_header ?? '')
   const [expenseFooter, setExpenseFooter] = useState(profile.expense_document_footer ?? '')
+  const [accentColor, setAccentColor] = useState(profile.accent_color ?? '')
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -91,6 +92,7 @@ function BusinessProfileForm({ profile }: { profile: BusinessProfile }) {
         invoice_document_footer: invoiceFooter || undefined,
         expense_document_header: expenseHeader || undefined,
         expense_document_footer: expenseFooter || undefined,
+        accent_color: accentColor || undefined,
       })
       // Reflect what the server actually stored (e.g. a blank UTR is
       // normalised to null) rather than trusting the pre-submit input back.
@@ -116,6 +118,7 @@ function BusinessProfileForm({ profile }: { profile: BusinessProfile }) {
       setInvoiceFooter(updated.invoice_document_footer ?? '')
       setExpenseHeader(updated.expense_document_header ?? '')
       setExpenseFooter(updated.expense_document_footer ?? '')
+      setAccentColor(updated.accent_color ?? '')
       setSaved(true)
     } catch (err) {
       setError(errorMessage(err))
@@ -269,6 +272,27 @@ function BusinessProfileForm({ profile }: { profile: BusinessProfile }) {
       >
         <fieldset className="form-section">
           <legend>Document settings</legend>
+
+          <div className="form-section-fields">
+            <label>
+              Accent colour (optional)
+              <span className="accent-color-field">
+                <input
+                  type="color"
+                  aria-label="Colour picker"
+                  value={/^#[0-9a-f]{6}$/i.test(accentColor) ? accentColor : '#1f2430'}
+                  onChange={(event) => setAccentColor(event.target.value)}
+                />
+                <input
+                  type="text"
+                  aria-label="Accent colour"
+                  value={accentColor}
+                  onChange={(event) => setAccentColor(event.target.value)}
+                  placeholder="#2563EB"
+                />
+              </span>
+            </label>
+          </div>
 
           <fieldset className="form-subsection">
             <legend>Quotes</legend>

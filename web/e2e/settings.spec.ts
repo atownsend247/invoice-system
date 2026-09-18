@@ -80,6 +80,7 @@ test('saving all fields persists them across a reload', async ({ authenticatedPa
   await page.getByLabel('Bank account number (optional)').fill('12345678')
 
   await page.getByRole('tab', { name: 'Document' }).click()
+  await page.getByLabel('Accent colour').fill('#2563eb')
   await page.getByLabel('Quote header (optional)').fill('Contoso Consulting')
   await page.getByLabel('Quote footer (optional)').fill('Valid for 30 days.')
   await page.getByLabel('Invoice header (optional)').fill('Contoso Consulting\nCompany no. 12345678')
@@ -113,6 +114,7 @@ test('saving all fields persists them across a reload', async ({ authenticatedPa
   await expect(page.getByLabel('Bank account number (optional)')).toHaveValue('12345678')
 
   await page.getByRole('tab', { name: 'Document' }).click()
+  await expect(page.getByLabel('Accent colour')).toHaveValue('#2563eb')
   await expect(page.getByLabel('Quote header (optional)')).toHaveValue('Contoso Consulting')
   await expect(page.getByLabel('Quote footer (optional)')).toHaveValue('Valid for 30 days.')
   await expect(page.getByLabel('Invoice header (optional)')).toHaveValue(
