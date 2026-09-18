@@ -49,9 +49,8 @@ pipeline {
         stage('Checkout') {
             steps {
                 script {
-                    def scmVars = checkout scm 
-                    echo "Branch: ${scmVars.GIT_BRANCH}"
-                    env.GIT_LOCAL_BRANCH = scmVars.GIT_BRANCH.replaceFirst('^origin/', '')
+                    def scmVars = checkout scm
+                    echo "Branch: ${scmVars.GIT_BRANCH} (env.BRANCH_NAME: ${env.BRANCH_NAME})"
                 }
             }
         }
@@ -127,7 +126,7 @@ pipeline {
             // before shipping it. Only runs when a deploy is actually
             // about to happen, so PRs/other branches don't pay for it.
             when {
-                expression { "${env.GIT_LOCAL_BRANCH}" == 'main' }
+                branch 'main'
             }
             environment {
                 VITE_API_BASE_URL = "${env.API_PUBLIC_URL}"
@@ -141,7 +140,7 @@ pipeline {
 
         stage('Deploy') {
             when {
-                expression { "${env.GIT_LOCAL_BRANCH}" == 'main' }
+                branch 'main'
             }
             steps {
                 sh 'chmod +x deploy/deploy.sh && ./deploy/deploy.sh'

@@ -36,11 +36,12 @@ Not automated by this pipeline — do this once per container:
    that script, not the Jenkinsfile.
 2. Inside the container, install: `nginx`, `curl`, a `deploy` user, and the
    native system libraries `pdf.py` needs to render PDFs via WeasyPrint
-   (Pango/HarfBuzz - not pure Python, see "WeasyPrint's native dependency"
-   below):
+   (GLib/GObject, Pango, HarfBuzz, fontconfig - not pure Python, see
+   "WeasyPrint's native dependency" below):
    ```
    apt update && apt install -y nginx curl rsync \
-       libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 libharfbuzz-subset0
+       libglib2.0-0 libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 \
+       libharfbuzz-subset0 libfontconfig1
    useradd -m -s /bin/bash deploy
    ```
 3. As the `deploy` user, install `uv` (same installer as the Jenkins
@@ -125,7 +126,8 @@ Not automated by this pipeline — do this once per container:
    pipeline step in the `Jenkinsfile`:
    ```
    sudo apt-get update && sudo apt-get install -y --no-install-recommends \
-       libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 libharfbuzz-subset0
+       libglib2.0-0 libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 \
+       libharfbuzz-subset0 libfontconfig1
    ```
    See "WeasyPrint's native dependency" below.
 
@@ -133,9 +135,9 @@ Not automated by this pipeline — do this once per container:
 
 `pdf.py` renders quote/invoice/expense PDFs via
 [WeasyPrint](https://weasyprint.org/) (HTML/CSS in, PDF bytes out) rather
-than a pure-Python library — it needs Pango/HarfBuzz installed as actual
-system libraries, not just something `uv sync`/`pip install` can pull in on
-its own. This needs a step beyond the usual "sync dependencies" in every
+than a pure-Python library — it needs several native system libraries
+installed, not just something `uv sync`/`pip install` can pull in on its
+own. This needs a step beyond the usual "sync dependencies" in every
 environment that renders a PDF, not just the deployed backend:
 
 - **GitHub Actions CI** (`.github/workflows/ci.yml`): an `apt-get install`
@@ -149,12 +151,25 @@ environment that renders a PDF, not just the deployed backend:
 - **The Proxmox LXC container**: part of the container's one-time
   provisioning — see "One-time Proxmox LXC container setup" above.
 
-The exact package list (currently `libpango-1.0-0 libharfbuzz0b
-libpangoft2-1.0-0 libharfbuzz-subset0` for Ubuntu ≥ 20.04, per WeasyPrint's
-own install docs) is worth re-checking against WeasyPrint's current docs
-when upgrading it — this has changed across their major versions, and a
-version pin bump is exactly the kind of change that can silently invalidate
-it.
+The current package list is `libglib2.0-0 libpango-1.0-0 libharfbuzz0b
+libpangoft2-1.0-0 libharfbuzz-subset0 libfontconfig1` for Ubuntu/Debian.
+**Don't take WeasyPrint's own install docs as the complete list** — they
+were the starting point here and turned out to be missing `libglib2.0-0`
+(providing `libgobject-2.0-0`) and `libfontconfig1`, only discovered when
+a real deploy to a minimal Proxmox LXC container failed with `OSError:
+cannot load library 'libgobject-2.0-0'`. GitHub Actions' `ubuntu-latest`
+runner didn't catch this — it's a large, fully-provisioned VM image where
+GLib and fontconfig are already present as dependencies of other
+preinstalled software, so the (at-the-time incomplete) `apt-get install`
+step there "worked" without actually proving the package list was
+complete. A minimal container is the real test. The authoritative source
+for the full list is WeasyPrint's own code, not its docs: the installed
+package's `weasyprint/text/ffi.py` calls `_dlopen()` once per native
+library it needs (`gobject`, `pango`, `harfbuzz`, `harfbuzz_subset`,
+`fontconfig`, `pangoft2`, as of WeasyPrint 70) — re-check that function
+directly against whatever version is pinned in `pyproject.toml` when
+upgrading it, rather than trusting a docs page (either WeasyPrint's or
+this one) to have kept up.
 
 ## Why demo data is never deployed
 

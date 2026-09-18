@@ -802,25 +802,33 @@ Four separate things are easy to conflate here — don't:
   version definitions are stale — `git -C "$(nodenv root)/plugins/node-build"
   pull` refreshes them.
 - **WeasyPrint (`pdf.py`'s PDF renderer) needs native system libraries**
-  (Pango/HarfBuzz - currently `libpango-1.0-0 libharfbuzz0b
-  libpangoft2-1.0-0 libharfbuzz-subset0` on Ubuntu/Debian, see WeasyPrint's
-  own install docs, since this has changed across their major versions),
-  not just something `uv sync` can install on its own — same shape of
-  gotcha as the Node version pin above ("this needs an extra step, don't
-  assume it just works"), but for a system package rather than a language
-  runtime. Every environment that renders a PDF needs it: local dev (most
-  package managers' Cairo/GTK stack already pulls it in transitively, so
-  this is usually invisible there), GitHub Actions CI (`.github/
-  workflows/ci.yml`'s `backend`/`e2e` jobs each have an explicit
-  `apt-get install` step, since a fresh runner VM has nothing pre-installed
-  and there's no persistent host to provision once), and the deploy
-  target (a one-time `apt-get install` on the Jenkins agent and the
-  Proxmox LXC container - see `docs/deployment.md`'s "WeasyPrint's native
-  dependency" section for the full list of where this is wired up).
-  Missing this produces an import-time error (`OSError` from WeasyPrint's
-  own `cffi` bindings failing to find the shared library), not a subtle
-  rendering bug - noisy and immediate, not the kind of thing that passes
-  silently.
+  (GLib/GObject, Pango, HarfBuzz, fontconfig - currently `libglib2.0-0
+  libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 libharfbuzz-subset0
+  libfontconfig1` on Ubuntu/Debian), not just something `uv sync` can
+  install on its own — same shape of gotcha as the Node version pin above
+  ("this needs an extra step, don't assume it just works"), but for a
+  system package rather than a language runtime. Every environment that
+  renders a PDF needs it: local dev (most package managers' Cairo/GTK
+  stack already pulls it in transitively, so this is usually invisible
+  there), GitHub Actions CI (`.github/workflows/ci.yml`'s `backend`/`e2e`
+  jobs each have an explicit `apt-get install` step, since a fresh runner
+  VM has nothing pre-installed and there's no persistent host to
+  provision once), and the deploy target (a one-time `apt-get install` on
+  the Jenkins agent and the Proxmox LXC container - see
+  `docs/deployment.md`'s "WeasyPrint's native dependency" section for the
+  full list of where this is wired up). Missing this produces an
+  import-time error (`OSError: cannot load library '...'` from
+  WeasyPrint's own `cffi` bindings failing to find a shared library), not
+  a subtle rendering bug - noisy and immediate, not the kind of thing
+  that passes silently. **Don't trust WeasyPrint's own install docs as
+  the complete list** - they were missing `libglib2.0-0`/`libfontconfig1`
+  here, only caught when a real deploy to a minimal Proxmox LXC container
+  failed (GitHub Actions' `ubuntu-latest` runner already has both
+  preinstalled as transitive deps of other software, so CI passing proved
+  nothing about completeness). The authoritative list is WeasyPrint's own
+  `weasyprint/text/ffi.py` - it calls `_dlopen()` once per native library
+  it actually needs; re-check that function against whatever version is
+  pinned when upgrading, not a docs page.
 - `web/src/api.ts`'s `BASE_URL` is **not** a hardcoded `127.0.0.1:8000`
   fallback — `defaultApiBaseUrl()` derives it from `window.location`
   (same host the page itself was loaded from, port 8000), literal
