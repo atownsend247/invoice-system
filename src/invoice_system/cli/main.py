@@ -527,10 +527,21 @@ def expense() -> None:
 @click.option("--user-id", required=True, help=_USER_ID_HELP)
 @click.option("--account-id", required=True)
 @click.option("--currency", default="USD", show_default=True)
+@click.option(
+    "--expense-date",
+    default=None,
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="When the expense actually happened, if different from today - see CLAUDE.md.",
+)
 @click.pass_obj
-def expense_create(application: Application, user_id: str, account_id: str, currency: str) -> None:
+def expense_create(
+    application: Application, user_id: str, account_id: str, currency: str, expense_date: datetime | None
+) -> None:
     created = application.expenses.create_expense(
-        organisation_id=_organisation_id(application, user_id), account_id=account_id, currency=currency
+        organisation_id=_organisation_id(application, user_id),
+        account_id=account_id,
+        currency=currency,
+        expense_date=expense_date.date() if expense_date else None,
     )
     click.echo(f"Created expense {created.id} ({created.number})")
 
@@ -542,7 +553,19 @@ def expense_create(application: Application, user_id: str, account_id: str, curr
 def expense_list(application: Application, user_id: str, account_id: str | None) -> None:
     organisation_id = _organisation_id(application, user_id)
     for exp in application.expenses.list_expenses(organisation_id, account_id=account_id):
-        click.echo(f"{exp.id}\t{exp.number}\t{exp.total} {exp.currency}")
+        click.echo(f"{exp.id}\t{exp.number}\t{exp.total} {exp.currency}\texpense date {exp.expense_date}")
+
+
+@expense.command("set-date")
+@click.argument("expense_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option("--expense-date", required=True, type=click.DateTime(formats=["%Y-%m-%d"]))
+@click.pass_obj
+def expense_set_date(application: Application, expense_id: str, user_id: str, expense_date: datetime) -> None:
+    updated = application.expenses.update_expense_date(
+        _organisation_id(application, user_id), expense_id, expense_date.date()
+    )
+    click.echo(f"Updated expense {updated.id}: expense date is now {updated.expense_date}")
 
 
 @expense.command("monthly-totals")

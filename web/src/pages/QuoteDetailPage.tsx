@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import * as api from '../api'
 import { LineItemsTable } from '../components/LineItemsTable'
 import { PdfViewerModal } from '../components/PdfViewerModal'
@@ -60,6 +60,9 @@ export function QuoteDetailPage() {
 
   return (
     <section>
+      <Link to={`/accounts/${quote.account_id}`} className="back-link">
+        ← Back to {account?.business_name ?? 'account'}
+      </Link>
       <div className="page-header">
         <h1>{quote.number ?? `Draft quote #${quote.id}`}</h1>
         <StatusBadge status={quote.status} />

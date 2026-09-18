@@ -198,13 +198,17 @@ export interface ExpenseAttachment {
 // workflow, so `number` (EXP-0001, same per-organisation counter pattern
 // as Quote.number/Invoice.number) is always set, never null - see
 // CLAUDE.md and models.Expense. `attachments` are addable at any time too,
-// same no-lifecycle reasoning as `line_items`.
+// same no-lifecycle reasoning as `line_items`. `issue_date` (when this was
+// recorded) and `expense_date` (when the money was actually spent) answer
+// different questions - see CLAUDE.md - `expense_date` is the one field
+// here that's editable after creation.
 export interface Expense {
   id: string
   account_id: string
   number: string
   currency: string
   issue_date: string
+  expense_date: string
   created_at: string
   line_items: LineItem[]
   attachments: ExpenseAttachment[]

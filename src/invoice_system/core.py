@@ -833,7 +833,14 @@ class ExpenseService:
         self._new_id = new_id
         self._attachments = attachments
 
-    def create_expense(self, *, organisation_id: str, account_id: str, currency: str = "USD") -> Expense:
+    def create_expense(
+        self,
+        *,
+        organisation_id: str,
+        account_id: str,
+        currency: str = "USD",
+        expense_date: date_ | None = None,
+    ) -> Expense:
         if self._repository.get_account(organisation_id, account_id) is None:
             raise NotFound(f"account {account_id} not found")
         expense = Expense(
@@ -843,6 +850,7 @@ class ExpenseService:
             number=self._repository.next_expense_number(organisation_id),
             currency=currency,
             issue_date=self._clock().date(),
+            expense_date=expense_date if expense_date is not None else self._clock().date(),
             created_at=self._clock(),
         )
         return self._repository.create_expense(expense)
@@ -852,6 +860,11 @@ class ExpenseService:
 
     def list_expenses(self, organisation_id: str, account_id: str | None = None) -> list[Expense]:
         return self._repository.list_expenses(organisation_id, account_id=account_id)
+
+    def update_expense_date(self, organisation_id: str, expense_id: str, expense_date: date_) -> Expense:
+        expense = self._get_expense(organisation_id, expense_id)
+        expense.expense_date = expense_date
+        return self._repository.update_expense_date(expense)
 
     def add_line_item(
         self,
@@ -885,8 +898,12 @@ class ExpenseService:
         included), for `organisation_id`'s expenses in `currency` only -
         same currency-filtering convention as InvoiceService.monthly_totals,
         an expense in a different currency is excluded rather than naively
-        summed in. Grouped by `issue_date`, same as invoices. No paid/unpaid
-        split - an Expense has no status (see models.Expense)."""
+        summed in. Grouped by `expense_date` - when the money was actually
+        spent, not `issue_date` (when the record was created) - so
+        backdating an entry (e.g. logging a receipt from last week) counts
+        it against the month it actually happened in, not the month it was
+        typed in. No paid/unpaid split - an Expense has no status (see
+        models.Expense)."""
         buckets: dict[str, MonthlyExpenseTotals] = {}
         order: list[str] = []
         cursor = _month_start(self._clock().date())
@@ -900,7 +917,7 @@ class ExpenseService:
         for expense in self._repository.list_expenses(organisation_id):
             if expense.currency != currency:
                 continue
-            bucket = buckets.get(_month_key(expense.issue_date))
+            bucket = buckets.get(_month_key(expense.expense_date))
             if bucket is None:
                 continue
             bucket.total += expense.total

@@ -361,7 +361,21 @@ class Expense:
     since VAT paid on a business expense may be separately reclaimable.
     `attachments` (see ExpenseAttachment above) are supplementary PDFs
     (receipts, etc.) uploaded against this expense - also addable at any
-    time, same no-lifecycle reasoning as line items."""
+    time, same no-lifecycle reasoning as line items.
+
+    `issue_date` and `expense_date` answer two different questions, easy
+    to conflate: `issue_date` is when this record was *created* (a system
+    timestamp, set once from the ambient clock, never user-editable - same
+    role `Quote.issue_date`/`Invoice.issue_date` play). `expense_date` is
+    when the money was *actually spent* - defaults to today at creation
+    (`ExpenseService.create_expense`'s own `expense_date` parameter,
+    falling back to the clock when omitted) but, unlike every other
+    top-level field here, stays editable afterward
+    (`ExpenseService.update_expense_date`) - entering a receipt today for
+    something bought last week is the exact case this exists for.
+    `ExpenseService.monthly_totals` buckets by `expense_date`, not
+    `issue_date`, for the same reason: the home dashboard's chart should
+    reflect when spending happened, not when it was typed in."""
 
     id: str
     organisation_id: str
@@ -369,6 +383,7 @@ class Expense:
     number: str
     currency: str
     issue_date: date
+    expense_date: date
     created_at: datetime
     line_items: list[LineItem] = field(default_factory=list)
     attachments: list[ExpenseAttachment] = field(default_factory=list)

@@ -242,6 +242,11 @@ class InvoiceListOut(BaseModel):
 class ExpenseCreateIn(BaseModel):
     account_id: str
     currency: str = "USD"
+    expense_date: date | None = None
+
+
+class ExpenseDateIn(BaseModel):
+    expense_date: date
 
 
 class ExpenseAttachmentOut(BaseModel):
@@ -268,6 +273,7 @@ class ExpenseOut(BaseModel):
     number: str
     currency: str
     issue_date: date
+    expense_date: date
     created_at: datetime
     line_items: list[LineItemOut]
     attachments: list[ExpenseAttachmentOut]
@@ -283,6 +289,7 @@ class ExpenseOut(BaseModel):
             number=expense.number,
             currency=expense.currency,
             issue_date=expense.issue_date,
+            expense_date=expense.expense_date,
             created_at=expense.created_at,
             line_items=[LineItemOut.from_model(item) for item in expense.line_items],
             attachments=[ExpenseAttachmentOut.from_model(a) for a in expense.attachments],

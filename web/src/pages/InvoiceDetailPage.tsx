@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import * as api from '../api'
 import { LineItemsTable } from '../components/LineItemsTable'
 import { PdfViewerModal } from '../components/PdfViewerModal'
@@ -53,6 +53,9 @@ export function InvoiceDetailPage() {
 
   return (
     <section>
+      <Link to={`/accounts/${invoice.account_id}`} className="back-link">
+        ← Back to {account?.business_name ?? 'account'}
+      </Link>
       <div className="page-header">
         <h1>{invoice.number ?? `Draft invoice #${invoice.id}`}</h1>
         <StatusBadge status={invoice.status} />

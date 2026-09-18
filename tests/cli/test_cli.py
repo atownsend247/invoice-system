@@ -748,6 +748,72 @@ def test_expense_create_requires_existing_account(tmp_path):
     assert result.exit_code != 0
 
 
+def test_expense_create_with_explicit_date_and_set_date(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
+
+    account_id = _id_from(
+        runner.invoke(
+            cli,
+            [
+                *_base_args(db_path),
+                "account",
+                "create",
+                "--user-id",
+                "1",
+                "--business-name",
+                "Acme",
+                "--email",
+                "a@b.test",
+                "--address-line1",
+                "1 Main St",
+            ],
+        ).output,
+        r"Created account (\S+):",
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "expense",
+            "create",
+            "--user-id",
+            "1",
+            "--account-id",
+            account_id,
+            "--expense-date",
+            "2026-02-20",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    expense_id = _id_from(result.output, r"Created expense (\S+) ")
+
+    result = runner.invoke(cli, [*_base_args(db_path), "expense", "list", "--user-id", "1"])
+    assert result.exit_code == 0, result.output
+    assert "expense date 2026-02-20" in result.output
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "expense",
+            "set-date",
+            expense_id,
+            "--user-id",
+            "1",
+            "--expense-date",
+            "2026-03-01",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert f"Updated expense {expense_id}: expense date is now 2026-03-01" in result.output
+
+    result = runner.invoke(cli, [*_base_args(db_path), "expense", "list", "--user-id", "1"])
+    assert "expense date 2026-03-01" in result.output
+
+
 def test_missing_account_returns_nonzero_exit(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()

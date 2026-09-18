@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import * as api from '../api'
 import { LineItemsTable } from '../components/LineItemsTable'
 import { PdfViewerModal } from '../components/PdfViewerModal'
@@ -29,6 +29,10 @@ export function ExpenseDetailPage() {
   const [busy, setBusy] = useState(false)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [pdfTitle, setPdfTitle] = useState('')
+  const [editingDate, setEditingDate] = useState(false)
+  const [expenseDateInput, setExpenseDateInput] = useState('')
+  const [dateError, setDateError] = useState<string | null>(null)
+  const [savingDate, setSavingDate] = useState(false)
 
   function closePdfPreview() {
     if (pdfUrl) URL.revokeObjectURL(pdfUrl)
@@ -56,14 +60,75 @@ export function ExpenseDetailPage() {
     }
   }
 
+  async function handleSaveDate() {
+    if (!expense) return
+    setDateError(null)
+    setSavingDate(true)
+    try {
+      await api.updateExpenseDate(expense.id, expenseDateInput)
+      setEditingDate(false)
+      refetch()
+    } catch (err) {
+      setDateError(errorMessage(err))
+    } finally {
+      setSavingDate(false)
+    }
+  }
+
   return (
     <section>
+      <Link to={`/accounts/${expense.account_id}`} className="back-link">
+        ← Back to {account?.business_name ?? 'account'}
+      </Link>
       <div className="page-header">
         <h1>{expense.number}</h1>
       </div>
       <p className="meta">
         {account?.business_name ?? `Account #${expense.account_id}`} · recorded {expense.issue_date}
       </p>
+      <p className="meta expense-date-row">
+        Expense date:{' '}
+        {editingDate ? (
+          <>
+            <input
+              type="date"
+              aria-label="Expense date"
+              value={expenseDateInput}
+              onChange={(event) => setExpenseDateInput(event.target.value)}
+            />
+            <button type="button" onClick={handleSaveDate} disabled={savingDate}>
+              {savingDate ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setEditingDate(false)}
+              disabled={savingDate}
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <>
+            {expense.expense_date}{' '}
+            <button
+              type="button"
+              onClick={() => {
+                setExpenseDateInput(expense.expense_date)
+                setDateError(null)
+                setEditingDate(true)
+              }}
+            >
+              Edit
+            </button>
+          </>
+        )}
+      </p>
+      {dateError && (
+        <p className="form-error" role="alert">
+          {dateError}
+        </p>
+      )}
 
       <LineItemsTable
         lineItems={expense.line_items}

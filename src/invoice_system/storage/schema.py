@@ -543,4 +543,16 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_registrars_organisation ON registrars (organisation_id);
     """,
+    """
+    -- expenses.expense_date - when the expense actually happened, distinct
+    -- from issue_date (when it was recorded - see models.Expense). Unlike
+    -- issue_date, this is editable after creation. Same rebuild-free shape
+    -- as migration 5's accounts.address_line1 split: a NOT NULL DEFAULT ''
+    -- add (SQLite requires a constant default to add a NOT NULL column to
+    -- a non-empty table) immediately backfilled from the best available
+    -- existing value - every current expense's own issue_date, since
+    -- expense_date didn't exist yet to have recorded anything better.
+    ALTER TABLE expenses ADD COLUMN expense_date TEXT NOT NULL DEFAULT '';
+    UPDATE expenses SET expense_date = issue_date;
+    """,
 ]

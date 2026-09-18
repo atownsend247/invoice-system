@@ -1040,5 +1040,47 @@ flow," not a restructuring, whenever it's actually needed.
       delete test and accounts.spec.ts's domain test updated to pick a
       registrar from the dropdown) updated and passing.
 
+## Phase 33 — "Back to account" links + a genuine expense date (done)
+
+- [x] `QuoteDetailPage.tsx`/`InvoiceDetailPage.tsx`/`ExpenseDetailPage.tsx`
+      each gained a small "← Back to {account}" link above the page
+      header, navigating to `/accounts/{account_id}` - all three already
+      fetched the account for their existing meta line, so this just
+      reused that. A new `.back-link` style, not squeezed into the
+      existing `.page-header` (a two-item `justify-content: space-between`
+      row that doesn't have room for a third element).
+- [x] `Expense.issue_date` (when the record was created) and the new
+      `Expense.expense_date` (when the money was actually spent) now
+      answer two different questions - previously conflated into one
+      field that was really just "recorded date." `expense_date` defaults
+      to today at creation but, unlike every other top-level `Expense`
+      field, stays editable afterward
+      (`ExpenseService.update_expense_date`, `PUT
+      /expenses/{id}/expense-date`, CLI `expense set-date`) - entering a
+      receipt today for something bought last week is exactly the case
+      this exists for. Migration 17 added the column (same rebuild-free
+      `NOT NULL DEFAULT ''` + backfill shape as migration 5's
+      `accounts.address_line1` split - every existing expense's own
+      `issue_date` is the best available `expense_date`).
+- [x] `ExpenseService.monthly_totals` (the home dashboard's chart) now
+      buckets by `expense_date`, not `issue_date` - the actual point of
+      this phase. A backdated entry now lands in the month it happened,
+      not the month it was typed in.
+- [x] Web UI: `ExpenseNewPage.tsx` gained an "Expense date" field,
+      pre-filled with today's *local* date (deliberately not
+      `toISOString()`, which is UTC and can show the wrong calendar date
+      near midnight) but still overridable. `ExpenseDetailPage.tsx` shows
+      it alongside the existing "recorded {issue_date}" line, with a
+      small inline "Edit" toggle - a lightweight toggle rather than the
+      heavier `initial`/`onSubmit`/`onDone` form-component pattern
+      `DomainForm`/`RegistrarForm` use, since this is the one editable
+      field on the page.
+- [x] Full backend suite (362 tests, 98%+ coverage, including a dedicated
+      migration 17 frozen-schema backfill test and a regression test
+      proving `monthly_totals` follows `expense_date` even when
+      `issue_date` falls in a different month) and full e2e suite (60
+      tests, including a new expenses.spec.ts test covering both the
+      create-time date and the in-place edit) updated and passing.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

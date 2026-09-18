@@ -3,6 +3,17 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import * as api from '../api'
 import { errorMessage, useAsync } from '../hooks/useAsync'
 
+/** Today as a local-timezone ISO date (`YYYY-MM-DD`), for pre-filling the
+ * expense date input - deliberately not `toISOString()` (UTC), which can
+ * show the wrong calendar date to a user whose local time has already
+ * crossed midnight into a new day but UTC hasn't yet, or vice versa. */
+function todayLocalDate(): string {
+  const now = new Date()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${now.getFullYear()}-${month}-${day}`
+}
+
 export function ExpenseNewPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -18,6 +29,9 @@ export function ExpenseNewPage() {
   // as QuoteNewPage.
   const [currency, setCurrency] = useState<string | null>(null)
   const currencyValue = currency ?? profile?.currency ?? 'USD'
+  // Defaults to today but stays overridable - see CLAUDE.md/models.Expense
+  // on why this can differ from issue_date (when it's recorded).
+  const [expenseDate, setExpenseDate] = useState(todayLocalDate())
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -27,7 +41,7 @@ export function ExpenseNewPage() {
     setError(null)
     setSubmitting(true)
     try {
-      const expense = await api.createExpense(accountId, currencyValue)
+      const expense = await api.createExpense(accountId, currencyValue, expenseDate)
       navigate(`/expenses/${expense.id}`, { replace: true })
     } catch (err) {
       setError(errorMessage(err))
@@ -62,6 +76,15 @@ export function ExpenseNewPage() {
               value={currencyValue}
               onChange={(event) => setCurrency(event.target.value.toUpperCase())}
               maxLength={3}
+              required
+            />
+          </label>
+          <label>
+            Expense date
+            <input
+              type="date"
+              value={expenseDate}
+              onChange={(event) => setExpenseDate(event.target.value)}
               required
             />
           </label>

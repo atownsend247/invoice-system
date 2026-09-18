@@ -24,6 +24,36 @@ test('recording an expense from an account and adding a line item', async ({
   await expect(page.locator('tfoot')).toContainText('12.00 USD')
 })
 
+test('setting an explicit expense date at creation, then editing it afterward', async ({
+  authenticatedPage: page,
+  testAccount,
+}) => {
+  await page.goto(`/accounts/${testAccount.id}`)
+  await page.getByRole('link', { name: 'New expense' }).click()
+  await page.getByLabel('Account').selectOption({ label: testAccount.business_name })
+  await page.getByRole('textbox', { name: 'Currency' }).fill('USD')
+  // Recorded today, but the money was actually spent earlier - the whole
+  // point of this field being distinct from the recorded date (see
+  // CLAUDE.md/models.Expense). getByRole('textbox', ...), not getByLabel -
+  // same reasoning as this file's existing Currency field just above.
+  await page.getByRole('textbox', { name: 'Expense date' }).fill('2026-02-20')
+  await page.getByRole('button', { name: 'Record expense' }).click()
+
+  await expect(page.getByRole('heading', { name: /^EXP-\d{4}$/ })).toBeVisible()
+  await expect(page.getByText('Expense date: 2026-02-20')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('textbox', { name: 'Expense date', exact: true }).fill('2026-03-01')
+  await page.getByRole('button', { name: 'Save' }).click()
+
+  await expect(page.getByText('Expense date: 2026-03-01')).toBeVisible()
+  await expect(page.getByText('Expense date: 2026-02-20')).toHaveCount(0)
+
+  // Persists across a reload, not just held in local component state.
+  await page.reload()
+  await expect(page.getByText('Expense date: 2026-03-01')).toBeVisible()
+})
+
 test('adding a line item with a VAT rate shows it on the line and in the totals', async ({
   authenticatedPage: page,
   expense,

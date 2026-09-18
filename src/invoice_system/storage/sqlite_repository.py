@@ -775,7 +775,7 @@ class SqliteRepository:
         with self._lock:
             self._conn.execute(
                 "INSERT INTO expenses (id, organisation_id, account_id, number, currency, issue_date, "
-                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "expense_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     expense.id,
                     expense.organisation_id,
@@ -783,6 +783,7 @@ class SqliteRepository:
                     expense.number,
                     expense.currency,
                     expense.issue_date.isoformat(),
+                    expense.expense_date.isoformat(),
                     expense.created_at.isoformat(),
                 ),
             )
@@ -851,6 +852,15 @@ class SqliteRepository:
     def next_expense_number(self, organisation_id: str) -> str:
         return self._next_number(f"{organisation_id}:expense", "EXP-")
 
+    def update_expense_date(self, expense: Expense) -> Expense:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE expenses SET expense_date = ? WHERE id = ? AND organisation_id = ?",
+                (expense.expense_date.isoformat(), expense.id, expense.organisation_id),
+            )
+            self._conn.commit()
+        return expense
+
     @staticmethod
     def _row_to_expense(
         row: sqlite3.Row, item_rows: list[sqlite3.Row], attachment_rows: list[sqlite3.Row]
@@ -862,6 +872,7 @@ class SqliteRepository:
             number=row["number"],
             currency=row["currency"],
             issue_date=date.fromisoformat(row["issue_date"]),
+            expense_date=date.fromisoformat(row["expense_date"]),
             created_at=datetime.fromisoformat(row["created_at"]),
             line_items=[SqliteRepository._row_to_line_item(r) for r in item_rows],
             attachments=[SqliteRepository._row_to_expense_attachment(r) for r in attachment_rows],

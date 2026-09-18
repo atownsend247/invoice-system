@@ -66,12 +66,13 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | POST | `/invoices/{id}/pay` | required | Transition `sent → paid`. 409 if not currently `sent` (covers `draft`, `void`, and already-`paid`). |
 | GET | `/invoices/monthly-totals` | required | Registered *before* `/invoices/{id}` (see `CLAUDE.md`'s architecture rules on route ordering). `{currency, months: [{month, paid_total, unpaid_total}]}` for the trailing 12 months, scoped to the current user's organisation, in the current user's business profile `currency`. An invoice in any other currency isn't counted. |
 | GET | `/invoices/{id}/pdf` | required | Render the invoice as a PDF (`application/pdf`), with a "From" section for the current user's business name/address if set (with "Bill to" beside it, not below, when it is), their `invoice_document_header`/`invoice_document_footer` (if set) above the title/below the totals table, and — invoices only, never quotes or expenses — a "Payment details" section for whichever of `bank_account_name`/`bank_sort_code`/`bank_account_number` are set, after the totals table. Quotes/expenses render the same way via their own `quote_document_header`/`quote_document_footer`/`expense_document_header`/`expense_document_footer` pair instead - see the Conventions section. |
-| POST | `/expenses` | required | Create an expense against an account (`account_id` required; `currency` defaults `USD`). Unlike a quote, its `EXP-0001` `number` is assigned immediately - there's no draft state (see `CLAUDE.md`). |
+| POST | `/expenses` | required | Create an expense against an account (`account_id` required; `currency` defaults `USD`; `expense_date` optional, defaults to today). Unlike a quote, its `EXP-0001` `number` is assigned immediately - there's no draft state (see `CLAUDE.md`). |
 | GET | `/expenses` | required | List expenses, optionally filtered by `?account_id=`. |
 | GET | `/expenses/{id}` | required | Fetch one expense with its line items, `subtotal`, `tax_total`, and (gross) `total`. |
+| PUT | `/expenses/{id}/expense-date` | required | Update just `expense_date` (required) - the one `Expense` field editable after creation, unlike `account_id`/`currency`/`issue_date`. 404 if missing/wrong organisation. |
 | POST | `/expenses/{id}/line-items` | required | Add a line item (`description`, `quantity`, `unit_price` required; `tax_rate` defaults `"0"`, must be within `[0, 1]`) - not gated behind any status check, unlike `POST /quotes/{id}/line-items` (there's no draft/sent distinction to gate on). 422 on an out-of-range `tax_rate`. |
 | GET | `/expenses/{id}/pdf` | required | Render the expense as a PDF (`application/pdf`), same "View PDF"/"Download PDF" pattern as quotes/invoices - but with no "Status:" line and no due/expiry date, since an expense has neither. |
-| GET | `/expenses/monthly-totals` | required | Registered *before* `/expenses/{id}` (same route-ordering reasoning as `/invoices/monthly-totals`). `{currency, months: [{month, total}]}` for the trailing 12 months, scoped to the current user's organisation, in the current user's business profile `currency`. Same aggregation as `/invoices/monthly-totals` but with no paid/unpaid split - an expense has no status. The web UI's home-dashboard chart renders this as a third (red) bar series alongside Paid/Outstanding. |
+| GET | `/expenses/monthly-totals` | required | Registered *before* `/expenses/{id}` (same route-ordering reasoning as `/invoices/monthly-totals`). `{currency, months: [{month, total}]}` for the trailing 12 months, scoped to the current user's organisation, in the current user's business profile `currency`. Bucketed by `expense_date` (when the money was actually spent), **not** `issue_date` (when it was recorded) - see Conventions below. Same aggregation as `/invoices/monthly-totals` but with no paid/unpaid split - an expense has no status. The web UI's home-dashboard chart renders this as a third (red) bar series alongside Paid/Outstanding. |
 | POST | `/expenses/{id}/attachments` | required | Upload a supplementary PDF (e.g. a scanned receipt) against an expense - `multipart/form-data`, one `file` field. Content-Type must be `application/pdf` or the filename must end `.pdf`; max 10MB (`core.py`'s `MAX_ATTACHMENT_SIZE`). 422 on anything else. Addable at any time - no status to gate on, same as line items. |
 | GET | `/expenses/{id}/attachments/{attachment_id}` | required | The uploaded bytes (`Content-Type` is whatever was uploaded, `Content-Disposition: inline` - the web UI's "View"/"Download" both hit this one route, same pattern as the generated PDF routes above). |
 | DELETE | `/expenses/{id}/attachments/{attachment_id}` | required | Delete it. `204`. |
@@ -154,6 +155,14 @@ stays per-user, not per-organisation (see `docs/data-model.md`'s
   `Domain.registrar` stores the chosen name as a plain string rather than
   referencing this row's id (renaming or deleting a registrar later never
   needs to touch domains that already recorded its name).
+- **`Expense.issue_date` vs `expense_date`**: `issue_date` is when the
+  record was created (a system timestamp, never editable); `expense_date`
+  is when the money was actually spent (defaults to today at creation,
+  the one `Expense` field editable afterward via `PUT
+  /expenses/{id}/expense-date`). `GET /expenses/monthly-totals` buckets by
+  `expense_date`, so a backdated entry (e.g. logging a receipt for
+  something bought last week) lands in the month it actually happened,
+  not the month it was typed in.
 - **Invite-gated registration**: `invoice-system-cli invite create
   [--expires-in-days N]` (default 7) creates a single-use
   `RegistrationInvite` and prints its token plus a relative `/register?

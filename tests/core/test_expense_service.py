@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -53,6 +53,48 @@ def test_expense_numbers_are_sequential_per_organisation(application, organisati
         organisation_id=other_organisation_id, account_id=other_account.id
     )
     assert other_expense.number == "EXP-0001"  # each organisation's own sequence, not a shared one
+
+
+def test_create_expense_defaults_expense_date_to_today(application, organisation_id, account, fake_clock):
+    fake_clock.set(datetime(2026, 3, 10, tzinfo=UTC))
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    assert expense.expense_date == date(2026, 3, 10)
+    assert expense.issue_date == date(2026, 3, 10)
+
+
+def test_create_expense_accepts_an_explicit_expense_date(application, organisation_id, account, fake_clock):
+    # Recorded "today" but the money was actually spent earlier - the
+    # whole point of this field being distinct from issue_date (see
+    # models.Expense).
+    fake_clock.set(datetime(2026, 3, 10, tzinfo=UTC))
+    expense = application.expenses.create_expense(
+        organisation_id=organisation_id, account_id=account.id, expense_date=date(2026, 2, 20)
+    )
+    assert expense.expense_date == date(2026, 2, 20)
+    assert expense.issue_date == date(2026, 3, 10)  # still "today" - when it was recorded
+
+
+def test_update_expense_date(application, organisation_id, account):
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    updated = application.expenses.update_expense_date(organisation_id, expense.id, date(2026, 1, 5))
+    assert updated.expense_date == date(2026, 1, 5)
+
+    fetched = application.expenses.get_expense(organisation_id, expense.id)
+    assert fetched.expense_date == date(2026, 1, 5)
+
+
+def test_update_expense_date_requires_existing_expense(application, organisation_id):
+    with pytest.raises(NotFound):
+        application.expenses.update_expense_date(organisation_id, "does-not-exist", date(2026, 1, 5))
+
+
+def test_update_expense_date_from_another_organisation_raises_not_found(
+    application, organisation_id, account
+):
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    other_organisation_id = application.organisations.get_or_create_for_user("user-2")
+    with pytest.raises(NotFound):
+        application.expenses.update_expense_date(other_organisation_id, expense.id, date(2026, 1, 5))
 
 
 def test_add_line_item_computes_totals_including_vat(application, organisation_id, account):
@@ -265,10 +307,20 @@ def test_delete_missing_attachment_raises_not_found(application, organisation_id
 
 class TestMonthlyTotals:
     def _create_expense(
-        self, application, organisation_id, account, *, currency: str = "GBP", price: str = "100.00"
+        self,
+        application,
+        organisation_id,
+        account,
+        *,
+        currency: str = "GBP",
+        price: str = "100.00",
+        expense_date: date | None = None,
     ):
         expense = application.expenses.create_expense(
-            organisation_id=organisation_id, account_id=account.id, currency=currency
+            organisation_id=organisation_id,
+            account_id=account.id,
+            currency=currency,
+            expense_date=expense_date,
         )
         return application.expenses.add_line_item(
             organisation_id,
@@ -299,7 +351,7 @@ class TestMonthlyTotals:
         ]
         assert all(t.total == Decimal("0") for t in totals)
 
-    def test_buckets_by_issue_date_month_and_sums_gross_total(
+    def test_buckets_by_expense_date_month_and_sums_gross_total(
         self, application, organisation_id, account, fake_clock
     ):
         fake_clock.set(datetime(2026, 3, 10, tzinfo=UTC))
@@ -310,6 +362,22 @@ class TestMonthlyTotals:
 
         totals = {t.month: t for t in application.expenses.monthly_totals(organisation_id, "GBP")}
         assert totals["2026-03"].total == Decimal("150.00")
+
+    def test_buckets_by_expense_date_not_issue_date_when_they_differ(
+        self, application, organisation_id, account, fake_clock
+    ):
+        # Recorded (issue_date) in April, but the money was actually spent
+        # in February (expense_date) - e.g. entering a late receipt. The
+        # home dashboard's chart should attribute it to February, not
+        # April - the whole reason this field exists (see models.Expense).
+        fake_clock.set(datetime(2026, 4, 5, tzinfo=UTC))
+        self._create_expense(
+            application, organisation_id, account, price="100.00", expense_date=date(2026, 2, 15)
+        )
+
+        totals = {t.month: t for t in application.expenses.monthly_totals(organisation_id, "GBP")}
+        assert totals["2026-02"].total == Decimal("100.00")
+        assert totals["2026-04"].total == Decimal("0")
 
     def test_expenses_outside_the_window_are_excluded(
         self, application, organisation_id, account, fake_clock

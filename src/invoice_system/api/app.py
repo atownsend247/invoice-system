@@ -36,6 +36,7 @@ from .schemas import (
     DomainOut,
     ExpenseAttachmentOut,
     ExpenseCreateIn,
+    ExpenseDateIn,
     ExpenseOut,
     InvoiceListOut,
     InvoiceOut,
@@ -510,7 +511,10 @@ def create_expense(
     organisation_id: str = Depends(get_organisation_id),
 ) -> ExpenseOut:
     expense = application.expenses.create_expense(
-        organisation_id=organisation_id, account_id=body.account_id, currency=body.currency
+        organisation_id=organisation_id,
+        account_id=body.account_id,
+        currency=body.currency,
+        expense_date=body.expense_date,
     )
     return ExpenseOut.from_model(expense)
 
@@ -547,6 +551,17 @@ def get_expense(
     organisation_id: str = Depends(get_organisation_id),
 ) -> ExpenseOut:
     return ExpenseOut.from_model(application.expenses.get_expense(organisation_id, expense_id))
+
+
+@domain_router.put("/expenses/{expense_id}/expense-date", response_model=ExpenseOut)
+def update_expense_date(
+    expense_id: str,
+    body: ExpenseDateIn,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> ExpenseOut:
+    expense = application.expenses.update_expense_date(organisation_id, expense_id, body.expense_date)
+    return ExpenseOut.from_model(expense)
 
 
 @domain_router.post("/expenses/{expense_id}/line-items", response_model=ExpenseOut, status_code=201)

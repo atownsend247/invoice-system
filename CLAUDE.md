@@ -598,18 +598,37 @@ Four separate things are easy to conflate here — don't:
   share the same shape as Quote/Invoice's (`LineItem`, including a
   per-line `tax_rate`) rather than a simpler description+amount shape,
   since VAT paid on a business expense may be separately reclaimable.
+  `issue_date` (when the record was created) and `expense_date` (when the
+  money was actually spent) answer two different questions, easy to
+  conflate - see `models.Expense`'s docstring. `expense_date` defaults to
+  today at creation (`create_expense`'s own `expense_date` parameter,
+  `None` falling back to the clock) but, unlike every other top-level
+  field on `Expense`, stays editable afterward
+  (`ExpenseService.update_expense_date`, `PUT
+  /expenses/{id}/expense-date`, CLI `expense set-date`) - entering a
+  receipt today for something bought last week is exactly the case this
+  exists for. `monthly_totals` (the home dashboard's chart) buckets by
+  `expense_date`, **not** `issue_date`, for the same reason: spending
+  should land in the month it happened, not the month it was typed in.
   `POST /expenses`, `GET /expenses` (optionally `?account_id=`), `GET
   /expenses/{id}`, `POST /expenses/{id}/line-items`, `GET
   /expenses/{id}/pdf` (same `render_expense_pdf` pattern as
   quotes/invoices in `pdf.py`, but with no "Status:" line - `_render`'s
   `status` param is `None`-able specifically for this case - and no due/
-  expiry date). CLI: `expense create/list/add-item/pdf`, same
+  expiry date). CLI: `expense create/list/add-item/pdf/set-date`, same
   `--user-id`-resolves-organisation pattern as `quote`/`invoice`. Web UI:
   listed at the bottom of `AccountDetailPage.tsx` with a "New expense"
   link to `ExpenseNewPage.tsx` (same create-form pattern as
-  `QuoteNewPage.tsx`); `ExpenseDetailPage.tsx` (`/expenses/:id`) reuses
+  `QuoteNewPage.tsx`, plus an "Expense date" field pre-filled with today's
+  *local* date - deliberately not `toISOString()`, which is UTC and can
+  show the wrong calendar date near midnight);
+  `ExpenseDetailPage.tsx` (`/expenses/:id`) reuses
   `LineItemsTable`/`PdfViewerModal` unchanged but has no status badge or
-  send/convert actions, since there's no lifecycle to show one for.
+  send/convert actions, since there's no lifecycle to show one for - it
+  does have a small inline "Edit" toggle next to the expense date (a
+  lightweight toggle, not the heavier `initial`/`onSubmit`/`onDone`
+  form-component pattern `DomainForm`/`RegistrarForm` use, since this is
+  the one editable field on the whole page).
 - **Expense attachments** (`ExpenseAttachment` in models.py) are
   supplementary PDFs (e.g. a scanned receipt) uploaded against an expense
   — addable at any time, same no-lifecycle reasoning as expense line
@@ -854,7 +873,15 @@ Four separate things are easy to conflate here — don't:
   pure-addition migration in this file. Migration 16 added `registrars` -
   another brand new table plus its own `idx_registrars_organisation`
   index (see the `Registrar` Conventions bullet above), no rebuild
-  needed either.)
+  needed either. Migration 17 is the fourth rebuild-and-swap-free
+  reference example (alongside migrations 4/5/12): `expenses.expense_date`
+  (see the `ExpenseService` Conventions bullet above) - same shape as
+  migration 5's `accounts.address_line1` split, a `NOT NULL DEFAULT ''`
+  `ADD COLUMN` (SQLite requires a constant default to add a `NOT NULL`
+  column to a non-empty table) immediately backfilled via `UPDATE
+  expenses SET expense_date = issue_date` - every existing expense's own
+  `issue_date` is the best available value, since `expense_date` didn't
+  exist yet to have recorded anything better.)
 - Storage is a single shared SQLite connection/file — **serialise every
   access on a lock** inside the repository implementation rather than
   assuming the caller will. That lock is per-*call*, not across a sequence

@@ -383,8 +383,22 @@ export function getExpense(id: string): Promise<Expense> {
   return request(`/expenses/${id}`)
 }
 
-export function createExpense(accountId: string, currency = 'USD'): Promise<Expense> {
-  return request('/expenses', { method: 'POST', body: JSON.stringify({ account_id: accountId, currency }) })
+export function createExpense(
+  accountId: string,
+  currency = 'USD',
+  expenseDate?: string,
+): Promise<Expense> {
+  return request('/expenses', {
+    method: 'POST',
+    body: JSON.stringify({ account_id: accountId, currency, expense_date: expenseDate || undefined }),
+  })
+}
+
+export function updateExpenseDate(expenseId: string, expenseDate: string): Promise<Expense> {
+  return request(`/expenses/${expenseId}/expense-date`, {
+    method: 'PUT',
+    body: JSON.stringify({ expense_date: expenseDate }),
+  })
 }
 
 export function addExpenseLineItem(

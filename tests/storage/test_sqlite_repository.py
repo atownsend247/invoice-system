@@ -216,6 +216,7 @@ def test_migration_8_adds_expenses_without_touching_existing_data(tmp_path):
             number=repository.next_expense_number(org_id),
             currency="GBP",
             issue_date=date(2026, 1, 1),
+            expense_date=date(2026, 1, 1),
             created_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
     )
@@ -270,6 +271,51 @@ def test_migration_9_adds_expense_attachments_without_touching_existing_data(tmp
         )
     )
     assert attachment.filename == "receipt.pdf"
+    repository.close()
+
+
+def test_migration_17_adds_expense_date_and_backfills_from_issue_date(tmp_path):
+    # Freeze a database at migration 16 (before expenses.expense_date
+    # existed - see schema.py) with an existing expense, then confirm
+    # migration 17 backfills expense_date from that row's own issue_date -
+    # the best available value, since expense_date didn't exist yet to
+    # have recorded anything better (see models.Expense). Only migration
+    # 17's own script is applied - see the migration 5 test above for why
+    # not repository.migrate().
+    db_path = tmp_path / "frozen.db"
+    conn = sqlite3.connect(str(db_path))
+    for version, script in enumerate(MIGRATIONS[:16], start=1):
+        conn.executescript(script)
+        conn.execute(f"PRAGMA user_version = {version}")
+    conn.commit()
+
+    org_id = new_id()
+    account_id = new_id()
+    expense_id = new_id()
+    now = datetime(2026, 1, 1, tzinfo=UTC).isoformat()
+    conn.execute("INSERT INTO organisations (id, name, created_at) VALUES (?, 'Org A', ?)", (org_id, now))
+    conn.execute(
+        "INSERT INTO accounts (id, organisation_id, business_name, email, address_line1, created_at) "
+        "VALUES (?, ?, 'Acme', 'a@b.test', '1 Main St', ?)",
+        (account_id, org_id, now),
+    )
+    conn.execute(
+        "INSERT INTO expenses (id, organisation_id, account_id, number, currency, issue_date, created_at) "
+        "VALUES (?, ?, ?, 'EXP-0001', 'GBP', '2026-03-15', ?)",
+        (expense_id, org_id, account_id, now),
+    )
+    conn.commit()
+
+    conn.executescript(MIGRATIONS[16])
+    conn.execute("PRAGMA user_version = 17")
+    conn.commit()
+    conn.close()
+
+    repository = SqliteRepository(db_path)
+    fetched = repository.get_expense(org_id, expense_id)
+    assert fetched is not None
+    assert fetched.expense_date == date(2026, 3, 15)
+    assert fetched.issue_date == date(2026, 3, 15)
     repository.close()
 
 
@@ -646,6 +692,7 @@ def test_expense_round_trip_with_line_items(repo, organisation_id):
             number=repo.next_expense_number(organisation_id),
             currency="GBP",
             issue_date=date(2026, 1, 1),
+            expense_date=date(2026, 1, 1),
             created_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
     )
@@ -685,6 +732,7 @@ def test_get_expense_from_another_organisation_returns_none(repo, organisation_i
             number=repo.next_expense_number(organisation_id),
             currency="GBP",
             issue_date=date(2026, 1, 1),
+            expense_date=date(2026, 1, 1),
             created_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
     )
@@ -706,6 +754,7 @@ def test_list_expenses_is_ordered_by_creation_not_by_id(repo, organisation_id):
             number=number,
             currency="GBP",
             issue_date=date(2026, 1, 1),
+            expense_date=date(2026, 1, 1),
             created_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
 
@@ -728,6 +777,7 @@ def test_list_expenses_filters_by_account(repo, organisation_id):
             number=number,
             currency="GBP",
             issue_date=date(2026, 1, 1),
+            expense_date=date(2026, 1, 1),
             created_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
 
@@ -853,9 +903,23 @@ def _expense_for(repo: SqliteRepository, organisation_id: str) -> Expense:
             number=repo.next_expense_number(organisation_id),
             currency="GBP",
             issue_date=date(2026, 1, 1),
+            expense_date=date(2026, 1, 1),
             created_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
     )
+
+
+def test_update_expense_date(repo, organisation_id):
+    expense = _expense_for(repo, organisation_id)
+    expense.expense_date = date(2026, 2, 20)
+    updated = repo.update_expense_date(expense)
+    assert updated.expense_date == date(2026, 2, 20)
+    # issue_date (the recorded date) is untouched by this - only
+    # expense_date changes (see models.Expense).
+    assert updated.issue_date == date(2026, 1, 1)
+
+    fetched = repo.get_expense(organisation_id, expense.id)
+    assert fetched.expense_date == date(2026, 2, 20)
 
 
 def _attachment(expense_id: str, **overrides: object) -> ExpenseAttachment:

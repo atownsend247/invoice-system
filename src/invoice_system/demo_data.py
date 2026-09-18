@@ -498,15 +498,22 @@ def seed_demo_data(application: Application, auth: Auth, *, now: datetime | None
         getattr(seeder, scenario.run)()
 
     for scenario_index, (months_ago, account_index, item_index) in enumerate(_EXPENSE_SCENARIOS):
+        expense_recorded_at = _months_ago(now, months_ago)
         expenses = ExpenseService(
             application.repository,
-            clock=_FixedClock(_months_ago(now, months_ago)),
+            clock=_FixedClock(expense_recorded_at),
             attachments=application.attachment_store,
         )
         expense = expenses.create_expense(
             organisation_id=organisation_id,
             account_id=account_ids[account_index],
             currency=DEMO_CURRENCY,
+            # Shows off expense_date being distinct from issue_date (see
+            # models.Expense) on one seeded expense, rather than every
+            # demo expense having the two always coincide - recorded a
+            # few days after it actually happened, the case this field
+            # exists for.
+            expense_date=(expense_recorded_at - timedelta(days=4)).date() if scenario_index == 0 else None,
         )
         description, quantity, unit_price, tax_rate = _EXPENSE_LINE_ITEM_POOL[item_index]
         expenses.add_line_item(

@@ -393,6 +393,68 @@ def test_expense_requires_existing_account(client, auth_headers):
     assert response.status_code == 404
 
 
+def test_create_expense_defaults_expense_date_to_today(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+
+    response = client.post("/expenses", json={"account_id": account_id}, headers=auth_headers)
+    body = response.json()
+    assert body["expense_date"] == body["issue_date"]
+
+
+def test_create_expense_accepts_an_explicit_expense_date(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+
+    response = client.post(
+        "/expenses",
+        json={"account_id": account_id, "expense_date": "2026-02-20"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    assert response.json()["expense_date"] == "2026-02-20"
+
+
+def test_update_expense_date(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    expense_id = client.post("/expenses", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+
+    response = client.put(
+        f"/expenses/{expense_id}/expense-date", json={"expense_date": "2026-01-05"}, headers=auth_headers
+    )
+    assert response.status_code == 200
+    assert response.json()["expense_date"] == "2026-01-05"
+
+    response = client.get(f"/expenses/{expense_id}", headers=auth_headers)
+    assert response.json()["expense_date"] == "2026-01-05"
+
+
+def test_update_expense_date_from_another_login_user_returns_404(client, auth_headers, other_auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Owner's Client", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    expense_id = client.post("/expenses", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+
+    response = client.put(
+        f"/expenses/{expense_id}/expense-date",
+        json={"expense_date": "2026-01-05"},
+        headers=other_auth_headers,
+    )
+    assert response.status_code == 404
+
+
 def test_expense_from_another_login_user_returns_404(client, auth_headers, other_auth_headers):
     account_id = client.post(
         "/accounts",
