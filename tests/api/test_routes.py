@@ -405,6 +405,95 @@ def test_expense_from_another_login_user_returns_404(client, auth_headers, other
     assert response.status_code == 404
 
 
+def test_account_domain_create_list_update_delete_flow(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+
+    response = client.post(
+        f"/accounts/{account_id}/domains",
+        json={
+            "domain_name": "acme.test",
+            "expiry_date": "2027-01-01",
+            "registrar": "123-Reg",
+            "auto_renew": True,
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    body = response.json()
+    domain_id = body["id"]
+    assert body["account_id"] == account_id
+    assert body["domain_name"] == "acme.test"
+    assert body["expiry_date"] == "2027-01-01"
+    assert body["registrar"] == "123-Reg"
+    assert body["auto_renew"] is True
+
+    response = client.get(f"/accounts/{account_id}/domains", headers=auth_headers)
+    assert response.status_code == 200
+    assert [d["id"] for d in response.json()] == [domain_id]
+
+    response = client.put(
+        f"/accounts/{account_id}/domains/{domain_id}",
+        json={
+            "domain_name": "acme.co.uk",
+            "expiry_date": "2028-01-01",
+            "registrar": "GoDaddy",
+            "auto_renew": False,
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["domain_name"] == "acme.co.uk"
+    assert response.json()["registrar"] == "GoDaddy"
+    assert response.json()["auto_renew"] is False
+
+    response = client.delete(f"/accounts/{account_id}/domains/{domain_id}", headers=auth_headers)
+    assert response.status_code == 204
+    assert client.get(f"/accounts/{account_id}/domains", headers=auth_headers).json() == []
+
+
+def test_domain_requires_existing_account(client, auth_headers):
+    response = client.post(
+        "/accounts/does-not-exist/domains",
+        json={"domain_name": "acme.test", "expiry_date": "2027-01-01", "registrar": "123-Reg"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+def test_domain_from_another_login_user_returns_404(client, auth_headers, other_auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Owner's Client", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    domain_id = client.post(
+        f"/accounts/{account_id}/domains",
+        json={"domain_name": "acme.test", "expiry_date": "2027-01-01", "registrar": "123-Reg"},
+        headers=auth_headers,
+    ).json()["id"]
+
+    # No GET-single route exists (list-only, matching the plan's minimal
+    # surface) - exercise the list route instead, which should still 404
+    # since the account itself doesn't exist under the other user's
+    # organisation.
+    response = client.get(f"/accounts/{account_id}/domains", headers=other_auth_headers)
+    assert response.status_code == 404
+
+    response = client.put(
+        f"/accounts/{account_id}/domains/{domain_id}",
+        json={"domain_name": "acme.test", "expiry_date": "2027-01-01", "registrar": "123-Reg"},
+        headers=other_auth_headers,
+    )
+    assert response.status_code == 404
+
+    response = client.delete(f"/accounts/{account_id}/domains/{domain_id}", headers=other_auth_headers)
+    assert response.status_code == 404
+
+
 def test_expense_attachment_upload_view_download_and_delete_flow(client, auth_headers):
     account_id = client.post(
         "/accounts",

@@ -1,6 +1,7 @@
 import type {
   Account,
   BusinessProfile,
+  Domain,
   Expense,
   ExpenseAttachment,
   Invoice,
@@ -214,6 +215,34 @@ export function createAccount(input: CreateAccountInput): Promise<Account> {
 
 export function updateAccount(id: string, input: CreateAccountInput): Promise<Account> {
   return request(`/accounts/${id}`, { method: 'PUT', body: JSON.stringify(input) })
+}
+
+// -- domains -----------------------------------------------------------------
+
+export interface SaveDomainInput {
+  domain_name: string
+  expiry_date: string
+  registrar: string
+  auto_renew: boolean
+}
+
+export function listDomains(accountId: string): Promise<Domain[]> {
+  return request(`/accounts/${accountId}/domains`)
+}
+
+export function createDomain(accountId: string, input: SaveDomainInput): Promise<Domain> {
+  return request(`/accounts/${accountId}/domains`, { method: 'POST', body: JSON.stringify(input) })
+}
+
+export function updateDomain(accountId: string, domainId: string, input: SaveDomainInput): Promise<Domain> {
+  return request(`/accounts/${accountId}/domains/${domainId}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  })
+}
+
+export function deleteDomain(accountId: string, domainId: string): Promise<void> {
+  return request(`/accounts/${accountId}/domains/${domainId}`, { method: 'DELETE' })
 }
 
 // -- quotes ----------------------------------------------------------------

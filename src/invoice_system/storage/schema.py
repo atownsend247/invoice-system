@@ -507,4 +507,23 @@ MIGRATIONS: list[str] = [
     -- other pure-addition migration in this file.
     ALTER TABLE business_profiles ADD COLUMN accent_color TEXT;
     """,
+    """
+    -- Domains owned by an Account - which domain, when it expires, who
+    -- it's registered with (see models.Domain). No organisation_id
+    -- column - tenant ownership is resolved via the parent account first,
+    -- same reasoning as expense_attachments not having one either. New
+    -- table, so a plain CREATE TABLE + one CREATE INDEX on the foreign
+    -- key it's actually queried by, no rebuild needed.
+    CREATE TABLE domains (
+        id TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL REFERENCES accounts(id),
+        domain_name TEXT NOT NULL,
+        expiry_date TEXT NOT NULL,
+        registrar TEXT NOT NULL,
+        auto_renew INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX idx_domains_account ON domains (account_id);
+    """,
 ]

@@ -64,6 +64,37 @@ class AccountListOut(BaseModel):
     total: int
 
 
+class DomainIn(BaseModel):
+    domain_name: str
+    expiry_date: date
+    registrar: str
+    auto_renew: bool = False
+
+
+class DomainOut(BaseModel):
+    id: str
+    account_id: str
+    domain_name: str
+    expiry_date: date
+    registrar: str
+    auto_renew: bool
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_model(cls, domain) -> "DomainOut":
+        return cls(
+            id=domain.id,
+            account_id=domain.account_id,
+            domain_name=domain.domain_name,
+            expiry_date=domain.expiry_date,
+            registrar=domain.registrar,
+            auto_renew=domain.auto_renew,
+            created_at=domain.created_at,
+            updated_at=domain.updated_at,
+        )
+
+
 class LineItemIn(BaseModel):
     description: str
     quantity: str

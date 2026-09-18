@@ -3,7 +3,7 @@
 **Status: implemented** (`src/invoice_system/models.py`,
 `storage/schema.py`). Keep this table in sync with the actual schema — this
 doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` has
-fourteen entries: the flattened baseline (2026-09-16), migration 2 (added `tax_rate`
+fifteen entries: the flattened baseline (2026-09-16), migration 2 (added `tax_rate`
 to both line-item tables), migration 3 (added `Organisation` — the tenant
 boundary — plus nullable `organisation_id` columns on `accounts`/`quotes`/
 `invoices`), migration 4 (rescoped `Quote.number`/`Invoice.number`
@@ -42,9 +42,12 @@ filter — see `CLAUDE.md`'s Quote/Invoice conversion note), and migration 14
 (added a nullable `accent_color TEXT` column to `business_profiles` — one
 more plain `ADD COLUMN`, same shape as migration 6, backing the brand
 colour used across every quote/invoice/expense PDF a user generates — see
-`CLAUDE.md`'s `BusinessProfile` accent colour paragraph). Schema changes
-from here on are new entries appended to that list, not edits to any of
-these fourteen.
+`CLAUDE.md`'s `BusinessProfile` accent colour paragraph), and migration 15
+(added `domains` — one more brand new table plus its own
+`idx_domains_account` index, no rebuild needed, same reasoning as every
+other pure-addition migration in this file — see the `Domain` row below).
+Schema changes from here on are new entries appended to that list, not
+edits to any of these fifteen.
 
 ## Entities
 
@@ -52,6 +55,7 @@ these fourteen.
 |---|---|---|
 | `Organisation` | id, name, created_at | The tenant boundary — every `Account`/`Quote`/`Invoice` belongs to exactly one. Auto-created the first time a login user needs one (`OrganisationService.get_or_create_for_user`), via an `organisation_members` join table (`organisation_id`, `user_id`, `created_at`) with `UNIQUE` on `user_id` enforcing "one organisation per user" *for now* — see "Multi-tenancy" below. |
 | `Account` | id, organisation_id, business_name, contact_name, email, phone, address_line1, address_line2, town_or_city, county, postcode, created_at | A business you provide a service to and bill, scoped to one `Organisation`. Editable after creation (`AccountService.update_account`, full replace). Not a login identity — see `CLAUDE.md`. Address fields follow the same UK GOV.UK Design System pattern as `BusinessProfile`'s below, except `address_line1` is required here (an `Account` is a real client being billed, not the user's own optionally-published details) — the rest are each independently optional. |
+| `Domain` | id, account_id, domain_name, expiry_date, registrar, auto_renew, created_at, updated_at | A domain name owned by an `Account` — which domain, when it expires, who it's registered with, whether it's set to auto-renew. **No `organisation_id` column** — structurally closest to `ExpenseAttachment` below, not `Expense`: tenant ownership is resolved via the parent `Account` first (`DomainService`/`AccountService.get_account`), same reasoning as that row. `domain_name`/`expiry_date`/`registrar` all required; `auto_renew` defaults `false`, purely informational. Editable in place (`DomainService.update_domain`, full replace, mirroring `AccountService.update_account`), not add-only like an attachment — see `CLAUDE.md`. |
 | `Quote` | id, organisation_id, account_id, number, status, currency, issue_date, expiry_date, created_at | `status`: `draft \| sent \| accepted \| rejected \| expired \| converted`. `number` (`Q-0001`, ...) is assigned on `send`, not on creation, and is unique per-`organisation_id`, not globally (see migration 4 above) — two organisations' first quotes can both be `Q-0001`. |
 | `Invoice` | id, organisation_id, account_id, quote_id, number, status, currency, issue_date, due_date, created_at | `status`: `draft \| sent \| paid \| overdue \| void`. `quote_id` is set when created via conversion, `NULL` otherwise. `number` (`INV-0001`, ...) and `due_date` are assigned on `send`, and — same as `Quote.number` — unique per-`organisation_id`, not globally. `paid` is assigned by `InvoiceService.pay()`, only from `sent` — `overdue` is a defined enum value nothing ever actually sets (see "Not yet modelled"). |
 | `LineItem` | id, description, quantity, unit_price, tax_rate, position | One shape, shared by quotes, invoices, and expenses; associated via `quote_line_items`/`invoice_line_items`/`expense_line_items` join tables (`quote_id`/`invoice_id`/`expense_id` + the same columns). `tax_rate` is a fraction (`0.20` = 20% UK VAT; `0` = none), independently set per line. `net_total`/`tax_amount`/`total` (`net_total + tax_amount`, gross) are derived properties, never stored — `tax_amount` is rounded to the minor currency unit, `net_total` is not (see `CLAUDE.md`). |

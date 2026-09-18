@@ -3,9 +3,10 @@ import { Link, useParams } from 'react-router-dom'
 import { accountAddressLines } from '../accountAddress'
 import * as api from '../api'
 import { AccountForm } from '../components/AccountForm'
+import { DomainForm } from '../components/DomainForm'
 import { StatusBadge } from '../components/StatusBadge'
-import { useAsync } from '../hooks/useAsync'
-import type { Expense, Invoice, Quote } from '../types'
+import { errorMessage, useAsync } from '../hooks/useAsync'
+import type { Domain, Expense, Invoice, Quote } from '../types'
 
 /** Newest first by issue_date (the "when this was created" convention used
  * throughout - see CLAUDE.md). Ids are random UUID4s now (see CLAUDE.md),
@@ -42,7 +43,12 @@ export function AccountDetailPage() {
   const quotes = quotesResult?.items
   const invoices = invoicesResult?.items
   const { data: expenses } = useAsync(() => api.listExpenses(accountId), [accountId])
+  const { data: domains, refetch: refetchDomains } = useAsync(
+    () => api.listDomains(accountId ?? ''),
+    [accountId],
+  )
   const [editing, setEditing] = useState(false)
+  const [addingDomain, setAddingDomain] = useState(false)
 
   if (loading) return <p>Loading…</p>
   if (error)
@@ -136,6 +142,34 @@ export function AccountDetailPage() {
         {expenses && expenses.length === 0 && <p className="meta">No expenses recorded yet.</p>}
         {expenses && expenses.length > 0 && <ExpensesTable expenses={byIssueDateNewestFirst(expenses)} />}
       </div>
+
+      <div className="dashboard-section">
+        <div className="page-header">
+          <h2>Domains</h2>
+          {!addingDomain && (
+            <button type="button" onClick={() => setAddingDomain(true)}>
+              Add domain
+            </button>
+          )}
+        </div>
+        {addingDomain && (
+          <DomainForm
+            submitLabel="Add"
+            submittingLabel="Adding…"
+            onSubmit={(input) => api.createDomain(account.id, input)}
+            onDone={() => {
+              setAddingDomain(false)
+              refetchDomains()
+            }}
+            onCancel={() => setAddingDomain(false)}
+          />
+        )}
+        {!domains && <p>Loading…</p>}
+        {domains && domains.length === 0 && <p className="meta">No domains recorded yet.</p>}
+        {domains && domains.length > 0 && (
+          <DomainsTable accountId={account.id} domains={domains} onChanged={refetchDomains} />
+        )}
+      </div>
     </section>
   )
 }
@@ -199,6 +233,95 @@ function ExpensesTable({ expenses }: { expenses: Expense[] }) {
         ))}
       </tbody>
     </table>
+  )
+}
+
+function DomainsTable({
+  accountId,
+  domains,
+  onChanged,
+}: {
+  accountId: string
+  domains: Domain[]
+  onChanged: () => void
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleDelete(domain: Domain) {
+    setError(null)
+    setDeletingId(domain.id)
+    try {
+      await api.deleteDomain(accountId, domain.id)
+      onChanged()
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  return (
+    <>
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+      <table>
+        <thead>
+          <tr>
+            <th>Domain</th>
+            <th>Expires</th>
+            <th>Registrar</th>
+            <th>Auto-renew</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {domains.map((domain) =>
+            editingId === domain.id ? (
+              <tr key={domain.id}>
+                <td colSpan={5}>
+                  <DomainForm
+                    initial={domain}
+                    submitLabel="Save"
+                    submittingLabel="Saving…"
+                    onSubmit={(input) => api.updateDomain(accountId, domain.id, input)}
+                    onDone={() => {
+                      setEditingId(null)
+                      onChanged()
+                    }}
+                    onCancel={() => setEditingId(null)}
+                  />
+                </td>
+              </tr>
+            ) : (
+              <tr key={domain.id}>
+                <td>{domain.domain_name}</td>
+                <td>{domain.expiry_date}</td>
+                <td>{domain.registrar}</td>
+                <td>{domain.auto_renew ? 'Yes' : 'No'}</td>
+                <td>
+                  <button type="button" onClick={() => setEditingId(domain.id)}>
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => handleDelete(domain)}
+                    disabled={deletingId === domain.id}
+                  >
+                    {deletingId === domain.id ? 'Deleting…' : 'Delete'}
+                  </button>
+                </td>
+              </tr>
+            ),
+          )}
+        </tbody>
+      </table>
+    </>
   )
 }
 

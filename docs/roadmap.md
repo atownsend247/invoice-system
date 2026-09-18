@@ -952,5 +952,44 @@ flow," not a restructuring, whenever it's actually needed.
       confirmed via `uv build` that the new template file is actually
       included in the built wheel.
 
+## Phase 31 — Domains on an account (done)
+
+- [x] This app is primarily used for web development client work, and an
+      `Account` commonly owns one or more domains - previously that had
+      nowhere to live beyond an `Expense`'s free-text description (which
+      records money *spent*, not a domain's ongoing identity/expiry/
+      registrar). Added a `Domain` entity, scoped to an `Account`: which
+      domain, its expiry date, its registrar, and an `auto_renew` flag.
+- [x] Structurally closest to `ExpenseAttachment`, not `Expense` - always
+      accessed through its parent `Account`, no `organisation_id` column
+      of its own (tenant ownership resolved via `AccountService.
+      get_account` first). Unlike an attachment, it's user-edited data -
+      `DomainService.update_domain` is a full replace, mirroring
+      `AccountService.update_account`'s PUT semantics, so a renewal
+      (new expiry) or a transfer (new registrar) updates the existing
+      record in place rather than requiring delete-and-recreate.
+      Migration 15 added the new `domains` table plus
+      `idx_domains_account`.
+- [x] `domain_name`/`expiry_date`/`registrar` are all required;
+      `auto_renew` defaults `false` and is purely informational (nothing
+      here talks to a registrar's API). `list_domains` orders
+      soonest-expiry-first, not the newest-created-first convention every
+      other list in this app uses - "what needs attention soonest" is the
+      more useful default for this particular data.
+- [x] API: `POST`/`GET /accounts/{id}/domains`, `PUT`/`DELETE
+      .../domains/{domain_id}` (no single-`GET` route - list-only, same
+      shape as `GET /expenses?account_id=`). CLI: `domain
+      create/list/update/delete`, same `--user-id`/`--account-id` pattern
+      as `expense`. Web UI: a "Domains" section on `AccountDetailPage.tsx`
+      - an inline "Add domain" toggle plus per-row Edit/Delete, both
+      backed by a new `components/DomainForm.tsx` sharing `AccountForm.
+      tsx`'s exact prop shape (`initial`/`submitLabel`/`onSubmit`/
+      `onDone`/`onCancel`) so the same component serves both add and
+      in-place edit - no separate `/domains/:id` route, since a domain has
+      no sub-resources or PDF of its own to justify one.
+- [x] Full backend suite (331 tests, 98%+ coverage) and full e2e suite
+      (58 tests, including a new accounts.spec.ts test covering add/edit/
+      delete in one flow) updated and passing.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

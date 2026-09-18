@@ -500,8 +500,9 @@ Four separate things are easy to conflate here — don't:
   the account's own fields (an inline "Edit" toggle reveals the same
   `AccountForm` used for "New account" on `AccountsPage.tsx`, extracted to
   `components/AccountForm.tsx` so both pages share it) plus that account's
-  quotes, invoices, and expenses (see below), each listed
-  newest-issued-first. `AccountsPage.tsx`
+  quotes, invoices, expenses, and domains (see below), each listed
+  newest-issued-first - domains are the one exception, listed
+  soonest-expiry-first instead (see the `Domain` bullet below). `AccountsPage.tsx`
   also has a search box (`accountMatchesQuery` in that file, unit-tested
   in `AccountsPage.test.ts`) that filters client-side against every shown
   field, and each row is clickable (`role="link"`, keyboard-operable via
@@ -510,6 +511,35 @@ Four separate things are easy to conflate here — don't:
   it doesn't also trigger the row's own navigation. Creating a new account
   navigates straight to its detail page on success, rather than staying on
   the list.
+- `Domain` (`core.py`'s `DomainService`) - which domains an `Account` owns,
+  when each expires, who it's registered with, and whether it's set to
+  auto-renew. Structurally closest to `ExpenseAttachment` below, not
+  `Expense`: always accessed through its parent `Account` (**no
+  `organisation_id` column of its own** - tenant ownership is resolved via
+  `AccountService`/`self._repository.get_account(...)` first, raising
+  `NotFound` if the account is missing or belongs to a different
+  organisation, same reasoning as `ExpenseAttachment`'s own docstring), no
+  `number`/lifecycle. Unlike an attachment though, a domain is user-edited
+  data, not an immutable uploaded file - `DomainService.update_domain` is a
+  full replace, mirroring `AccountService.update_account`'s PUT semantics,
+  rather than being add-only. `domain_name`/`expiry_date`/`registrar` are
+  all required (`ValidationFailed` on a blank `domain_name`/`registrar` -
+  no format validation, same "required but unvalidated format" convention
+  `Account.email`/`business_name` already use); `auto_renew` is a plain
+  informational boolean, defaulting `False` - nothing here talks to a
+  registrar's API. `POST/GET /accounts/{id}/domains`, `PUT`/`DELETE
+  .../domains/{domain_id}` (no single-`GET` route - the list is the only
+  read path, same as `GET /expenses?account_id=`). `SqliteRepository.
+  list_domains` orders **soonest-expiry-first**, not the newest-created-
+  first convention every other `list_*` method in this app uses - "what
+  needs attention soonest" is the useful default for this data, unlike the
+  chronological-record framing quotes/invoices/expenses share. Web UI: a
+  "Domains" section on `AccountDetailPage.tsx` (no separate route/page,
+  unlike Quote/Invoice/Expense's own detail pages - a domain has no
+  sub-resources or PDF of its own to justify one) - an inline "Add domain"
+  toggle reveals `components/DomainForm.tsx` (same `initial`/`submitLabel`/
+  `onSubmit`/`onDone`/`onCancel` prop shape as `AccountForm.tsx`, reused for
+  both add and per-row edit), and each row has its own Edit/Delete actions.
 - `ExpenseService` (`core.py`) tracks costs incurred against an `Account` -
   e.g. a domain renewal paid on a client's behalf. Deliberately no draft/
   sent status field, unlike `Quote`/`Invoice`: an expense is a record of
@@ -766,7 +796,16 @@ Four separate things are easy to conflate here — don't:
   `expense_document_header`/`document_footer` columns, an `UPDATE` copying
   the one old value into all three new header columns and all three new
   footer columns (existing values preserved, not dropped), then `DROP
-  COLUMN` × 2 for the old `document_header`/`document_footer`.)
+  COLUMN` × 2 for the old `document_header`/`document_footer`. Migration 13
+  added `idx_invoices_organisation_quote`, one more plain `CREATE INDEX`
+  backing `list_invoices`' `quote_id` filter (see the Quote/Invoice
+  conversion note above). Migration 14 added a nullable `accent_color`
+  column to `business_profiles` - plain `ADD COLUMN`, no rebuild needed,
+  same shape as migration 6 (see `pdf.py`'s accent-colour rendering
+  bullet above). Migration 15 added `domains` - one more brand new table
+  plus its own `idx_domains_account` index (see the `Domain` Conventions
+  bullet above), no rebuild needed, same reasoning as every other
+  pure-addition migration in this file.)
 - Storage is a single shared SQLite connection/file — **serialise every
   access on a lock** inside the repository implementation rather than
   assuming the caller will. That lock is per-*call*, not across a sequence

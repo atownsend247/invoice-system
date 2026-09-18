@@ -2,6 +2,7 @@ import math
 import mimetypes
 import os
 import sys
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -203,6 +204,90 @@ def account_update(
         postcode=postcode,
     )
     click.echo(f"Updated account {updated.id}: {updated.business_name}")
+
+
+@cli.group()
+def domain() -> None:
+    pass
+
+
+@domain.command("create")
+@click.argument("account_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option("--domain-name", required=True)
+@click.option("--expiry-date", required=True, type=click.DateTime(formats=["%Y-%m-%d"]))
+@click.option("--registrar", required=True)
+@click.option("--auto-renew/--no-auto-renew", default=False)
+@click.pass_obj
+def domain_create(
+    application: Application,
+    account_id: str,
+    user_id: str,
+    domain_name: str,
+    expiry_date: datetime,
+    registrar: str,
+    auto_renew: bool,
+) -> None:
+    created = application.domains.create_domain(
+        _organisation_id(application, user_id),
+        account_id,
+        domain_name=domain_name,
+        expiry_date=expiry_date.date(),
+        registrar=registrar,
+        auto_renew=auto_renew,
+    )
+    click.echo(f"Created domain {created.id}: {created.domain_name}")
+
+
+@domain.command("list")
+@click.argument("account_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.pass_obj
+def domain_list(application: Application, account_id: str, user_id: str) -> None:
+    for d in application.domains.list_domains(_organisation_id(application, user_id), account_id):
+        auto = "auto-renew" if d.auto_renew else "manual renewal"
+        click.echo(f"{d.id}\t{d.domain_name}\texpires {d.expiry_date}\t{d.registrar}\t{auto}")
+
+
+@domain.command("update")
+@click.argument("account_id")
+@click.argument("domain_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option("--domain-name", required=True)
+@click.option("--expiry-date", required=True, type=click.DateTime(formats=["%Y-%m-%d"]))
+@click.option("--registrar", required=True)
+@click.option("--auto-renew/--no-auto-renew", default=False)
+@click.pass_obj
+def domain_update(
+    application: Application,
+    account_id: str,
+    domain_id: str,
+    user_id: str,
+    domain_name: str,
+    expiry_date: datetime,
+    registrar: str,
+    auto_renew: bool,
+) -> None:
+    updated = application.domains.update_domain(
+        _organisation_id(application, user_id),
+        account_id,
+        domain_id,
+        domain_name=domain_name,
+        expiry_date=expiry_date.date(),
+        registrar=registrar,
+        auto_renew=auto_renew,
+    )
+    click.echo(f"Updated domain {updated.id}: {updated.domain_name}")
+
+
+@domain.command("delete")
+@click.argument("account_id")
+@click.argument("domain_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.pass_obj
+def domain_delete(application: Application, account_id: str, domain_id: str, user_id: str) -> None:
+    application.domains.delete_domain(_organisation_id(application, user_id), account_id, domain_id)
+    click.echo(f"Deleted domain {domain_id}")
 
 
 @cli.group()

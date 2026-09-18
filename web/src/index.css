@@ -459,6 +459,17 @@ button.secondary {
   min-width: 10rem;
 }
 
+.inline-form .checkbox-field {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.inline-form .checkbox-field input {
+  min-width: 0;
+  width: auto;
+}
+
 .settings-form {
   background: var(--surface);
   border: 1px solid var(--border);

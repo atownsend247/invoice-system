@@ -11,6 +11,7 @@ from .ids import new_id as default_new_id
 from .models import (
     Account,
     BusinessProfile,
+    Domain,
     Expense,
     ExpenseAttachment,
     Invoice,
@@ -181,6 +182,103 @@ class AccountService:
 
 def _blank_to_none(value: str | None) -> str | None:
     return value.strip() if value and value.strip() else None
+
+
+class DomainService:
+    """Domains owned by an `Account` - which domain, when it expires, who
+    it's registered with (see models.Domain). Structurally closest to
+    `ExpenseAttachment` (`AttachmentStore` aside): always accessed through
+    its parent `Account`, resolved via `self._repository.get_account(...)`
+    first on every method here (raising `NotFound` if it's missing or
+    belongs to a different organisation) rather than carrying its own
+    `organisation_id` - same reasoning as `ExpenseService`'s attachment
+    methods. Unlike an attachment, a domain is user-edited data, so
+    `update_domain` is a full replace, mirroring
+    `AccountService.update_account`."""
+
+    def __init__(
+        self, repository: Repository, clock: Clock = system_clock, new_id: IdGenerator = default_new_id
+    ) -> None:
+        self._repository = repository
+        self._clock = clock
+        self._new_id = new_id
+
+    def create_domain(
+        self,
+        organisation_id: str,
+        account_id: str,
+        *,
+        domain_name: str,
+        expiry_date: date_,
+        registrar: str,
+        auto_renew: bool = False,
+    ) -> Domain:
+        self._get_account(organisation_id, account_id)
+        if not domain_name.strip():
+            raise ValidationFailed("domain_name is required")
+        if not registrar.strip():
+            raise ValidationFailed("registrar is required")
+        now = self._clock()
+        domain = Domain(
+            id=self._new_id(),
+            account_id=account_id,
+            domain_name=domain_name,
+            expiry_date=expiry_date,
+            registrar=registrar,
+            auto_renew=auto_renew,
+            created_at=now,
+            updated_at=now,
+        )
+        return self._repository.create_domain(domain)
+
+    def get_domain(self, organisation_id: str, account_id: str, domain_id: str) -> Domain:
+        self._get_account(organisation_id, account_id)
+        return self._get_domain(account_id, domain_id)
+
+    def list_domains(self, organisation_id: str, account_id: str) -> list[Domain]:
+        self._get_account(organisation_id, account_id)
+        return self._repository.list_domains(account_id)
+
+    def update_domain(
+        self,
+        organisation_id: str,
+        account_id: str,
+        domain_id: str,
+        *,
+        domain_name: str,
+        expiry_date: date_,
+        registrar: str,
+        auto_renew: bool,
+    ) -> Domain:
+        self._get_account(organisation_id, account_id)
+        existing = self._get_domain(account_id, domain_id)
+        if not domain_name.strip():
+            raise ValidationFailed("domain_name is required")
+        if not registrar.strip():
+            raise ValidationFailed("registrar is required")
+        existing.domain_name = domain_name
+        existing.expiry_date = expiry_date
+        existing.registrar = registrar
+        existing.auto_renew = auto_renew
+        existing.updated_at = self._clock()
+        return self._repository.update_domain(existing)
+
+    def delete_domain(self, organisation_id: str, account_id: str, domain_id: str) -> None:
+        self._get_account(organisation_id, account_id)
+        self._get_domain(account_id, domain_id)  # 404s if missing/wrong account
+        self._repository.delete_domain(account_id, domain_id)
+
+    def _get_account(self, organisation_id: str, account_id: str) -> Account:
+        account = self._repository.get_account(organisation_id, account_id)
+        if account is None:
+            raise NotFound(f"account {account_id} not found")
+        return account
+
+    def _get_domain(self, account_id: str, domain_id: str) -> Domain:
+        domain = self._repository.get_domain(account_id, domain_id)
+        if domain is None:
+            raise NotFound(f"domain {domain_id} not found")
+        return domain
 
 
 def _month_start(d: date_) -> date_:

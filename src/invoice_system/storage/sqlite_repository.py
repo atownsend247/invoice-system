@@ -7,6 +7,7 @@ from pathlib import Path
 from ..models import (
     Account,
     BusinessProfile,
+    Domain,
     Expense,
     ExpenseAttachment,
     Invoice,
@@ -203,6 +204,80 @@ class SqliteRepository:
             county=row["county"],
             postcode=row["postcode"],
             created_at=datetime.fromisoformat(row["created_at"]),
+        )
+
+    # -- Domains ---------------------------------------------------------------
+
+    def create_domain(self, domain: Domain) -> Domain:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO domains (id, account_id, domain_name, expiry_date, registrar, "
+                "auto_renew, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    domain.id,
+                    domain.account_id,
+                    domain.domain_name,
+                    domain.expiry_date.isoformat(),
+                    domain.registrar,
+                    int(domain.auto_renew),
+                    domain.created_at.isoformat(),
+                    domain.updated_at.isoformat(),
+                ),
+            )
+            self._conn.commit()
+        return domain
+
+    def get_domain(self, account_id: str, domain_id: str) -> Domain | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM domains WHERE id = ? AND account_id = ?", (domain_id, account_id)
+            ).fetchone()
+        return self._row_to_domain(row) if row else None
+
+    def list_domains(self, account_id: str) -> list[Domain]:
+        # Soonest-expiring first - the useful default for this data, unlike
+        # the newest-created-first convention everything else here uses
+        # (see models.Domain).
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM domains WHERE account_id = ? ORDER BY expiry_date", (account_id,)
+            ).fetchall()
+        return [self._row_to_domain(row) for row in rows]
+
+    def update_domain(self, domain: Domain) -> Domain:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE domains SET domain_name = ?, expiry_date = ?, registrar = ?, "
+                "auto_renew = ?, updated_at = ? WHERE id = ? AND account_id = ?",
+                (
+                    domain.domain_name,
+                    domain.expiry_date.isoformat(),
+                    domain.registrar,
+                    int(domain.auto_renew),
+                    domain.updated_at.isoformat(),
+                    domain.id,
+                    domain.account_id,
+                ),
+            )
+            self._conn.commit()
+        return domain
+
+    def delete_domain(self, account_id: str, domain_id: str) -> None:
+        with self._lock:
+            self._conn.execute("DELETE FROM domains WHERE id = ? AND account_id = ?", (domain_id, account_id))
+            self._conn.commit()
+
+    @staticmethod
+    def _row_to_domain(row: sqlite3.Row) -> Domain:
+        return Domain(
+            id=row["id"],
+            account_id=row["account_id"],
+            domain_name=row["domain_name"],
+            expiry_date=date.fromisoformat(row["expiry_date"]),
+            registrar=row["registrar"],
+            auto_renew=bool(row["auto_renew"]),
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
         )
 
     # -- Business profiles -----------------------------------------------------

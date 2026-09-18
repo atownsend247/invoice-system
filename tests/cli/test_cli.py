@@ -1149,6 +1149,118 @@ def test_account_update_missing_account_returns_nonzero_exit(tmp_path):
     assert result.exit_code != 0
 
 
+def test_domain_create_list_update_delete(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
+
+    account_id = _id_from(
+        runner.invoke(
+            cli,
+            [
+                *_base_args(db_path),
+                "account",
+                "create",
+                "--user-id",
+                "1",
+                "--business-name",
+                "Acme",
+                "--email",
+                "a@b.test",
+                "--address-line1",
+                "1 Main St",
+            ],
+        ).output,
+        r"Created account (\S+):",
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "domain",
+            "create",
+            account_id,
+            "--user-id",
+            "1",
+            "--domain-name",
+            "acme.test",
+            "--expiry-date",
+            "2027-01-01",
+            "--registrar",
+            "123-Reg",
+            "--auto-renew",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    domain_id = _id_from(result.output, r"Created domain (\S+):")
+
+    result = runner.invoke(cli, [*_base_args(db_path), "domain", "list", account_id, "--user-id", "1"])
+    assert result.exit_code == 0, result.output
+    assert "acme.test" in result.output
+    assert "auto-renew" in result.output
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "domain",
+            "update",
+            account_id,
+            domain_id,
+            "--user-id",
+            "1",
+            "--domain-name",
+            "acme.co.uk",
+            "--expiry-date",
+            "2028-01-01",
+            "--registrar",
+            "GoDaddy",
+            "--no-auto-renew",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert f"Updated domain {domain_id}: acme.co.uk" in result.output
+
+    result = runner.invoke(cli, [*_base_args(db_path), "domain", "list", account_id, "--user-id", "1"])
+    assert "acme.co.uk" in result.output
+    assert "manual renewal" in result.output
+
+    result = runner.invoke(
+        cli, [*_base_args(db_path), "domain", "delete", account_id, domain_id, "--user-id", "1"]
+    )
+    assert result.exit_code == 0, result.output
+    assert f"Deleted domain {domain_id}" in result.output
+
+    result = runner.invoke(cli, [*_base_args(db_path), "domain", "list", account_id, "--user-id", "1"])
+    assert result.output.strip() == ""
+
+
+def test_domain_create_requires_existing_account(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "domain",
+            "create",
+            "does-not-exist",
+            "--user-id",
+            "1",
+            "--domain-name",
+            "acme.test",
+            "--expiry-date",
+            "2027-01-01",
+            "--registrar",
+            "123-Reg",
+        ],
+    )
+    assert result.exit_code != 0
+
+
 def test_settings_show_defaults_then_set_and_show_again(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()

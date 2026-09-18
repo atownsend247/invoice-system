@@ -34,6 +34,7 @@ from .auth import Auth
 from .core import (
     AccountService,
     BusinessProfileService,
+    DomainService,
     ExpenseService,
     InvoiceService,
     OrganisationService,
@@ -461,6 +462,30 @@ def seed_demo_data(application: Application, auth: Auth, *, now: datetime | None
         ).id
         for a in _ACCOUNTS
     ]
+
+    # A couple of domains, on a couple of accounts - not every account has
+    # one, same "not every account needs every kind of child record" spirit
+    # as expenses/attachments below. One expiring soon (auto-renew on, so
+    # nothing to actually do) and one already lapsed (auto-renew off - the
+    # case actually worth flagging), rather than only ever showing
+    # comfortably-far-off dates.
+    domains = DomainService(application.repository, clock=lambda: now)
+    domains.create_domain(
+        organisation_id,
+        account_ids[0],
+        domain_name="northwindtraders.test",
+        expiry_date=(now + timedelta(days=18)).date(),
+        registrar="123-Reg",
+        auto_renew=True,
+    )
+    domains.create_domain(
+        organisation_id,
+        account_ids[1],
+        domain_name="blueharbourconsulting.test",
+        expiry_date=(now - timedelta(days=9)).date(),
+        registrar="GoDaddy",
+        auto_renew=False,
+    )
 
     for scenario in _SCENARIOS:
         seeder = _Seeder(

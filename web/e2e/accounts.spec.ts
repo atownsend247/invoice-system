@@ -121,6 +121,41 @@ test('cancelling an edit discards changes', async ({ authenticatedPage: page, te
   await expect(page.getByRole('heading', { name: 'Should not be saved' })).toHaveCount(0)
 })
 
+test('adding, editing, and deleting a domain on an account', async ({
+  authenticatedPage: page,
+  testAccount,
+}) => {
+  await page.goto(`/accounts/${testAccount.id}`)
+  await expect(page.getByText('No domains recorded yet.')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Add domain' }).click()
+  await page.getByLabel('Domain name').fill('example.test')
+  await page.getByLabel('Expiry date').fill('2027-06-15')
+  await page.getByLabel('Registrar').fill('123-Reg')
+  await page.getByLabel('Auto-renew').check()
+  await page.getByRole('button', { name: 'Add' }).click()
+
+  const row = page.locator('tbody tr', { hasText: 'example.test' })
+  await expect(row).toContainText('2027-06-15')
+  await expect(row).toContainText('123-Reg')
+  await expect(row).toContainText('Yes')
+
+  await row.getByRole('button', { name: 'Edit' }).click()
+  await page.getByLabel('Domain name').fill('example.co.uk')
+  await page.getByLabel('Registrar').fill('GoDaddy')
+  await page.getByLabel('Auto-renew').uncheck()
+  await page.getByRole('button', { name: 'Save' }).click()
+
+  const updatedRow = page.locator('tbody tr', { hasText: 'example.co.uk' })
+  await expect(updatedRow).toContainText('GoDaddy')
+  await expect(updatedRow).toContainText('No')
+  await expect(page.getByText('example.test', { exact: true })).toHaveCount(0)
+
+  await updatedRow.getByRole('button', { name: 'Delete' }).click()
+  await expect(page.getByText('example.co.uk')).toHaveCount(0)
+  await expect(page.getByText('No domains recorded yet.')).toBeVisible()
+})
+
 test('the accounts list paginates when there are enough accounts', async ({
   authenticatedPage: page,
   apiToken,

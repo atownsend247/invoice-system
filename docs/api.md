@@ -44,6 +44,10 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | GET | `/accounts` | required | Paginated list of accounts in the current user's organisation - `{items, total}`. `?query=` matches (case-insensitively) business/contact name, email, phone, or any set address line. `?page=`/`?page_size=` (defaults `1`/`20`, `page_size` max `200`) - see Conventions below. |
 | GET | `/accounts/{id}` | required | Fetch one account. 404 if missing *or* it belongs to a different organisation (see `docs/data-model.md`'s "Multi-tenancy"). |
 | PUT | `/accounts/{id}` | required | Replace it (same required/optional fields as create — a full replace, not a partial patch). 404 if missing, 422 on a blank required field. |
+| POST | `/accounts/{id}/domains` | required | Add a domain to this account (`domain_name`, `expiry_date`, `registrar` required; `auto_renew` optional, defaults `false`). 404 if the account is missing/wrong organisation, 422 on a blank `domain_name`/`registrar`. |
+| GET | `/accounts/{id}/domains` | required | List this account's domains, soonest-expiry-first (not the newest-first convention every other list here uses) - a plain array, not paginated (see Conventions below). No single-domain `GET` route - the list is the only read path. |
+| PUT | `/accounts/{id}/domains/{domain_id}` | required | Replace a domain (same fields as create - a full replace). 404 if missing/wrong account, 422 on a blank `domain_name`/`registrar`. |
+| DELETE | `/accounts/{id}/domains/{domain_id}` | required | Delete it. 204, 404 if missing/wrong account. |
 | POST | `/quotes` | required | Create a draft quote (`account_id` required; `currency` defaults `USD`; `expiry_date` optional). |
 | GET | `/quotes` | required | Paginated list of quotes - `{items, total}`. Optionally filtered by `?account_id=` (exact), `?account_name=` (matches the linked account's business_name, case-insensitively), and/or `?status=` (`draft`/`sent`/`accepted`/`rejected`/`expired`/`converted`). `?page=`/`?page_size=`, same as `/accounts` - see Conventions below. |
 | GET | `/quotes/{id}` | required | Fetch one quote with its line items, `subtotal`, `tax_total`, and (gross) `total`. |
@@ -126,6 +130,16 @@ stays per-user, not per-organisation (see `docs/data-model.md`'s
   rather than accepted as free text — it's interpolated directly into a
   CSS declaration in the rendered PDF template, not shown as escaped body
   text. Falls back to a fixed neutral constant when unset.
+- **`Domain`**: which domains an account owns, when each expires, who it's
+  registered with, and whether it's set to auto-renew - see the routes
+  table above. Always accessed through its parent account
+  (`/accounts/{id}/domains...`), not a standalone `/domains` collection -
+  404s the same way a mismatched-organisation account does if `{id}`
+  doesn't resolve under the caller's own organisation. `domain_name`/
+  `expiry_date`/`registrar` are all required; no format validation on
+  `domain_name` beyond non-blank, same as `Account.email`/`business_name`.
+  Editable in place (`PUT`), not add-only - a domain's expiry changes on
+  every renewal and its registrar can change on a transfer.
 - **Invite-gated registration**: `invoice-system-cli invite create
   [--expires-in-days N]` (default 7) creates a single-use
   `RegistrationInvite` and prints its token plus a relative `/register?
@@ -143,10 +157,11 @@ stays per-user, not per-organisation (see `docs/data-model.md`'s
   the new user gets their own `Organisation` lazily on first login, same
   as every other user.
 - `GET /accounts`/`GET /quotes`/`GET /invoices` are the only paginated
-  endpoints (`GET /expenses` stays a bare array - there's no standalone
-  expenses list page, only `AccountDetailPage`'s per-account sub-list,
-  which fetches `?account_id=` at a generously large `page_size` rather
-  than needing true pagination). Response shape is `{items: [...], total}`,
+  endpoints (`GET /expenses` and `GET /accounts/{id}/domains` both stay a
+  bare array - neither has a standalone list page of its own, only
+  `AccountDetailPage`'s per-account sub-list, and one client's own domain
+  count is inherently small - see the `Domain` bullet below). Response
+  shape is `{items: [...], total}`,
   not a bare array - `total` is the count matching the request's filters
   across *every* page, letting the client compute how many pages exist
   without a second request. `page` defaults to `1`, `page_size` to `20`

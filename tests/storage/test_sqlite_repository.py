@@ -8,6 +8,7 @@ from invoice_system.ids import new_id
 from invoice_system.models import (
     Account,
     BusinessProfile,
+    Domain,
     Expense,
     ExpenseAttachment,
     Invoice,
@@ -734,6 +735,55 @@ def test_list_expenses_filters_by_account(repo, organisation_id):
 
     assert len(repo.list_expenses(organisation_id)) == 2
     assert len(repo.list_expenses(organisation_id, account_id=account.id)) == 1
+
+
+def _domain(account_id: str, **overrides: object) -> Domain:
+    defaults: dict = {
+        "id": new_id(),
+        "account_id": account_id,
+        "domain_name": "acme.test",
+        "expiry_date": date(2027, 1, 1),
+        "registrar": "123-Reg",
+        "auto_renew": False,
+        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+        "updated_at": datetime(2026, 1, 1, tzinfo=UTC),
+    }
+    defaults.update(overrides)
+    return Domain(**defaults)
+
+
+def test_domain_crud_and_tenant_scoping(repo, organisation_id):
+    account = repo.create_account(_account(organisation_id))
+    other_account = repo.create_account(_account(organisation_id, business_name="Other"))
+
+    sooner = repo.create_domain(_domain(account.id, domain_name="sooner.test", expiry_date=date(2027, 1, 1)))
+    repo.create_domain(_domain(account.id, domain_name="later.test", expiry_date=date(2027, 6, 1)))
+    repo.create_domain(_domain(other_account.id, domain_name="unrelated.test"))
+
+    # account_id-scoped, and ordered soonest-expiry-first (see
+    # models.Domain) - not the newest-created-first convention every other
+    # list_* method in this file uses.
+    domains = repo.list_domains(account.id)
+    assert [d.domain_name for d in domains] == ["sooner.test", "later.test"]
+
+    fetched = repo.get_domain(account.id, sooner.id)
+    assert fetched is not None
+    assert fetched.domain_name == "sooner.test"
+
+    # Scoped by account_id - another account (even in the same
+    # organisation) can't fetch this one's domain by id.
+    assert repo.get_domain(other_account.id, sooner.id) is None
+
+    sooner.domain_name = "renamed.test"
+    sooner.registrar = "GoDaddy"
+    sooner.auto_renew = True
+    updated = repo.update_domain(sooner)
+    assert updated.domain_name == "renamed.test"
+    assert repo.get_domain(account.id, sooner.id).registrar == "GoDaddy"
+    assert repo.get_domain(account.id, sooner.id).auto_renew is True
+
+    repo.delete_domain(account.id, sooner.id)
+    assert repo.get_domain(account.id, sooner.id) is None
 
 
 def test_next_expense_number_increments_and_is_scoped_per_organisation(repo, organisation_id):

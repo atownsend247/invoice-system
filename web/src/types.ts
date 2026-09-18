@@ -42,6 +42,20 @@ export interface Account {
   created_at: string
 }
 
+// A domain name owned by an Account - which domain, when it expires, who
+// it's registered with (see CLAUDE.md). domain_name/expiry_date/registrar
+// are all required; auto_renew is purely informational.
+export interface Domain {
+  id: string
+  account_id: string
+  domain_name: string
+  expiry_date: string
+  registrar: string
+  auto_renew: boolean
+  created_at: string
+  updated_at: string
+}
+
 // tax_rate is a fraction ("0.20" for 20% VAT, "0" for none) applied to
 // this line only - see CLAUDE.md. total is *gross* (net_total +
 // tax_amount) - what this line actually adds to what's owed.

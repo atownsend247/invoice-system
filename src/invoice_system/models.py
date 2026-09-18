@@ -74,6 +74,40 @@ class Account:
 
 
 @dataclass
+class Domain:
+    """A domain name owned by an `Account` - which domain, when it expires,
+    and who it's registered with. Structurally closest to
+    `ExpenseAttachment` below, not `Expense`: always accessed through its
+    parent `Account` (no `organisation_id` column of its own - tenant
+    ownership is resolved via `AccountService.get_account` first, same
+    reasoning as `ExpenseAttachment`'s own docstring), no `number`/
+    lifecycle. Unlike `ExpenseAttachment` though, it's user-edited data,
+    not an immutable uploaded file, so it supports a full update
+    (`DomainService.update_domain`, mirroring
+    `AccountService.update_account`'s full-replace semantics) rather than
+    being add-only.
+
+    `domain_name`/`registrar` are both required (enforced non-blank in
+    `DomainService`, never in storage, same "required but unvalidated
+    format" convention as `Account.business_name`/`email` - this app
+    doesn't validate email format either, so there's no reason to expect a
+    domain-name-shaped regex check here). `expiry_date` is also required -
+    a domain with no known expiry isn't a useful record. `auto_renew`
+    defaults `False` and is purely informational, same as everything in
+    `BusinessProfile`'s payment-and-tax group - nothing here talks to a
+    registrar's API."""
+
+    id: str
+    account_id: str
+    domain_name: str
+    expiry_date: date
+    registrar: str
+    auto_renew: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass
 class BusinessProfile:
     """The logged-in user's own business details - not a domain "Account"
     (that's the client being billed) and not sessionkit's User (that's the

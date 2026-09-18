@@ -32,6 +32,8 @@ from .schemas import (
     AccountOut,
     BusinessProfileIn,
     BusinessProfileOut,
+    DomainIn,
+    DomainOut,
     ExpenseAttachmentOut,
     ExpenseCreateIn,
     ExpenseOut,
@@ -214,6 +216,64 @@ def update_account(
         postcode=body.postcode,
     )
     return AccountOut.from_model(account)
+
+
+@domain_router.post("/accounts/{account_id}/domains", response_model=DomainOut, status_code=201)
+def create_domain(
+    account_id: str,
+    body: DomainIn,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> DomainOut:
+    domain = application.domains.create_domain(
+        organisation_id,
+        account_id,
+        domain_name=body.domain_name,
+        expiry_date=body.expiry_date,
+        registrar=body.registrar,
+        auto_renew=body.auto_renew,
+    )
+    return DomainOut.from_model(domain)
+
+
+@domain_router.get("/accounts/{account_id}/domains", response_model=list[DomainOut])
+def list_domains(
+    account_id: str,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> list[DomainOut]:
+    domains = application.domains.list_domains(organisation_id, account_id)
+    return [DomainOut.from_model(d) for d in domains]
+
+
+@domain_router.put("/accounts/{account_id}/domains/{domain_id}", response_model=DomainOut)
+def update_domain(
+    account_id: str,
+    domain_id: str,
+    body: DomainIn,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> DomainOut:
+    domain = application.domains.update_domain(
+        organisation_id,
+        account_id,
+        domain_id,
+        domain_name=body.domain_name,
+        expiry_date=body.expiry_date,
+        registrar=body.registrar,
+        auto_renew=body.auto_renew,
+    )
+    return DomainOut.from_model(domain)
+
+
+@domain_router.delete("/accounts/{account_id}/domains/{domain_id}", status_code=204)
+def delete_domain(
+    account_id: str,
+    domain_id: str,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> None:
+    application.domains.delete_domain(organisation_id, account_id, domain_id)
 
 
 @domain_router.post("/quotes", response_model=QuoteOut, status_code=201)
