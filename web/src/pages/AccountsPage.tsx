@@ -70,7 +70,8 @@ export function AccountsPage() {
 
           {accounts && accounts.length === 0 && <p className="meta">No accounts match "{query}".</p>}
           {accounts && accounts.length > 0 && (
-            <table>
+            <div className="table-scroll">
+              <table>
               <thead>
                 <tr>
                   <th>Business</th>
@@ -111,7 +112,8 @@ export function AccountsPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+              </table>
+            </div>
           )}
           <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </>

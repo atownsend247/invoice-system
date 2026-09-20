@@ -186,63 +186,67 @@ export function AccountDetailPage() {
 
 function QuotesTable({ quotes }: { quotes: Quote[] }) {
   return (
-    <table>
-      <thead>
-        <tr>
-          <th>Number</th>
-          <th>Status</th>
-          <th>Issued</th>
-          <th>Total</th>
-          <th />
-        </tr>
-      </thead>
-      <tbody>
-        {quotes.map((quote) => (
-          <tr key={quote.id}>
-            <td>{quote.number ?? `draft #${quote.id}`}</td>
-            <td>
-              <StatusBadge status={quote.status} />
-            </td>
-            <td>{quote.issue_date}</td>
-            <td>
-              {quote.total} {quote.currency}
-            </td>
-            <td>
-              <Link to={`/quotes/${quote.id}`}>View</Link>
-            </td>
+    <div className="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Number</th>
+            <th>Status</th>
+            <th>Issued</th>
+            <th>Total</th>
+            <th />
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {quotes.map((quote) => (
+            <tr key={quote.id}>
+              <td>{quote.number ?? `draft #${quote.id}`}</td>
+              <td>
+                <StatusBadge status={quote.status} />
+              </td>
+              <td>{quote.issue_date}</td>
+              <td>
+                {quote.total} {quote.currency}
+              </td>
+              <td>
+                <Link to={`/quotes/${quote.id}`}>View</Link>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
 function ExpensesTable({ expenses }: { expenses: Expense[] }) {
   return (
-    <table>
-      <thead>
-        <tr>
-          <th>Number</th>
-          <th>Recorded</th>
-          <th>Total</th>
-          <th />
-        </tr>
-      </thead>
-      <tbody>
-        {expenses.map((expense) => (
-          <tr key={expense.id}>
-            <td>{expense.number}</td>
-            <td>{expense.issue_date}</td>
-            <td>
-              {expense.total} {expense.currency}
-            </td>
-            <td>
-              <Link to={`/expenses/${expense.id}`}>View</Link>
-            </td>
+    <div className="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Number</th>
+            <th>Recorded</th>
+            <th>Total</th>
+            <th />
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {expenses.map((expense) => (
+            <tr key={expense.id}>
+              <td>{expense.number}</td>
+              <td>{expense.issue_date}</td>
+              <td>
+                {expense.total} {expense.currency}
+              </td>
+              <td>
+                <Link to={`/expenses/${expense.id}`}>View</Link>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -281,92 +285,96 @@ function DomainsTable({
           {error}
         </p>
       )}
-      <table>
-        <thead>
-          <tr>
-            <th>Domain</th>
-            <th>Expires</th>
-            <th>Registrar</th>
-            <th>Auto-renew</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {domains.map((domain) =>
-            editingId === domain.id ? (
-              <tr key={domain.id}>
-                <td colSpan={5}>
-                  <DomainForm
-                    initial={domain}
-                    registrars={registrars}
-                    submitLabel="Save"
-                    submittingLabel="Saving…"
-                    onSubmit={(input) => api.updateDomain(accountId, domain.id, input)}
-                    onDone={() => {
-                      setEditingId(null)
-                      onChanged()
-                    }}
-                    onCancel={() => setEditingId(null)}
-                  />
-                </td>
-              </tr>
-            ) : (
-              <tr key={domain.id}>
-                <td>{domain.domain_name}</td>
-                <td>{domain.expiry_date}</td>
-                <td>{domain.registrar}</td>
-                <td>{domain.auto_renew ? 'Yes' : 'No'}</td>
-                <td>
-                  <button type="button" onClick={() => setEditingId(domain.id)}>
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => handleDelete(domain)}
-                    disabled={deletingId === domain.id}
-                  >
-                    {deletingId === domain.id ? 'Deleting…' : 'Delete'}
-                  </button>
-                </td>
-              </tr>
-            ),
-          )}
-        </tbody>
-      </table>
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Domain</th>
+              <th>Expires</th>
+              <th>Registrar</th>
+              <th>Auto-renew</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {domains.map((domain) =>
+              editingId === domain.id ? (
+                <tr key={domain.id}>
+                  <td colSpan={5}>
+                    <DomainForm
+                      initial={domain}
+                      registrars={registrars}
+                      submitLabel="Save"
+                      submittingLabel="Saving…"
+                      onSubmit={(input) => api.updateDomain(accountId, domain.id, input)}
+                      onDone={() => {
+                        setEditingId(null)
+                        onChanged()
+                      }}
+                      onCancel={() => setEditingId(null)}
+                    />
+                  </td>
+                </tr>
+              ) : (
+                <tr key={domain.id}>
+                  <td>{domain.domain_name}</td>
+                  <td>{domain.expiry_date}</td>
+                  <td>{domain.registrar}</td>
+                  <td>{domain.auto_renew ? 'Yes' : 'No'}</td>
+                  <td>
+                    <button type="button" onClick={() => setEditingId(domain.id)}>
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => handleDelete(domain)}
+                      disabled={deletingId === domain.id}
+                    >
+                      {deletingId === domain.id ? 'Deleting…' : 'Delete'}
+                    </button>
+                  </td>
+                </tr>
+              ),
+            )}
+          </tbody>
+        </table>
+      </div>
     </>
   )
 }
 
 function InvoicesTable({ invoices }: { invoices: Invoice[] }) {
   return (
-    <table>
-      <thead>
-        <tr>
-          <th>Number</th>
-          <th>Status</th>
-          <th>Issued</th>
-          <th>Total</th>
-          <th />
-        </tr>
-      </thead>
-      <tbody>
-        {invoices.map((invoice) => (
-          <tr key={invoice.id}>
-            <td>{invoice.number ?? `draft #${invoice.id}`}</td>
-            <td>
-              <StatusBadge status={invoice.status} />
-            </td>
-            <td>{invoice.issue_date}</td>
-            <td>
-              {invoice.total} {invoice.currency}
-            </td>
-            <td>
-              <Link to={`/invoices/${invoice.id}`}>View</Link>
-            </td>
+    <div className="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Number</th>
+            <th>Status</th>
+            <th>Issued</th>
+            <th>Total</th>
+            <th />
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {invoices.map((invoice) => (
+            <tr key={invoice.id}>
+              <td>{invoice.number ?? `draft #${invoice.id}`}</td>
+              <td>
+                <StatusBadge status={invoice.status} />
+              </td>
+              <td>{invoice.issue_date}</td>
+              <td>
+                {invoice.total} {invoice.currency}
+              </td>
+              <td>
+                <Link to={`/invoices/${invoice.id}`}>View</Link>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }

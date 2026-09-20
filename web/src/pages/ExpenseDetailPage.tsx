@@ -170,7 +170,8 @@ export function ExpenseDetailPage() {
         <h2>Attachments</h2>
         {expense.attachments.length === 0 && <p className="meta">No supplementary PDFs uploaded yet.</p>}
         {expense.attachments.length > 0 && (
-          <table>
+          <div className="table-scroll">
+            <table>
             <thead>
               <tr>
                 <th>File</th>
@@ -223,7 +224,8 @@ export function ExpenseDetailPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
+          </div>
         )}
 
         <AttachmentUploadForm

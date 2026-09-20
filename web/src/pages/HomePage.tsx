@@ -170,36 +170,38 @@ function InvoiceSection({
       <h2>{title}</h2>
       {invoices.length === 0 && <p className="meta">{emptyMessage}</p>}
       {invoices.length > 0 && (
-        <table>
-          <thead>
-            <tr>
-              <th>Number</th>
-              <th>Account</th>
-              <th>Status</th>
-              <th>Due</th>
-              <th>Total</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {invoices.map((invoice) => (
-              <tr key={invoice.id}>
-                <td>{invoice.number ?? `draft #${invoice.id}`}</td>
-                <td>{accountName(invoice.account_id)}</td>
-                <td>
-                  <StatusBadge status={invoice.status} />
-                </td>
-                <td>{invoice.due_date ?? '—'}</td>
-                <td>
-                  {invoice.total} {invoice.currency}
-                </td>
-                <td>
-                  <Link to={`/invoices/${invoice.id}`}>View</Link>
-                </td>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Number</th>
+                <th>Account</th>
+                <th>Status</th>
+                <th>Due</th>
+                <th>Total</th>
+                <th />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {invoices.map((invoice) => (
+                <tr key={invoice.id}>
+                  <td>{invoice.number ?? `draft #${invoice.id}`}</td>
+                  <td>{accountName(invoice.account_id)}</td>
+                  <td>
+                    <StatusBadge status={invoice.status} />
+                  </td>
+                  <td>{invoice.due_date ?? '—'}</td>
+                  <td>
+                    {invoice.total} {invoice.currency}
+                  </td>
+                  <td>
+                    <Link to={`/invoices/${invoice.id}`}>View</Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )

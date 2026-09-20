@@ -95,7 +95,8 @@ export function QuotesPage() {
 
           {quotes && quotes.length === 0 && <p className="meta">No quotes match these filters.</p>}
           {quotes && quotes.length > 0 && (
-            <table>
+            <div className="table-scroll">
+              <table>
               <thead>
                 <tr>
                   <th>Number</th>
@@ -122,7 +123,8 @@ export function QuotesPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+              </table>
+            </div>
           )}
           <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </>

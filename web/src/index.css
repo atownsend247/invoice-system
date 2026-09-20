@@ -204,6 +204,11 @@ h2 {
   margin: 0;
 }
 
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -324,6 +329,7 @@ button.secondary {
 }
 
 .app-header {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 1.5rem;
@@ -334,6 +340,18 @@ button.secondary {
 
 .app-header .brand {
   font-weight: 700;
+}
+
+.nav-toggle {
+  display: none;
+}
+
+/* On desktop this wrapper is invisible in the box tree - its children
+   (nav, .user-menu) become direct flex items of .app-header, unchanged
+   from before the drawer existed. The mobile media query below turns it
+   into an actual dropdown panel. */
+.app-nav-drawer {
+  display: contents;
 }
 
 .app-header nav {
@@ -798,4 +816,102 @@ button.secondary {
   flex: 1;
   border: none;
   width: 100%;
+}
+
+@media (max-width: 640px) {
+  .nav-toggle {
+    display: inline-flex;
+  }
+
+  /* Five tabs don't fit a 390px-ish screen at their natural width - scroll
+     the strip horizontally (same pattern as .table-scroll) instead of
+     letting flexbox's default min-width:auto force the whole page to
+     overflow. white-space: nowrap keeps each tab on one line so the
+     scrollable strip stays a predictable single row. */
+  .settings-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .settings-tabs button {
+    white-space: nowrap;
+    flex: none;
+  }
+
+  .app-nav-drawer {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.8rem;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    padding: 1rem 1.5rem 1.2rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 8px 16px rgb(0 0 0 / 12%);
+    z-index: 50;
+  }
+
+  .app-nav-drawer[data-open='false'] {
+    display: none;
+  }
+
+  .app-header nav {
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .app-header nav a {
+    padding: 0.6rem 0.2rem;
+    border-bottom: none;
+    border-left: 2px solid transparent;
+    padding-left: 0.6rem;
+  }
+
+  .app-header nav a.active {
+    border-left-color: var(--brand);
+    border-bottom-color: transparent;
+  }
+
+  .user-menu {
+    flex-wrap: wrap;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .app-content {
+    padding: 1rem;
+  }
+
+  .inline-form label,
+  .form-section-fields label,
+  .convert-action {
+    flex: 1 1 100%;
+  }
+
+  .convert-action input {
+    width: 100%;
+  }
+
+  button,
+  .button {
+    padding: 0.65rem 1rem;
+  }
+
+  .pdf-modal-backdrop {
+    padding: 0;
+  }
+
+  .pdf-modal {
+    max-width: 100%;
+    height: 100%;
+    border-radius: 0;
+  }
+
+  .login-form {
+    padding: 1.5rem;
+  }
 }

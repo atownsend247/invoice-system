@@ -464,7 +464,8 @@ function RegistrarsPanel({ active }: { active: boolean }) {
         {!registrars && <p>Loading…</p>}
         {registrars && registrars.length === 0 && <p className="meta">No registrars configured yet.</p>}
         {registrars && registrars.length > 0 && (
-          <table>
+          <div className="table-scroll">
+            <table>
             <thead>
               <tr>
                 <th>Name</th>
@@ -511,7 +512,8 @@ function RegistrarsPanel({ active }: { active: boolean }) {
                 ),
               )}
             </tbody>
-          </table>
+            </table>
+          </div>
         )}
       </fieldset>
     </div>

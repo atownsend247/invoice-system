@@ -40,7 +40,8 @@ interface Props {
 export function LineItemsTable({ lineItems, currency, subtotal, taxTotal, total, onAdd }: Props) {
   return (
     <div className="line-items">
-      <table>
+      <div className="table-scroll">
+        <table>
         <thead>
           <tr>
             <th>Description</th>
@@ -92,7 +93,8 @@ export function LineItemsTable({ lineItems, currency, subtotal, taxTotal, total,
             </td>
           </tr>
         </tfoot>
-      </table>
+        </table>
+      </div>
 
       {onAdd && <AddLineItemForm onAdd={onAdd} />}
     </div>
