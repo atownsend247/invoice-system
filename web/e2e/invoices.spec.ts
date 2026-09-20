@@ -46,6 +46,8 @@ test('sending an invoice assigns a number and a due date', async ({ authenticate
   await page.getByRole('button', { name: 'Send' }).click()
   await expect(page.getByText(/^INV-\d{4}$/)).toBeVisible()
   await expect(page.getByText(/due \d{4}-\d{2}-\d{2}/)).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Activity' })).toBeVisible()
+  await expect(page.locator('.activity-timeline li').first()).toContainText('draft → sent')
 })
 
 test('voiding an invoice updates its status and removes further actions', async ({

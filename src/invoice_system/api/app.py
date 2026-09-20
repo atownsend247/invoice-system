@@ -43,6 +43,7 @@ from .schemas import (
     LineItemIn,
     MonthlyExpenseTotalsReportOut,
     MonthlyTotalsReportOut,
+    QuoteConvertIn,
     QuoteCreateIn,
     QuoteListOut,
     QuoteOut,
@@ -324,13 +325,16 @@ def delete_registrar(
 def create_quote(
     body: QuoteCreateIn,
     application: Application = Depends(get_application),
+    user: SessionUser = Depends(get_current_user),
     organisation_id: str = Depends(get_organisation_id),
 ) -> QuoteOut:
+    profile = application.business_profiles.get_profile(user.id)
     quote = application.quotes.create_quote(
         organisation_id=organisation_id,
         account_id=body.account_id,
         currency=body.currency,
-        expiry_date=body.expiry_date,
+        issue_date=body.issue_date,
+        quote_validity_days=profile.quote_validity_days,
     )
     return QuoteOut.from_model(quote)
 
@@ -395,10 +399,13 @@ def send_quote(
 @domain_router.post("/quotes/{quote_id}/convert", response_model=InvoiceOut, status_code=201)
 def convert_quote(
     quote_id: str,
+    body: QuoteConvertIn | None = None,
     application: Application = Depends(get_application),
     organisation_id: str = Depends(get_organisation_id),
 ) -> InvoiceOut:
-    return InvoiceOut.from_model(application.quotes.convert_to_invoice(organisation_id, quote_id))
+    issue_date = body.issue_date if body is not None else None
+    invoice = application.quotes.convert_to_invoice(organisation_id, quote_id, issue_date=issue_date)
+    return InvoiceOut.from_model(invoice)
 
 
 @domain_router.get("/quotes/{quote_id}/pdf")
@@ -670,6 +677,7 @@ def save_business_profile(
         county=body.county,
         postcode=body.postcode,
         payment_terms_days=body.payment_terms_days,
+        quote_validity_days=body.quote_validity_days,
         currency=body.currency,
         utr=body.utr,
         vat_number=body.vat_number,

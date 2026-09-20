@@ -1082,5 +1082,49 @@ flow," not a restructuring, whenever it's actually needed.
       tests, including a new expenses.spec.ts test covering both the
       create-time date and the in-place edit) updated and passing.
 
+## Phase 34 — Quote/invoice audit trail + issue-date-driven expiry/due dates (done)
+
+- [x] New `ActivityEvent` model (`models.py`) - creation and status changes
+      only, not every field edit - shared between `Quote` and `Invoice`,
+      persisted into two new tables (`quote_events`/`invoice_events`,
+      migration 18) via the same "one shape, two parent tables" pattern
+      `LineItem` already establishes. `QuoteService`/`InvoiceService` each
+      record one on every create/`send`/status-transition/`void`/`pay`/
+      `convert_to_invoice` call, then re-fetch the full entity so the
+      caller sees the just-recorded event without a second round-trip
+      (same "insert child row, then re-fetch parent" shape
+      `add_line_item` already used). Fetched newest-first via `ORDER BY
+      rowid`, not `occurred_at` - the latter can tie under a fake/frozen
+      test clock.
+- [x] Web UI: a new `ActivityTimeline.tsx` component renders that trail as
+      an "Activity" section at the bottom of `QuoteDetailPage.tsx`/
+      `InvoiceDetailPage.tsx`, below the PDF viewer - the API already
+      returns events newest-first, so no client-side sort.
+- [x] `Quote.expiry_date` is no longer an independently-settable raw
+      field - `QuoteService.create_quote` now takes an optional
+      `issue_date` (defaults to today) and computes `expiry_date` as
+      `issue_date + BusinessProfile.quote_validity_days`, a new
+      per-business setting (migration 19, mirroring `payment_terms_days`
+      exactly) exposed on the Settings page's "Payment and tax" tab.
+      `QuoteNewPage.tsx` gained an "Issue date" field, pre-filled with
+      today's local date via a `todayLocalDate()` helper lifted out of
+      `ExpenseNewPage.tsx` into a shared `web/src/dates.ts` (Phase 33
+      introduced the original, expense-only copy).
+- [x] `QuoteService.convert_to_invoice` also takes an optional
+      `issue_date` (defaults to today), letting the resulting invoice be
+      backdated - the only place an `Invoice.issue_date` is ever set,
+      since there's no standalone "create invoice" route/command.
+      `QuoteDetailPage.tsx`'s "Convert to invoice" button gained an
+      inline, optional date input for this.
+- [x] `InvoiceService.send()`'s due-date calculation changed from
+      `today + payment_terms_days` to `invoice.issue_date +
+      payment_terms_days` - the actual point of the backdating feature
+      above; without this fix a backdated invoice would still get a due
+      date computed from today.
+- [x] Full backend suite (375 tests, 98%+ coverage) and full e2e suite (63
+      tests, including new quotes.spec.ts/invoices.spec.ts coverage for
+      the issue-date field, the activity timeline, and backdated
+      conversion) updated and passing.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

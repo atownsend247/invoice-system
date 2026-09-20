@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import * as api from '../api'
+import { todayLocalDate } from '../dates'
 import { errorMessage, useAsync } from '../hooks/useAsync'
 
 export function QuoteNewPage() {
@@ -17,6 +18,10 @@ export function QuoteNewPage() {
   // before it has) without clobbering an in-progress edit.
   const [currency, setCurrency] = useState<string | null>(null)
   const currencyValue = currency ?? profile?.currency ?? 'USD'
+  // Defaults to today but stays overridable to backdate a quote - drives
+  // the calculated expiry date (issue_date + the business's configured
+  // validity period, see CLAUDE.md/models.BusinessProfile).
+  const [issueDate, setIssueDate] = useState(todayLocalDate())
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -26,7 +31,7 @@ export function QuoteNewPage() {
     setError(null)
     setSubmitting(true)
     try {
-      const quote = await api.createQuote(accountId, currencyValue)
+      const quote = await api.createQuote(accountId, currencyValue, issueDate)
       navigate(`/quotes/${quote.id}`, { replace: true })
     } catch (err) {
       setError(errorMessage(err))
@@ -61,6 +66,15 @@ export function QuoteNewPage() {
               value={currencyValue}
               onChange={(event) => setCurrency(event.target.value.toUpperCase())}
               maxLength={3}
+              required
+            />
+          </label>
+          <label>
+            Issue date
+            <input
+              type="date"
+              value={issueDate}
+              onChange={(event) => setIssueDate(event.target.value)}
               required
             />
           </label>

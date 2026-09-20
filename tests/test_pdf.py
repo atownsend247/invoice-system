@@ -40,6 +40,7 @@ def _profile(**overrides: object) -> BusinessProfile:
         "county": None,
         "postcode": None,
         "payment_terms_days": 30,
+        "quote_validity_days": 30,
         "currency": "GBP",
         "utr": None,
         "vat_number": None,

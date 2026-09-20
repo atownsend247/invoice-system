@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import * as api from '../api'
+import { ActivityTimeline } from '../components/ActivityTimeline'
 import { LineItemsTable } from '../components/LineItemsTable'
 import { PdfViewerModal } from '../components/PdfViewerModal'
 import { StatusBadge } from '../components/StatusBadge'
@@ -144,6 +145,8 @@ export function InvoiceDetailPage() {
         title={invoice.number ?? `Draft invoice #${invoice.id}`}
         onClose={closePdfPreview}
       />
+
+      <ActivityTimeline events={invoice.events} />
     </section>
   )
 }

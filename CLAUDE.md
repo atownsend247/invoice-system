@@ -291,6 +291,44 @@ Four separate things are easy to conflate here — don't:
   conversion time; the `quote_id` filter is what lets a *converted* quote
   show a "View invoice" button that still works after navigating away and
   back later, once that one-time redirect is long past.
+- **Audit trail** (`ActivityEvent` in models.py, `quote_events`/
+  `invoice_events` tables) - creation and status changes only, not every
+  field edit (e.g. adding a line item isn't recorded). Same "one shared
+  dataclass, two parent tables" shape as `LineItem`/`quote_line_items`/
+  `invoice_line_items`, not one polymorphic table. `QuoteService`/
+  `InvoiceService` each have a private `_record_event()` helper called
+  right after every `create_quote`/`send`/`_transition`/`convert_to_invoice`/
+  `void`/`pay` persists its own status change, and every one of those
+  methods finishes by re-fetching the full entity
+  (`self._get_quote(...)`/`self._get_invoice(...)`) rather than returning
+  what `update_quote`/`update_invoice` handed back directly - the same
+  "insert a child row, then re-fetch the parent" pattern
+  `QuoteService.add_line_item` already used, needed here so the caller
+  sees the just-recorded event without a second round-trip. Fetched
+  newest-first (`ORDER BY rowid DESC` in `SqliteRepository.get_quote`/
+  `get_invoice`/`list_quotes`/`list_invoices`) - not `occurred_at`, which
+  can tie under a fake/frozen test clock that never advances between
+  calls; `rowid` (SQLite's implicit one, same technique `list_quotes`/
+  `list_accounts` already use for their own ordering) reflects true
+  insertion order even then. Displayed via
+  `web/src/components/ActivityTimeline.tsx` (a plain "Activity" section at
+  the bottom of `QuoteDetailPage.tsx`/`InvoiceDetailPage.tsx`, below the
+  PDF viewer) - the API already returns events newest-first, so the
+  component never re-sorts.
+- **Issue-date-driven dates**: `QuoteService.create_quote` takes an
+  optional `issue_date` (defaults to today) and a plain `quote_validity_days:
+  int | None` (like `payment_terms_days` below, resolved by the API/CLI
+  layer from `BusinessProfile.quote_validity_days`, not looked up by
+  `QuoteService` itself) - `expiry_date` is always `issue_date +
+  quote_validity_days` now, computed at creation time, not a raw
+  independently-settable field. `QuoteService.convert_to_invoice` also
+  takes an optional `issue_date` (defaults to today) so the resulting
+  invoice can be backdated - the only place an `Invoice.issue_date` is
+  ever set, since an `Invoice` is only ever created by converting a
+  `Quote` (there's no standalone "create invoice" route/command).
+  `InvoiceService.send()`'s due-date calc reads from that already-fixed
+  `invoice.issue_date`, not "now" - see the `payment_terms_days` bullet
+  below for the exact line.
 - Client (web UI): **one module is the only thing that talks HTTP** to the
   backend (`web/src/api.ts`) — no `fetch`/`axios` calls scattered through
   components. `web/src/hooks/useAsync.ts` is the shared data-fetching hook
@@ -304,7 +342,11 @@ Four separate things are easy to conflate here — don't:
 - `BusinessProfile.payment_terms_days` drives `InvoiceService.send()`'s
   due-date calc: `send(invoice_id, payment_terms_days=...)` — pass `None`
   (both API and CLI do, when there's no profile/`--user-id`) to fall back to
-  the fixed `DEFAULT_INVOICE_DUE_DAYS`. `business_name` + whichever address
+  the fixed `DEFAULT_INVOICE_DUE_DAYS`. The calc itself is `invoice.issue_date
+  + timedelta(days=days)` — not `today + days` — so a backdated invoice (see
+  the issue-date-driven dates bullet above) gets a due date relative to when
+  it was actually issued, not to whenever `send()` happens to be called.
+  `business_name` + whichever address
   lines are set appear as a "From" section on generated PDFs (`pdf.py`'s
   `business_profile_lines()`), in the standard UK order (`address_line1`,
   `address_line2`, `town_or_city`, `county`, `postcode`) — only when
@@ -881,7 +923,16 @@ Four separate things are easy to conflate here — don't:
   column to a non-empty table) immediately backfilled via `UPDATE
   expenses SET expense_date = issue_date` - every existing expense's own
   `issue_date` is the best available value, since `expense_date` didn't
-  exist yet to have recorded anything better.)
+  exist yet to have recorded anything better.) Migration 18 added
+  `quote_events`/`invoice_events` - two brand new tables (see the
+  `ActivityEvent` Conventions bullet below), each with its own
+  `idx_quote_events_quote`/`idx_invoice_events_invoice` index, no rebuild
+  needed - same reasoning as every other pure-addition migration in this
+  file, and no backfill attempted since a pre-existing quote/invoice's real
+  creation/status-change history was never captured to backfill from.
+  Migration 19 added `business_profiles.quote_validity_days` - one more
+  `NOT NULL DEFAULT 30` `ADD COLUMN`, no rebuild needed, same shape as
+  `payment_terms_days` itself.)
 - Storage is a single shared SQLite connection/file — **serialise every
   access on a lock** inside the repository implementation rather than
   assuming the caller will. That lock is per-*call*, not across a sequence

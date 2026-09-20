@@ -294,8 +294,11 @@ export function getQuote(id: string): Promise<Quote> {
   return request(`/quotes/${id}`)
 }
 
-export function createQuote(accountId: string, currency = 'USD'): Promise<Quote> {
-  return request('/quotes', { method: 'POST', body: JSON.stringify({ account_id: accountId, currency }) })
+export function createQuote(accountId: string, currency = 'USD', issueDate?: string): Promise<Quote> {
+  return request('/quotes', {
+    method: 'POST',
+    body: JSON.stringify({ account_id: accountId, currency, issue_date: issueDate || undefined }),
+  })
 }
 
 export function addQuoteLineItem(
@@ -309,8 +312,11 @@ export function sendQuote(id: string): Promise<Quote> {
   return request(`/quotes/${id}/send`, { method: 'POST' })
 }
 
-export function convertQuote(id: string): Promise<Invoice> {
-  return request(`/quotes/${id}/convert`, { method: 'POST' })
+export function convertQuote(id: string, issueDate?: string): Promise<Invoice> {
+  return request(`/quotes/${id}/convert`, {
+    method: 'POST',
+    body: JSON.stringify({ issue_date: issueDate || undefined }),
+  })
 }
 
 export function downloadQuotePdf(quote: Quote): Promise<void> {
@@ -447,6 +453,7 @@ export interface SaveBusinessProfileInput {
   last_name: string
   business_name: string
   payment_terms_days: number
+  quote_validity_days: number
   currency: string
   title?: string
   address_line1?: string

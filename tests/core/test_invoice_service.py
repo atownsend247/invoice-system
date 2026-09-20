@@ -1,11 +1,11 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
 
 from invoice_system.errors import InvalidTransition, NotFound, ValidationFailed
 from invoice_system.ids import new_id
-from invoice_system.models import Invoice, InvoiceStatus
+from invoice_system.models import ActivityEventType, Invoice, InvoiceStatus
 
 
 @pytest.fixture
@@ -106,6 +106,38 @@ def test_send_invoice_falls_back_to_the_default_when_payment_terms_not_given(
 ):
     invoice = application.invoices.send(organisation_id, draft_invoice.id, payment_terms_days=None)
     assert invoice.due_date == fake_clock().date() + timedelta(days=30)
+
+
+def test_send_invoice_computes_due_date_from_issue_date_not_today(
+    application, organisation_id, account, fake_clock
+):
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    quote = application.quotes.add_line_item(
+        organisation_id, quote.id, description="Work", quantity=Decimal("1"), unit_price=Decimal("100.00")
+    )
+    quote = application.quotes.send(organisation_id, quote.id)
+    invoice = application.quotes.convert_to_invoice(organisation_id, quote.id, issue_date=date(2025, 12, 1))
+
+    fake_clock.advance(days=45)  # "today" has moved on well past the backdated issue date
+    sent = application.invoices.send(organisation_id, invoice.id, payment_terms_days=30)
+    assert sent.due_date == date(2025, 12, 31)  # issue_date + 30, not "today" + 30
+
+
+def test_send_void_and_pay_each_record_a_status_changed_event(application, organisation_id, draft_invoice):
+    sent = application.invoices.send(organisation_id, draft_invoice.id)
+    assert sent.events[0].event_type == ActivityEventType.STATUS_CHANGED
+    assert sent.events[0].from_status == InvoiceStatus.DRAFT.value
+    assert sent.events[0].to_status == InvoiceStatus.SENT.value
+
+    paid = application.invoices.pay(organisation_id, sent.id)
+    assert paid.events[0].from_status == InvoiceStatus.SENT.value
+    assert paid.events[0].to_status == InvoiceStatus.PAID.value
+    # Created (on conversion) + sent + paid.
+    assert [e.event_type for e in paid.events] == [
+        ActivityEventType.STATUS_CHANGED,
+        ActivityEventType.STATUS_CHANGED,
+        ActivityEventType.CREATED,
+    ]
 
 
 def test_cannot_send_invoice_without_line_items(application, organisation_id, account, fake_clock):

@@ -847,6 +847,81 @@ def test_missing_account_returns_nonzero_exit(tmp_path):
     assert result.exit_code != 0
 
 
+def test_quote_create_and_convert_accept_an_explicit_issue_date(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
+    account_id = _id_from(
+        runner.invoke(
+            cli,
+            [
+                *_base_args(db_path),
+                "account",
+                "create",
+                "--user-id",
+                "1",
+                "--business-name",
+                "Acme",
+                "--email",
+                "a@b.test",
+                "--address-line1",
+                "1 Main St",
+            ],
+        ).output,
+        r"Created account (\S+):",
+    )
+    quote_id = _id_from(
+        runner.invoke(
+            cli,
+            [
+                *_base_args(db_path),
+                "quote",
+                "create",
+                "--user-id",
+                "1",
+                "--account-id",
+                account_id,
+                "--issue-date",
+                "2025-12-01",
+            ],
+        ).output,
+        r"Created quote (\S+) \(draft\)",
+    )
+    runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "quote",
+            "add-item",
+            quote_id,
+            "--user-id",
+            "1",
+            "--description",
+            "Work",
+            "--quantity",
+            "1",
+            "--unit-price",
+            "100.00",
+        ],
+    )
+    runner.invoke(cli, [*_base_args(db_path), "quote", "send", quote_id, "--user-id", "1"])
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "quote",
+            "convert",
+            quote_id,
+            "--user-id",
+            "1",
+            "--issue-date",
+            "2025-11-01",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Converted quote" in result.output
+
+
 def test_quote_add_item_with_tax_rate(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()
@@ -1411,6 +1486,7 @@ def test_settings_show_defaults_then_set_and_show_again(tmp_path):
     )
     assert result.exit_code == 0, result.output
     assert "Payment terms (days): 30" in result.output
+    assert "Quote validity (days): 30" in result.output
     assert "Currency: GBP" in result.output
     assert "Business name: -" in result.output
     assert "Bank account name: -" in result.output

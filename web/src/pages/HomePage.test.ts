@@ -14,6 +14,7 @@ function invoice(overrides: Partial<Invoice>): Invoice {
     due_date: '2026-01-15',
     created_at: '2026-01-01T00:00:00Z',
     line_items: [],
+    events: [],
     subtotal: '100.00',
     tax_total: '0',
     total: '100.00',

@@ -10,6 +10,8 @@ from .ids import IdGenerator
 from .ids import new_id as default_new_id
 from .models import (
     Account,
+    ActivityEvent,
+    ActivityEventType,
     BusinessProfile,
     Domain,
     Expense,
@@ -31,6 +33,7 @@ from .repository import Repository
 
 DEFAULT_INVOICE_DUE_DAYS = 30
 DEFAULT_PAYMENT_TERMS_DAYS = 30
+DEFAULT_QUOTE_VALIDITY_DAYS = 30
 DEFAULT_CURRENCY = "GBP"
 MONTHLY_TOTALS_MONTHS = 12
 DEFAULT_ORGANISATION_NAME = "My Organisation"
@@ -392,6 +395,7 @@ class BusinessProfileService:
             county=None,
             postcode=None,
             payment_terms_days=DEFAULT_PAYMENT_TERMS_DAYS,
+            quote_validity_days=DEFAULT_QUOTE_VALIDITY_DAYS,
             currency=DEFAULT_CURRENCY,
             utr=None,
             vat_number=None,
@@ -417,6 +421,7 @@ class BusinessProfileService:
         last_name: str,
         business_name: str,
         payment_terms_days: int,
+        quote_validity_days: int,
         title: str | None = None,
         address_line1: str | None = None,
         address_line2: str | None = None,
@@ -445,6 +450,8 @@ class BusinessProfileService:
             raise ValidationFailed("business_name is required")
         if payment_terms_days <= 0:
             raise ValidationFailed("payment_terms_days must be a positive number of days")
+        if quote_validity_days <= 0:
+            raise ValidationFailed("quote_validity_days must be a positive number of days")
         if not currency.strip():
             raise ValidationFailed("currency is required")
         accent_color = _blank_to_none(accent_color)
@@ -466,6 +473,7 @@ class BusinessProfileService:
             county=_blank_to_none(county),
             postcode=_blank_to_none(postcode),
             payment_terms_days=payment_terms_days,
+            quote_validity_days=quote_validity_days,
             currency=currency.strip().upper(),
             utr=_blank_to_none(utr),
             vat_number=_blank_to_none(vat_number),
@@ -499,10 +507,13 @@ class QuoteService:
         organisation_id: str,
         account_id: str,
         currency: str = "USD",
-        expiry_date: date_ | None = None,
+        issue_date: date_ | None = None,
+        quote_validity_days: int | None = None,
     ) -> Quote:
         if self._repository.get_account(organisation_id, account_id) is None:
             raise NotFound(f"account {account_id} not found")
+        resolved_issue_date = issue_date or self._clock().date()
+        days = quote_validity_days if quote_validity_days is not None else DEFAULT_QUOTE_VALIDITY_DAYS
         quote = Quote(
             id=self._new_id(),
             organisation_id=organisation_id,
@@ -510,11 +521,13 @@ class QuoteService:
             number=None,
             status=QuoteStatus.DRAFT,
             currency=currency,
-            issue_date=self._clock().date(),
-            expiry_date=expiry_date,
+            issue_date=resolved_issue_date,
+            expiry_date=resolved_issue_date + timedelta(days=days),
             created_at=self._clock(),
         )
-        return self._repository.create_quote(quote)
+        quote = self._repository.create_quote(quote)
+        self._record_event(quote.id, from_status=None, to_status=quote.status)
+        return self._get_quote(organisation_id, quote.id)
 
     def get_quote(self, organisation_id: str, quote_id: str) -> Quote:
         return self._get_quote(organisation_id, quote_id)
@@ -575,8 +588,11 @@ class QuoteService:
         if not quote.line_items:
             raise ValidationFailed(f"quote {quote_id} has no line items")
         quote.number = self._repository.next_quote_number(organisation_id)
+        from_status = quote.status
         quote.status = QuoteStatus.SENT
-        return self._repository.update_quote(quote)
+        self._repository.update_quote(quote)
+        self._record_event(quote.id, from_status=from_status, to_status=quote.status)
+        return self._get_quote(organisation_id, quote_id)
 
     def mark_accepted(self, organisation_id: str, quote_id: str) -> Quote:
         return self._transition(
@@ -593,7 +609,9 @@ class QuoteService:
             organisation_id, quote_id, from_status=QuoteStatus.SENT, to_status=QuoteStatus.EXPIRED
         )
 
-    def convert_to_invoice(self, organisation_id: str, quote_id: str) -> Invoice:
+    def convert_to_invoice(
+        self, organisation_id: str, quote_id: str, *, issue_date: date_ | None = None
+    ) -> Invoice:
         quote = self._get_quote(organisation_id, quote_id)
         if quote.status not in (QuoteStatus.SENT, QuoteStatus.ACCEPTED):
             raise InvalidTransition(f"quote {quote_id} cannot be converted from status {quote.status.value}")
@@ -605,7 +623,7 @@ class QuoteService:
             number=None,
             status=InvoiceStatus.DRAFT,
             currency=quote.currency,
-            issue_date=self._clock().date(),
+            issue_date=issue_date or self._clock().date(),
             due_date=None,
             created_at=self._clock(),
         )
@@ -622,8 +640,20 @@ class QuoteService:
                     position=item.position,
                 ),
             )
+        self._repository.add_invoice_event(
+            invoice.id,
+            ActivityEvent(
+                id=self._new_id(),
+                event_type=ActivityEventType.CREATED,
+                from_status=None,
+                to_status=invoice.status.value,
+                occurred_at=self._clock(),
+            ),
+        )
+        from_status = quote.status
         quote.status = QuoteStatus.CONVERTED
         self._repository.update_quote(quote)
+        self._record_event(quote.id, from_status=from_status, to_status=quote.status)
         return self._repository.get_invoice(organisation_id, invoice.id)
 
     def _transition(
@@ -636,7 +666,25 @@ class QuoteService:
                 f"(status={quote.status.value})"
             )
         quote.status = to_status
-        return self._repository.update_quote(quote)
+        self._repository.update_quote(quote)
+        self._record_event(quote.id, from_status=from_status, to_status=to_status)
+        return self._get_quote(organisation_id, quote_id)
+
+    def _record_event(
+        self, quote_id: str, *, from_status: QuoteStatus | None, to_status: QuoteStatus
+    ) -> None:
+        self._repository.add_quote_event(
+            quote_id,
+            ActivityEvent(
+                id=self._new_id(),
+                event_type=ActivityEventType.CREATED
+                if from_status is None
+                else ActivityEventType.STATUS_CHANGED,
+                from_status=from_status.value if from_status else None,
+                to_status=to_status.value,
+                occurred_at=self._clock(),
+            ),
+        )
 
     def _get_quote(self, organisation_id: str, quote_id: str) -> Quote:
         quote = self._repository.get_quote(organisation_id, quote_id)
@@ -736,16 +784,22 @@ class InvoiceService:
             raise ValidationFailed(f"invoice {invoice_id} has no line items")
         invoice.number = self._repository.next_invoice_number(organisation_id)
         days = payment_terms_days if payment_terms_days is not None else DEFAULT_INVOICE_DUE_DAYS
-        invoice.due_date = due_date or self._clock().date() + timedelta(days=days)
+        invoice.due_date = due_date or invoice.issue_date + timedelta(days=days)
+        from_status = invoice.status
         invoice.status = InvoiceStatus.SENT
-        return self._repository.update_invoice(invoice)
+        self._repository.update_invoice(invoice)
+        self._record_event(invoice.id, from_status=from_status, to_status=invoice.status)
+        return self._get_invoice(organisation_id, invoice_id)
 
     def void(self, organisation_id: str, invoice_id: str) -> Invoice:
         invoice = self._get_invoice(organisation_id, invoice_id)
         if invoice.status == InvoiceStatus.PAID:
             raise InvalidTransition(f"invoice {invoice_id} is already paid, cannot void")
+        from_status = invoice.status
         invoice.status = InvoiceStatus.VOID
-        return self._repository.update_invoice(invoice)
+        self._repository.update_invoice(invoice)
+        self._record_event(invoice.id, from_status=from_status, to_status=invoice.status)
+        return self._get_invoice(organisation_id, invoice_id)
 
     def pay(self, organisation_id: str, invoice_id: str) -> Invoice:
         invoice = self._get_invoice(organisation_id, invoice_id)
@@ -753,8 +807,27 @@ class InvoiceService:
             raise InvalidTransition(
                 f"invoice {invoice_id} is not sent (status={invoice.status.value}), cannot mark paid"
             )
+        from_status = invoice.status
         invoice.status = InvoiceStatus.PAID
-        return self._repository.update_invoice(invoice)
+        self._repository.update_invoice(invoice)
+        self._record_event(invoice.id, from_status=from_status, to_status=invoice.status)
+        return self._get_invoice(organisation_id, invoice_id)
+
+    def _record_event(
+        self, invoice_id: str, *, from_status: InvoiceStatus | None, to_status: InvoiceStatus
+    ) -> None:
+        self._repository.add_invoice_event(
+            invoice_id,
+            ActivityEvent(
+                id=self._new_id(),
+                event_type=ActivityEventType.CREATED
+                if from_status is None
+                else ActivityEventType.STATUS_CHANGED,
+                from_status=from_status.value if from_status else None,
+                to_status=to_status.value,
+                occurred_at=self._clock(),
+            ),
+        )
 
     def monthly_totals(
         self, organisation_id: str, currency: str, *, months: int = MONTHLY_TOTALS_MONTHS

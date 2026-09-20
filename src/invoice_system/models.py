@@ -23,6 +23,28 @@ class InvoiceStatus(StrEnum):
     VOID = "void"
 
 
+class ActivityEventType(StrEnum):
+    CREATED = "created"
+    STATUS_CHANGED = "status_changed"
+
+
+@dataclass
+class ActivityEvent:
+    """One entry in a Quote's or Invoice's audit trail - creation and status
+    changes only (not every field edit, e.g. line items added while draft
+    aren't recorded). Shared shape between Quote and Invoice, same precedent
+    as LineItem: persisted into two separate tables (quote_events/
+    invoice_events), not one polymorphic table. from_status is None for a
+    CREATED event (there was no prior status); always set for
+    STATUS_CHANGED."""
+
+    id: str
+    event_type: ActivityEventType
+    from_status: str | None
+    to_status: str
+    occurred_at: datetime
+
+
 @dataclass
 class Organisation:
     """The tenant boundary: every Account/Quote/Invoice belongs to exactly
@@ -172,6 +194,11 @@ class BusinessProfile:
     this setting is simply excluded from that report rather than
     naively summed into it. Defaults to "GBP".
 
+    quote_validity_days drives QuoteService.create_quote's calculated
+    expiry_date (issue_date + this many days) - the quote equivalent of
+    payment_terms_days, resolved the same way (a plain int the caller
+    passes in, not looked up by QuoteService itself - see CLAUDE.md).
+
     bank_account_name/bank_sort_code/bank_account_number sit in the same
     "payment and tax settings" group as payment_terms_days/utr/vat_number -
     each independently optional, and (like every other field here) purely
@@ -225,6 +252,7 @@ class BusinessProfile:
     county: str | None
     postcode: str | None
     payment_terms_days: int
+    quote_validity_days: int
     currency: str
     utr: str | None
     vat_number: str | None
@@ -286,6 +314,7 @@ class Quote:
     expiry_date: date | None
     created_at: datetime
     line_items: list[LineItem] = field(default_factory=list)
+    events: list[ActivityEvent] = field(default_factory=list)
 
     @property
     def subtotal(self) -> Decimal:
@@ -313,6 +342,7 @@ class Invoice:
     due_date: date | None
     created_at: datetime
     line_items: list[LineItem] = field(default_factory=list)
+    events: list[ActivityEvent] = field(default_factory=list)
 
     @property
     def subtotal(self) -> Decimal:

@@ -52,16 +52,16 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | GET | `/registrars` | required | List the organisation's registrars, alphabetically by name (not the newest-first convention most lists here use) - a plain array, not paginated (see Conventions below). Populates the Domain form's registrar `<select>`. |
 | PUT | `/registrars/{id}` | required | Replace a registrar (same fields as create - a full replace). 404 if missing/wrong organisation, 422 on a blank `name`. |
 | DELETE | `/registrars/{id}` | required | Delete it. 204, 404 if missing/wrong organisation. Safe with no cascade - `Domain.registrar` stores the chosen name as a plain string, not a reference to this row (see Conventions below). |
-| POST | `/quotes` | required | Create a draft quote (`account_id` required; `currency` defaults `USD`; `expiry_date` optional). |
+| POST | `/quotes` | required | Create a draft quote (`account_id` required; `currency` defaults `USD`; `issue_date` optional, defaults to today). `expiry_date` is computed server-side as `issue_date + ` the caller's `BusinessProfile.quote_validity_days` - not a request field. |
 | GET | `/quotes` | required | Paginated list of quotes - `{items, total}`. Optionally filtered by `?account_id=` (exact), `?account_name=` (matches the linked account's business_name, case-insensitively), and/or `?status=` (`draft`/`sent`/`accepted`/`rejected`/`expired`/`converted`). `?page=`/`?page_size=`, same as `/accounts` - see Conventions below. |
-| GET | `/quotes/{id}` | required | Fetch one quote with its line items, `subtotal`, `tax_total`, and (gross) `total`. |
+| GET | `/quotes/{id}` | required | Fetch one quote with its line items, `events` (its audit trail, newest-first - see Conventions below), `subtotal`, `tax_total`, and (gross) `total`. |
 | POST | `/quotes/{id}/line-items` | required | Add a line item to a draft quote (`description`, `quantity`, `unit_price` required; `tax_rate` defaults `"0"`, must be within `[0, 1]`). 409 if not draft, 422 on an out-of-range `tax_rate`. |
 | POST | `/quotes/{id}/send` | required | Assign a quote number, transition `draft → sent`. 422 if no line items. |
-| POST | `/quotes/{id}/convert` | required | Convert a `sent`/`accepted` quote into a new draft invoice, copying line items. 409 otherwise. |
+| POST | `/quotes/{id}/convert` | required | Convert a `sent`/`accepted` quote into a new draft invoice, copying line items (`issue_date` optional in the request body, defaults to today - lets the caller backdate the resulting invoice). 409 otherwise. |
 | GET | `/quotes/{id}/pdf` | required | Render the quote as a PDF (`application/pdf`) - the web UI offers this both as a download and as an in-page preview (see Conventions below), the route itself is the same either way. |
 | GET | `/invoices` | required | Paginated list of invoices - `{items, total}`. Optionally filtered by `?account_id=` (exact), `?account_name=` (matches the linked account's business_name, case-insensitively), `?status=` (`draft`/`sent`/`paid`/`void` - `overdue` is accepted but never matches anything, see Conventions below), and/or `?quote_id=` (exact - a quote converts to at most one invoice, so this matches 0 or 1 row; used by `QuoteDetailPage.tsx`'s "View invoice" button on a converted quote). `?page=`/`?page_size=`, same as `/accounts`. |
-| GET | `/invoices/{id}` | required | Fetch one invoice with its line items, `subtotal`, `tax_total`, and (gross) `total`. |
-| POST | `/invoices/{id}/send` | required | Assign an invoice number and due date (issue date + the current user's `payment_terms_days`, default 30), transition `draft → sent`. 422 if no line items. |
+| GET | `/invoices/{id}` | required | Fetch one invoice with its line items, `events` (its audit trail, newest-first - see Conventions below), `subtotal`, `tax_total`, and (gross) `total`. |
+| POST | `/invoices/{id}/send` | required | Assign an invoice number and due date (`issue_date` + the current user's `payment_terms_days`, default 30 - not "today", so a backdated invoice's due date reflects when it was actually issued), transition `draft → sent`. 422 if no line items. |
 | POST | `/invoices/{id}/void` | required | Transition to `void`. 409 if already `paid`. |
 | POST | `/invoices/{id}/pay` | required | Transition `sent → paid`. 409 if not currently `sent` (covers `draft`, `void`, and already-`paid`). |
 | GET | `/invoices/monthly-totals` | required | Registered *before* `/invoices/{id}` (see `CLAUDE.md`'s architecture rules on route ordering). `{currency, months: [{month, paid_total, unpaid_total}]}` for the trailing 12 months, scoped to the current user's organisation, in the current user's business profile `currency`. An invoice in any other currency isn't counted. |
@@ -76,8 +76,8 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | POST | `/expenses/{id}/attachments` | required | Upload a supplementary PDF (e.g. a scanned receipt) against an expense - `multipart/form-data`, one `file` field. Content-Type must be `application/pdf` or the filename must end `.pdf`; max 10MB (`core.py`'s `MAX_ATTACHMENT_SIZE`). 422 on anything else. Addable at any time - no status to gate on, same as line items. |
 | GET | `/expenses/{id}/attachments/{attachment_id}` | required | The uploaded bytes (`Content-Type` is whatever was uploaded, `Content-Disposition: inline` - the web UI's "View"/"Download" both hit this one route, same pattern as the generated PDF routes above). |
 | DELETE | `/expenses/{id}/attachments/{attachment_id}` | required | Delete it. `204`. |
-| GET | `/settings/business-profile` | required | The current user's own profile. Never 404s — returns sensible defaults (`payment_terms_days: 30`, `currency: "GBP"`, everything else blank/`null`) if nothing's been saved yet. |
-| PUT | `/settings/business-profile` | required | Upsert it (`first_name`, `last_name`, `business_name`, `payment_terms_days` required; `currency` defaults `"GBP"`; `title`, `address_line1`, `address_line2`, `town_or_city`, `county`, `postcode`, `utr`, `vat_number`, `bank_account_name`, `bank_sort_code`, `bank_account_number`, `quote_document_header`, `quote_document_footer`, `invoice_document_header`, `invoice_document_footer`, `expense_document_header`, `expense_document_footer`, `accent_color` optional — each address line independently optional, each document header/footer is its own independent pair per document type, not one shared pair, and `accent_color` (a `#RRGGBB` hex string, one shared value across all three document types) is the one field here whose format is actually validated, not accepted as free-form text - see the Conventions section). 422 on a blank required field, `payment_terms_days <= 0`, a blank `currency`, or a malformed `accent_color`. |
+| GET | `/settings/business-profile` | required | The current user's own profile. Never 404s — returns sensible defaults (`payment_terms_days: 30`, `quote_validity_days: 30`, `currency: "GBP"`, everything else blank/`null`) if nothing's been saved yet. |
+| PUT | `/settings/business-profile` | required | Upsert it (`first_name`, `last_name`, `business_name`, `payment_terms_days`, `quote_validity_days` required; `currency` defaults `"GBP"`; `title`, `address_line1`, `address_line2`, `town_or_city`, `county`, `postcode`, `utr`, `vat_number`, `bank_account_name`, `bank_sort_code`, `bank_account_number`, `quote_document_header`, `quote_document_footer`, `invoice_document_header`, `invoice_document_footer`, `expense_document_header`, `expense_document_footer`, `accent_color` optional — each address line independently optional, each document header/footer is its own independent pair per document type, not one shared pair, and `accent_color` (a `#RRGGBB` hex string, one shared value across all three document types) is the one field here whose format is actually validated, not accepted as free-form text - see the Conventions section). 422 on a blank required field, `payment_terms_days <= 0`, `quote_validity_days <= 0`, a blank `currency`, or a malformed `accent_color`. |
 | GET | `/stats` | required | All-time counters for the home dashboard, scoped to the current user's organisation: `{account_count, quote_count, invoice_count, quotes_sent_count, quotes_converted_count, total_paid, currency}`. `total_paid` is filtered to `currency` (the caller's own business profile's reporting currency, same resolution as `/invoices/monthly-totals`) — a paid invoice in a different currency isn't counted. `quotes_sent_count`/`quotes_converted_count` are raw counts, not a precomputed rate; the web UI derives a conversion percentage from them client-side (`HomePage.tsx`'s `conversionRate`). |
 
 Every account/quote/invoice/expense route above resolves the caller's
@@ -110,7 +110,11 @@ at all, so quotes have nothing to paginate on the CLI side.
 `quote pdf`/`invoice pdf`/`expense pdf --user-id` and `invoice send
 --user-id` also
 reuse that same user id for their pre-existing purpose (the PDF "From"
-section, the payment-terms-driven due date) — `settings show`/`settings
+section, the payment-terms-driven due date) - `quote create --user-id` does
+too, resolving `quote_validity_days` the same way. `quote create`/`quote
+convert` both additionally take an optional `--issue-date` (`YYYY-MM-DD`,
+defaults to today - see the issue-date-driven dates Convention below).
+`settings show`/`settings
 set --user-id` (no API equivalent by path, but the same
 `BusinessProfileService` underneath) are unaffected, since `BusinessProfile`
 stays per-user, not per-organisation (see `docs/data-model.md`'s
@@ -121,6 +125,23 @@ stays per-user, not per-organisation (see `docs/data-model.md`'s
 
 ## Conventions
 
+- **Audit trail**: every quote/invoice's `events` field is its history of
+  creation and status changes only (not every field edit), newest-first -
+  `{id, event_type: "created" | "status_changed", from_status, to_status,
+  occurred_at}`, `from_status` is `null` for a `created` event. Recorded
+  automatically by every status-changing route above (`POST /quotes`,
+  `/send`, `/convert`, `POST /invoices/{id}/send|void|pay`) - there's no
+  separate route to read or write it, it's just part of
+  `QuoteOut`/`InvoiceOut`.
+- **Issue-date-driven dates**: `POST /quotes`' `issue_date` (defaults to
+  today) is what `expiry_date` is calculated from
+  (`issue_date + BusinessProfile.quote_validity_days`), and `POST
+  /quotes/{id}/convert`'s `issue_date` (also defaults to today, but lets
+  the caller *backdate* the resulting invoice) is in turn what `POST
+  /invoices/{id}/send`'s `due_date` is calculated from
+  (`issue_date + payment_terms_days`) - not "today" in either case. An
+  `Invoice.issue_date` can only ever be set at conversion time, since
+  there's no standalone "create invoice" route.
 - **Per-document-type header/footer**: `quote_document_header`/
   `quote_document_footer`, `invoice_document_header`/
   `invoice_document_footer`, and `expense_document_header`/

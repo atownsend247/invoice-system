@@ -20,6 +20,50 @@ test('creating a draft quote and adding a line item', async ({ authenticatedPage
   await expect(page.locator('tfoot')).toContainText('2500.00 USD')
 })
 
+test('setting an issue date at creation computes the expiry date and shows a Created activity entry', async ({
+  authenticatedPage: page,
+  testAccount,
+}) => {
+  await page.goto(`/quotes/new?accountId=${testAccount.id}`)
+  await page.getByLabel('Account').selectOption({ label: testAccount.business_name })
+  await page.getByRole('textbox', { name: 'Currency' }).fill('USD')
+  await page.getByRole('textbox', { name: 'Issue date' }).fill('2026-01-01')
+  await page.getByRole('button', { name: 'Create draft quote' }).click()
+
+  await expect(page.getByText('issued 2026-01-01')).toBeVisible()
+  await expect(page.getByText(/expires 2026-01-31/)).toBeVisible() // + default 30-day validity
+  await expect(page.getByRole('heading', { name: 'Activity' })).toBeVisible()
+  await expect(page.getByText('Created (draft)')).toBeVisible()
+})
+
+test('sending and converting a quote each add an activity entry, newest first', async ({
+  authenticatedPage: page,
+  draftQuote,
+}) => {
+  await page.goto(`/quotes/${draftQuote.id}`)
+  await page.getByLabel('Description').fill('Work')
+  await page.getByLabel('Qty').fill('1')
+  await page.getByLabel('Unit price').fill('50.00')
+  await page.getByRole('button', { name: 'Add item' }).click()
+  await page.getByRole('button', { name: 'Send' }).click()
+
+  const activity = page.locator('.activity-timeline li')
+  await expect(activity.first()).toContainText('draft → sent')
+  await expect(activity.last()).toContainText('Created')
+})
+
+test('converting a quote can backdate the resulting invoice issue date', async ({
+  authenticatedPage: page,
+  sentQuote,
+}) => {
+  await page.goto(`/quotes/${sentQuote.id}`)
+  await page.getByLabel('Issue date (optional, defaults to today)').fill('2025-11-01')
+  await page.getByRole('button', { name: 'Convert to invoice' }).click()
+
+  await expect(page.getByRole('heading', { name: /Draft invoice/ })).toBeVisible()
+  await expect(page.getByText('issued 2025-11-01')).toBeVisible()
+})
+
 test('adding a line item with a VAT rate shows it on the line and in the totals', async ({
   authenticatedPage: page,
   draftQuote,

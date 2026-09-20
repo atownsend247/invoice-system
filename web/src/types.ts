@@ -84,6 +84,18 @@ export interface LineItem {
 
 export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired' | 'converted'
 
+// One entry in a Quote's or Invoice's audit trail - creation and status
+// changes only (not every field edit). from_status is null for a 'created'
+// event. The API returns these newest-first (see CLAUDE.md), so no
+// client-side sort is needed before rendering.
+export interface ActivityEvent {
+  id: string
+  event_type: 'created' | 'status_changed'
+  from_status: string | null
+  to_status: string
+  occurred_at: string
+}
+
 export interface Quote {
   id: string
   account_id: string
@@ -94,6 +106,7 @@ export interface Quote {
   expiry_date: string | null
   created_at: string
   line_items: LineItem[]
+  events: ActivityEvent[]
   subtotal: string
   tax_total: string
   total: string
@@ -112,6 +125,7 @@ export interface Invoice {
   due_date: string | null
   created_at: string
   line_items: LineItem[]
+  events: ActivityEvent[]
   subtotal: string
   tax_total: string
   total: string
@@ -131,6 +145,7 @@ export interface BusinessProfile {
   county: string | null
   postcode: string | null
   payment_terms_days: number
+  quote_validity_days: number
   currency: string
   utr: string | null
   vat_number: string | null

@@ -6,6 +6,8 @@ from pathlib import Path
 
 from ..models import (
     Account,
+    ActivityEvent,
+    ActivityEventType,
     BusinessProfile,
     Domain,
     Expense,
@@ -367,11 +369,11 @@ class SqliteRepository:
             self._conn.execute(
                 "INSERT INTO business_profiles (id, user_id, title, first_name, last_name, "
                 "business_name, address_line1, address_line2, town_or_city, county, postcode, "
-                "payment_terms_days, currency, utr, vat_number, bank_account_name, bank_sort_code, "
-                "bank_account_number, quote_document_header, quote_document_footer, "
+                "payment_terms_days, quote_validity_days, currency, utr, vat_number, bank_account_name, "
+                "bank_sort_code, bank_account_number, quote_document_header, quote_document_footer, "
                 "invoice_document_header, invoice_document_footer, expense_document_header, "
                 "expense_document_footer, accent_color, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(user_id) DO UPDATE SET "
                 "title = excluded.title, "
                 "first_name = excluded.first_name, "
@@ -383,6 +385,7 @@ class SqliteRepository:
                 "county = excluded.county, "
                 "postcode = excluded.postcode, "
                 "payment_terms_days = excluded.payment_terms_days, "
+                "quote_validity_days = excluded.quote_validity_days, "
                 "currency = excluded.currency, "
                 "utr = excluded.utr, "
                 "vat_number = excluded.vat_number, "
@@ -410,6 +413,7 @@ class SqliteRepository:
                     profile.county,
                     profile.postcode,
                     profile.payment_terms_days,
+                    profile.quote_validity_days,
                     profile.currency,
                     profile.utr,
                     profile.vat_number,
@@ -448,6 +452,7 @@ class SqliteRepository:
             county=row["county"],
             postcode=row["postcode"],
             payment_terms_days=row["payment_terms_days"],
+            quote_validity_days=row["quote_validity_days"],
             currency=row["currency"],
             utr=row["utr"],
             vat_number=row["vat_number"],
@@ -497,7 +502,10 @@ class SqliteRepository:
             item_rows = self._conn.execute(
                 "SELECT * FROM quote_line_items WHERE quote_id = ? ORDER BY position", (quote_id,)
             ).fetchall()
-        return self._row_to_quote(row, item_rows)
+            event_rows = self._conn.execute(
+                "SELECT * FROM quote_events WHERE quote_id = ? ORDER BY rowid DESC", (quote_id,)
+            ).fetchall()
+        return self._row_to_quote(row, item_rows, event_rows)
 
     def list_quotes(
         self,
@@ -546,7 +554,10 @@ class SqliteRepository:
                 item_rows = self._conn.execute(
                     "SELECT * FROM quote_line_items WHERE quote_id = ? ORDER BY position", (row["id"],)
                 ).fetchall()
-                quotes.append(self._row_to_quote(row, item_rows))
+                event_rows = self._conn.execute(
+                    "SELECT * FROM quote_events WHERE quote_id = ? ORDER BY rowid DESC", (row["id"],)
+                ).fetchall()
+                quotes.append(self._row_to_quote(row, item_rows, event_rows))
         return quotes, total
 
     def update_quote(self, quote: Quote) -> Quote:
@@ -586,11 +597,28 @@ class SqliteRepository:
             self._conn.commit()
             return item
 
+    def add_quote_event(self, quote_id: str, event: ActivityEvent) -> ActivityEvent:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO quote_events (id, quote_id, event_type, from_status, to_status, occurred_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    event.id,
+                    quote_id,
+                    event.event_type.value,
+                    event.from_status,
+                    event.to_status,
+                    event.occurred_at.isoformat(),
+                ),
+            )
+            self._conn.commit()
+            return event
+
     def next_quote_number(self, organisation_id: str) -> str:
         return self._next_number(f"{organisation_id}:quote", "Q-")
 
     @staticmethod
-    def _row_to_quote(row: sqlite3.Row, item_rows: list[sqlite3.Row]) -> Quote:
+    def _row_to_quote(row: sqlite3.Row, item_rows: list[sqlite3.Row], event_rows: list[sqlite3.Row]) -> Quote:
         return Quote(
             id=row["id"],
             organisation_id=row["organisation_id"],
@@ -602,6 +630,7 @@ class SqliteRepository:
             expiry_date=date.fromisoformat(row["expiry_date"]) if row["expiry_date"] else None,
             created_at=datetime.fromisoformat(row["created_at"]),
             line_items=[SqliteRepository._row_to_line_item(r) for r in item_rows],
+            events=[SqliteRepository._row_to_activity_event(r) for r in event_rows],
         )
 
     # -- Invoices --------------------------------------------------------------
@@ -638,7 +667,10 @@ class SqliteRepository:
             item_rows = self._conn.execute(
                 "SELECT * FROM invoice_line_items WHERE invoice_id = ? ORDER BY position", (invoice_id,)
             ).fetchall()
-        return self._row_to_invoice(row, item_rows)
+            event_rows = self._conn.execute(
+                "SELECT * FROM invoice_events WHERE invoice_id = ? ORDER BY rowid DESC", (invoice_id,)
+            ).fetchall()
+        return self._row_to_invoice(row, item_rows, event_rows)
 
     def list_invoices(
         self,
@@ -699,7 +731,10 @@ class SqliteRepository:
                 item_rows = self._conn.execute(
                     "SELECT * FROM invoice_line_items WHERE invoice_id = ? ORDER BY position", (row["id"],)
                 ).fetchall()
-                invoices.append(self._row_to_invoice(row, item_rows))
+                event_rows = self._conn.execute(
+                    "SELECT * FROM invoice_events WHERE invoice_id = ? ORDER BY rowid DESC", (row["id"],)
+                ).fetchall()
+                invoices.append(self._row_to_invoice(row, item_rows, event_rows))
         return invoices, total
 
     def update_invoice(self, invoice: Invoice) -> Invoice:
@@ -739,11 +774,31 @@ class SqliteRepository:
             self._conn.commit()
             return item
 
+    def add_invoice_event(self, invoice_id: str, event: ActivityEvent) -> ActivityEvent:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO invoice_events "
+                "(id, invoice_id, event_type, from_status, to_status, occurred_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    event.id,
+                    invoice_id,
+                    event.event_type.value,
+                    event.from_status,
+                    event.to_status,
+                    event.occurred_at.isoformat(),
+                ),
+            )
+            self._conn.commit()
+            return event
+
     def next_invoice_number(self, organisation_id: str) -> str:
         return self._next_number(f"{organisation_id}:invoice", "INV-")
 
     @staticmethod
-    def _row_to_invoice(row: sqlite3.Row, item_rows: list[sqlite3.Row]) -> Invoice:
+    def _row_to_invoice(
+        row: sqlite3.Row, item_rows: list[sqlite3.Row], event_rows: list[sqlite3.Row]
+    ) -> Invoice:
         return Invoice(
             id=row["id"],
             organisation_id=row["organisation_id"],
@@ -756,6 +811,17 @@ class SqliteRepository:
             due_date=date.fromisoformat(row["due_date"]) if row["due_date"] else None,
             created_at=datetime.fromisoformat(row["created_at"]),
             line_items=[SqliteRepository._row_to_line_item(r) for r in item_rows],
+            events=[SqliteRepository._row_to_activity_event(r) for r in event_rows],
+        )
+
+    @staticmethod
+    def _row_to_activity_event(row: sqlite3.Row) -> ActivityEvent:
+        return ActivityEvent(
+            id=row["id"],
+            event_type=ActivityEventType(row["event_type"]),
+            from_status=row["from_status"],
+            to_status=row["to_status"],
+            occurred_at=datetime.fromisoformat(row["occurred_at"]),
         )
 
     @staticmethod

@@ -75,6 +75,7 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
   const [county, setCounty] = useState(profile.county ?? '')
   const [postcode, setPostcode] = useState(profile.postcode ?? '')
   const [paymentTermsDays, setPaymentTermsDays] = useState(String(profile.payment_terms_days))
+  const [quoteValidityDays, setQuoteValidityDays] = useState(String(profile.quote_validity_days))
   const [currency, setCurrency] = useState(profile.currency)
   const [utr, setUtr] = useState(profile.utr ?? '')
   const [vatNumber, setVatNumber] = useState(profile.vat_number ?? '')
@@ -109,6 +110,7 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
         county: county || undefined,
         postcode: postcode || undefined,
         payment_terms_days: Number(paymentTermsDays),
+        quote_validity_days: Number(quoteValidityDays),
         currency,
         utr: utr || undefined,
         vat_number: vatNumber || undefined,
@@ -135,6 +137,7 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
       setCounty(updated.county ?? '')
       setPostcode(updated.postcode ?? '')
       setPaymentTermsDays(String(updated.payment_terms_days))
+      setQuoteValidityDays(String(updated.quote_validity_days))
       setCurrency(updated.currency)
       setUtr(updated.utr ?? '')
       setVatNumber(updated.vat_number ?? '')
@@ -237,6 +240,17 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
                 step={1}
                 value={paymentTermsDays}
                 onChange={(event) => setPaymentTermsDays(event.target.value)}
+                required
+              />
+            </label>
+            <label>
+              Quote validity (days)
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={quoteValidityDays}
+                onChange={(event) => setQuoteValidityDays(event.target.value)}
                 required
               />
             </label>

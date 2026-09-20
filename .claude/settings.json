@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv run pytest *)",
+      "Bash(npx vitest *)",
+      "Bash(npx playwright *)",
+      "Bash(uv run ruff check *)",
+      "Bash(npm run test:e2e)",
+      "Bash(npm run lint)",
+      "Bash(npm test *)",
+      "Bash(npx tsc *)",
+      "Bash(hatch run test *)",
+      "Bash(npm run test:coverage)",
+      "Bash(uv run uvicorn invoice_system.api.app:app *)"
+    ]
+  }
+}

@@ -7,6 +7,8 @@ import pytest
 from invoice_system.ids import new_id
 from invoice_system.models import (
     Account,
+    ActivityEvent,
+    ActivityEventType,
     BusinessProfile,
     Domain,
     Expense,
@@ -93,9 +95,15 @@ def test_migration_4_rescopes_number_uniqueness_to_per_organisation_and_preserve
 
     repository = SqliteRepository(db_path)
 
-    fetched = repository.get_quote(1, 1)
-    assert fetched is not None
-    assert fetched.number == "Q-0001"
+    # Not repository.get_quote() - it also queries quote_events, a table
+    # added by a much later migration that doesn't exist on this
+    # deliberately-frozen-at-migration-4 database (see the comment above).
+    # A raw read is enough to confirm the row survived with its number
+    # intact; create_quote() below only touches the quotes table itself,
+    # so it's unaffected.
+    row = sqlite3.connect(str(db_path)).execute("SELECT number FROM quotes WHERE id = 1").fetchone()
+    assert row is not None
+    assert row[0] == "Q-0001"
 
     duplicate = repository.create_quote(
         Quote(
@@ -408,6 +416,70 @@ def _invoice(organisation_id: str, account_id: str, **overrides: object) -> Invo
     return Invoice(**defaults)
 
 
+def test_add_quote_event_round_trips_and_orders_newest_first(repo, organisation_id):
+    account = repo.create_account(_account(organisation_id))
+    quote = repo.create_quote(_quote(organisation_id, account.id))
+    repo.add_quote_event(
+        quote.id,
+        ActivityEvent(
+            id=new_id(),
+            event_type=ActivityEventType.CREATED,
+            from_status=None,
+            to_status="draft",
+            occurred_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ),
+    )
+    repo.add_quote_event(
+        quote.id,
+        ActivityEvent(
+            id=new_id(),
+            event_type=ActivityEventType.STATUS_CHANGED,
+            from_status="draft",
+            to_status="sent",
+            occurred_at=datetime(2026, 1, 1, tzinfo=UTC),  # same timestamp as above, deliberately
+        ),
+    )
+
+    fetched = repo.get_quote(organisation_id, quote.id)
+    assert [e.event_type for e in fetched.events] == [
+        ActivityEventType.STATUS_CHANGED,
+        ActivityEventType.CREATED,
+    ]
+    assert fetched.events[0].from_status == "draft"
+    assert fetched.events[0].to_status == "sent"
+
+
+def test_add_invoice_event_round_trips_and_orders_newest_first(repo, organisation_id):
+    account = repo.create_account(_account(organisation_id))
+    invoice = repo.create_invoice(_invoice(organisation_id, account.id))
+    repo.add_invoice_event(
+        invoice.id,
+        ActivityEvent(
+            id=new_id(),
+            event_type=ActivityEventType.CREATED,
+            from_status=None,
+            to_status="draft",
+            occurred_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ),
+    )
+    repo.add_invoice_event(
+        invoice.id,
+        ActivityEvent(
+            id=new_id(),
+            event_type=ActivityEventType.STATUS_CHANGED,
+            from_status="draft",
+            to_status="sent",
+            occurred_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ),
+    )
+
+    fetched = repo.get_invoice(organisation_id, invoice.id)
+    assert [e.event_type for e in fetched.events] == [
+        ActivityEventType.STATUS_CHANGED,
+        ActivityEventType.CREATED,
+    ]
+
+
 def test_account_round_trip_preserves_fields_and_tz(repo, organisation_id):
     created = repo.create_account(_account(organisation_id))
     assert created.id is not None
@@ -591,6 +663,7 @@ def test_upsert_business_profile_round_trip_and_update(repo):
         county="Greater London",
         postcode="SW1A 1AA",
         payment_terms_days=30,
+        quote_validity_days=30,
         currency="USD",
         utr="1234567890",
         vat_number=None,
@@ -648,6 +721,7 @@ def test_upsert_business_profile_round_trip_and_update(repo):
         county=None,
         postcode=None,
         payment_terms_days=14,
+        quote_validity_days=21,
         currency="EUR",
         utr=None,
         vat_number="GB123456789",
@@ -672,6 +746,7 @@ def test_upsert_business_profile_round_trip_and_update(repo):
     assert updated.business_name == "Acme Ltd"
     assert updated.address_line1 is None
     assert updated.payment_terms_days == 14
+    assert updated.quote_validity_days == 21
     assert updated.currency == "EUR"
     assert updated.utr is None
     assert updated.vat_number == "GB123456789"

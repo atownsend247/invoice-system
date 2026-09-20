@@ -156,7 +156,29 @@ class LineItemOut(BaseModel):
 class QuoteCreateIn(BaseModel):
     account_id: str
     currency: str = "USD"
-    expiry_date: date | None = None
+    issue_date: date | None = None
+
+
+class QuoteConvertIn(BaseModel):
+    issue_date: date | None = None
+
+
+class ActivityEventOut(BaseModel):
+    id: str
+    event_type: str
+    from_status: str | None
+    to_status: str
+    occurred_at: datetime
+
+    @classmethod
+    def from_model(cls, event) -> "ActivityEventOut":
+        return cls(
+            id=event.id,
+            event_type=event.event_type.value,
+            from_status=event.from_status,
+            to_status=event.to_status,
+            occurred_at=event.occurred_at,
+        )
 
 
 class QuoteOut(BaseModel):
@@ -169,6 +191,7 @@ class QuoteOut(BaseModel):
     expiry_date: date | None
     created_at: datetime
     line_items: list[LineItemOut]
+    events: list[ActivityEventOut]
     subtotal: str
     tax_total: str
     total: str
@@ -185,6 +208,7 @@ class QuoteOut(BaseModel):
             expiry_date=quote.expiry_date,
             created_at=quote.created_at,
             line_items=[LineItemOut.from_model(item) for item in quote.line_items],
+            events=[ActivityEventOut.from_model(event) for event in quote.events],
             subtotal=str(quote.subtotal),
             tax_total=str(quote.tax_total),
             total=str(quote.total),
@@ -209,6 +233,7 @@ class InvoiceOut(BaseModel):
     due_date: date | None
     created_at: datetime
     line_items: list[LineItemOut]
+    events: list[ActivityEventOut]
     subtotal: str
     tax_total: str
     total: str
@@ -226,6 +251,7 @@ class InvoiceOut(BaseModel):
             due_date=invoice.due_date,
             created_at=invoice.created_at,
             line_items=[LineItemOut.from_model(item) for item in invoice.line_items],
+            events=[ActivityEventOut.from_model(event) for event in invoice.events],
             subtotal=str(invoice.subtotal),
             tax_total=str(invoice.tax_total),
             total=str(invoice.total),
@@ -310,6 +336,7 @@ class BusinessProfileIn(BaseModel):
     county: str | None = None
     postcode: str | None = None
     payment_terms_days: int = 30
+    quote_validity_days: int = 30
     currency: str = "GBP"
     utr: str | None = None
     vat_number: str | None = None
@@ -336,6 +363,7 @@ class BusinessProfileOut(BaseModel):
     county: str | None
     postcode: str | None
     payment_terms_days: int
+    quote_validity_days: int
     currency: str
     utr: str | None
     vat_number: str | None
@@ -364,6 +392,7 @@ class BusinessProfileOut(BaseModel):
             county=profile.county,
             postcode=profile.postcode,
             payment_terms_days=profile.payment_terms_days,
+            quote_validity_days=profile.quote_validity_days,
             currency=profile.currency,
             utr=profile.utr,
             vat_number=profile.vat_number,

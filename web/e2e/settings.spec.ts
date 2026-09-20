@@ -117,6 +117,7 @@ test('saving all fields persists them across a reload', async ({ authenticatedPa
 
   await page.getByRole('tab', { name: 'Payment and tax' }).click()
   await page.getByLabel('Payment terms (days)').fill('14')
+  await page.getByLabel('Quote validity (days)').fill('45')
   await page.getByLabel('Currency').fill('usd')
   await page.getByLabel('UTR (optional)').fill('1234567890')
   await page.getByLabel('VAT number (optional)').fill('GB123456789')
@@ -151,6 +152,7 @@ test('saving all fields persists them across a reload', async ({ authenticatedPa
 
   await page.getByRole('tab', { name: 'Payment and tax' }).click()
   await expect(page.getByLabel('Payment terms (days)')).toHaveValue('14')
+  await expect(page.getByLabel('Quote validity (days)')).toHaveValue('45')
   await expect(page.getByLabel('Currency')).toHaveValue('USD') // normalised to uppercase
   await expect(page.getByLabel('UTR (optional)')).toHaveValue('1234567890')
   await expect(page.getByLabel('VAT number (optional)')).toHaveValue('GB123456789')

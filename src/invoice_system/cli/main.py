@@ -348,10 +348,24 @@ def quote() -> None:
 @click.option("--user-id", required=True, help=_USER_ID_HELP)
 @click.option("--account-id", required=True)
 @click.option("--currency", default="USD", show_default=True)
+@click.option(
+    "--issue-date",
+    default=None,
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Defaults to today. Drives the calculated expiry date (see 'settings show').",
+)
 @click.pass_obj
-def quote_create(application: Application, user_id: str, account_id: str, currency: str) -> None:
+def quote_create(
+    application: Application, user_id: str, account_id: str, currency: str, issue_date: datetime | None
+) -> None:
+    organisation_id = _organisation_id(application, user_id)
+    quote_validity_days = application.business_profiles.get_profile(user_id).quote_validity_days
     created = application.quotes.create_quote(
-        organisation_id=_organisation_id(application, user_id), account_id=account_id, currency=currency
+        organisation_id=organisation_id,
+        account_id=account_id,
+        currency=currency,
+        issue_date=issue_date.date() if issue_date else None,
+        quote_validity_days=quote_validity_days,
     )
     click.echo(f"Created quote {created.id} (draft)")
 
@@ -402,9 +416,17 @@ def quote_send(application: Application, quote_id: str, user_id: str) -> None:
 @quote.command("convert")
 @click.argument("quote_id")
 @click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option(
+    "--issue-date",
+    default=None,
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Defaults to today. Set to backdate the resulting invoice.",
+)
 @click.pass_obj
-def quote_convert(application: Application, quote_id: str, user_id: str) -> None:
-    invoice = application.quotes.convert_to_invoice(_organisation_id(application, user_id), quote_id)
+def quote_convert(application: Application, quote_id: str, user_id: str, issue_date: datetime | None) -> None:
+    invoice = application.quotes.convert_to_invoice(
+        _organisation_id(application, user_id), quote_id, issue_date=issue_date.date() if issue_date else None
+    )
     click.echo(f"Converted quote {quote_id} to invoice {invoice.id}")
 
 
@@ -728,6 +750,7 @@ def settings_show(application: Application, user_id: str) -> None:
     click.echo(f"County: {profile.county or '-'}")
     click.echo(f"Postcode: {profile.postcode or '-'}")
     click.echo(f"Payment terms (days): {profile.payment_terms_days}")
+    click.echo(f"Quote validity (days): {profile.quote_validity_days}")
     click.echo(f"Currency: {profile.currency}")
     click.echo(f"UTR: {profile.utr or '-'}")
     click.echo(f"VAT number: {profile.vat_number or '-'}")
@@ -755,6 +778,7 @@ def settings_show(application: Application, user_id: str) -> None:
 @click.option("--county", default=None)
 @click.option("--postcode", default=None)
 @click.option("--payment-terms-days", type=int, default=30, show_default=True)
+@click.option("--quote-validity-days", type=int, default=30, show_default=True)
 @click.option("--currency", default="GBP", show_default=True, help="Reporting currency, e.g. GBP/USD/EUR.")
 @click.option("--utr", default=None)
 @click.option("--vat-number", default=None)
@@ -794,6 +818,7 @@ def settings_set(
     county: str | None,
     postcode: str | None,
     payment_terms_days: int,
+    quote_validity_days: int,
     currency: str,
     utr: str | None,
     vat_number: str | None,
@@ -820,6 +845,7 @@ def settings_set(
         county=county,
         postcode=postcode,
         payment_terms_days=payment_terms_days,
+        quote_validity_days=quote_validity_days,
         currency=currency,
         utr=utr,
         vat_number=vat_number,

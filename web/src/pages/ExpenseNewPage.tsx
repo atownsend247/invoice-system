@@ -1,18 +1,8 @@
 import { type FormEvent, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import * as api from '../api'
+import { todayLocalDate } from '../dates'
 import { errorMessage, useAsync } from '../hooks/useAsync'
-
-/** Today as a local-timezone ISO date (`YYYY-MM-DD`), for pre-filling the
- * expense date input - deliberately not `toISOString()` (UTC), which can
- * show the wrong calendar date to a user whose local time has already
- * crossed midnight into a new day but UTC hasn't yet, or vice versa. */
-function todayLocalDate(): string {
-  const now = new Date()
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  const day = String(now.getDate()).padStart(2, '0')
-  return `${now.getFullYear()}-${month}-${day}`
-}
 
 export function ExpenseNewPage() {
   const navigate = useNavigate()

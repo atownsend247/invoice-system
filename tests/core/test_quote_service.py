@@ -1,9 +1,10 @@
+from datetime import date
 from decimal import Decimal
 
 import pytest
 
 from invoice_system.errors import InvalidTransition, NotFound, ValidationFailed
-from invoice_system.models import QuoteStatus
+from invoice_system.models import ActivityEventType, QuoteStatus
 
 
 @pytest.fixture
@@ -255,6 +256,73 @@ def test_quote_numbers_increment_independently_of_invoice_numbers(application, o
 
     assert first.number == "Q-0001"
     assert second.number == "Q-0002"
+
+
+def test_create_quote_defaults_issue_date_to_today_and_computes_expiry(application, organisation_id, account):
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    assert quote.issue_date == date(2026, 1, 1)  # fake_clock's fixed "now"
+    assert quote.expiry_date == date(2026, 1, 31)  # + DEFAULT_QUOTE_VALIDITY_DAYS (30)
+
+
+def test_create_quote_accepts_an_explicit_issue_date_and_validity(application, organisation_id, account):
+    quote = application.quotes.create_quote(
+        organisation_id=organisation_id,
+        account_id=account.id,
+        issue_date=date(2025, 12, 1),
+        quote_validity_days=14,
+    )
+    assert quote.issue_date == date(2025, 12, 1)
+    assert quote.expiry_date == date(2025, 12, 15)
+
+
+def test_create_quote_records_a_created_event(application, organisation_id, account):
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    assert len(quote.events) == 1
+    event = quote.events[0]
+    assert event.event_type == ActivityEventType.CREATED
+    assert event.from_status is None
+    assert event.to_status == QuoteStatus.DRAFT.value
+
+
+def test_status_changes_are_recorded_newest_first(application, organisation_id, account):
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    quote = application.quotes.add_line_item(
+        organisation_id, quote.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    quote = application.quotes.send(organisation_id, quote.id)
+    quote = application.quotes.mark_accepted(organisation_id, quote.id)
+
+    assert [e.event_type for e in quote.events] == [
+        ActivityEventType.STATUS_CHANGED,
+        ActivityEventType.STATUS_CHANGED,
+        ActivityEventType.CREATED,
+    ]
+    assert quote.events[0].from_status == QuoteStatus.SENT.value
+    assert quote.events[0].to_status == QuoteStatus.ACCEPTED.value
+    assert quote.events[1].from_status == QuoteStatus.DRAFT.value
+    assert quote.events[1].to_status == QuoteStatus.SENT.value
+
+
+def test_convert_to_invoice_defaults_issue_date_to_today(application, organisation_id, account):
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    quote = application.quotes.add_line_item(
+        organisation_id, quote.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    quote = application.quotes.send(organisation_id, quote.id)
+    invoice = application.quotes.convert_to_invoice(organisation_id, quote.id)
+    assert invoice.issue_date == date(2026, 1, 1)
+
+
+def test_convert_to_invoice_accepts_a_backdated_issue_date(application, organisation_id, account):
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    quote = application.quotes.add_line_item(
+        organisation_id, quote.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    quote = application.quotes.send(organisation_id, quote.id)
+    invoice = application.quotes.convert_to_invoice(organisation_id, quote.id, issue_date=date(2025, 11, 1))
+    assert invoice.issue_date == date(2025, 11, 1)
+    assert len(invoice.events) == 1
+    assert invoice.events[0].event_type == ActivityEventType.CREATED
 
 
 def test_quote_numbers_are_independent_per_organisation(application, organisation_id, account):

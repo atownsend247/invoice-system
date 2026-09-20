@@ -425,6 +425,7 @@ def seed_demo_data(application: Application, auth: Auth, *, now: datetime | None
         town_or_city="London",
         postcode="E1 6AN",
         payment_terms_days=30,
+        quote_validity_days=30,
         currency=DEMO_CURRENCY,
         utr="1234567890",
         vat_number="GB123456789",

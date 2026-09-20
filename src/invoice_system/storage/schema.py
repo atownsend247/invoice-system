@@ -555,4 +555,41 @@ MIGRATIONS: list[str] = [
     ALTER TABLE expenses ADD COLUMN expense_date TEXT NOT NULL DEFAULT '';
     UPDATE expenses SET expense_date = issue_date;
     """,
+    """
+    -- Audit trail for Quote/Invoice - creation + status changes only (see
+    -- models.ActivityEvent). Same "one shape, two parent tables" precedent
+    -- as quote_line_items/invoice_line_items. New tables, so a plain
+    -- CREATE TABLE x 2 + one CREATE INDEX each on the foreign key they're
+    -- actually queried by, no rebuild needed. No backfill possible or
+    -- attempted - existing quotes/invoices simply start with no recorded
+    -- history, since their real creation/status-change times were never
+    -- captured.
+    CREATE TABLE quote_events (
+        id TEXT PRIMARY KEY,
+        quote_id TEXT NOT NULL REFERENCES quotes(id),
+        event_type TEXT NOT NULL,
+        from_status TEXT,
+        to_status TEXT NOT NULL,
+        occurred_at TEXT NOT NULL
+    );
+    CREATE INDEX idx_quote_events_quote ON quote_events (quote_id);
+
+    CREATE TABLE invoice_events (
+        id TEXT PRIMARY KEY,
+        invoice_id TEXT NOT NULL REFERENCES invoices(id),
+        event_type TEXT NOT NULL,
+        from_status TEXT,
+        to_status TEXT NOT NULL,
+        occurred_at TEXT NOT NULL
+    );
+    CREATE INDEX idx_invoice_events_invoice ON invoice_events (invoice_id);
+    """,
+    """
+    -- Per-business quote validity, in days - the quote equivalent of
+    -- payment_terms_days, driving QuoteService.create_quote's calculated
+    -- expiry_date (see models.BusinessProfile). Plain ADD COLUMN with a
+    -- constant default, no rebuild needed, same shape as payment_terms_days
+    -- itself.
+    ALTER TABLE business_profiles ADD COLUMN quote_validity_days INTEGER NOT NULL DEFAULT 30;
+    """,
 ]

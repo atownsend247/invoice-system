@@ -214,6 +214,8 @@ def test_account_quote_invoice_flow(client, auth_headers):
     response = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers)
     assert response.status_code == 201
     quote_id = response.json()["id"]
+    assert len(response.json()["events"]) == 1
+    assert response.json()["events"][0]["event_type"] == "created"
 
     response = client.post(
         f"/quotes/{quote_id}/line-items",
@@ -226,6 +228,13 @@ def test_account_quote_invoice_flow(client, auth_headers):
     response = client.post(f"/quotes/{quote_id}/send", headers=auth_headers)
     assert response.status_code == 200
     assert response.json()["number"] == "Q-0001"
+    assert response.json()["events"][0] == {
+        "id": response.json()["events"][0]["id"],
+        "event_type": "status_changed",
+        "from_status": "draft",
+        "to_status": "sent",
+        "occurred_at": response.json()["events"][0]["occurred_at"],
+    }
 
     response = client.get(f"/quotes/{quote_id}/pdf", headers=auth_headers)
     assert response.status_code == 200
@@ -235,6 +244,7 @@ def test_account_quote_invoice_flow(client, auth_headers):
     assert response.status_code == 201
     invoice_id = response.json()["id"]
     assert response.json()["quote_id"] == quote_id
+    assert response.json()["events"][0]["event_type"] == "created"
 
     response = client.get(f"/invoices/{invoice_id}/pdf", headers=auth_headers)
     assert response.status_code == 200
@@ -243,6 +253,57 @@ def test_account_quote_invoice_flow(client, auth_headers):
     response = client.post(f"/invoices/{invoice_id}/send", headers=auth_headers)
     assert response.status_code == 200
     assert response.json()["number"] == "INV-0001"
+    assert response.json()["events"][0]["event_type"] == "status_changed"
+
+
+def test_create_quote_with_issue_date_computes_expiry_from_business_profile_validity(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    client.put(
+        "/settings/business-profile",
+        json={
+            "first_name": "Ada",
+            "last_name": "Lovelace",
+            "business_name": "Acme",
+            "payment_terms_days": 30,
+            "quote_validity_days": 45,
+        },
+        headers=auth_headers,
+    )
+
+    response = client.post(
+        "/quotes",
+        json={"account_id": account_id, "issue_date": "2026-01-01"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["issue_date"] == "2026-01-01"
+    assert body["expiry_date"] == "2026-02-15"  # + quote_validity_days (45)
+
+
+def test_convert_quote_accepts_a_backdated_issue_date(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+    client.post(
+        f"/quotes/{quote_id}/line-items",
+        json={"description": "Work", "quantity": "1", "unit_price": "100.00"},
+        headers=auth_headers,
+    )
+    client.post(f"/quotes/{quote_id}/send", headers=auth_headers)
+
+    response = client.post(
+        f"/quotes/{quote_id}/convert", json={"issue_date": "2025-11-01"}, headers=auth_headers
+    )
+    assert response.status_code == 201
+    assert response.json()["issue_date"] == "2025-11-01"
 
 
 def test_list_accounts_paginates_and_filters_by_query(client, auth_headers):
@@ -943,6 +1004,7 @@ def test_business_profile_defaults_before_first_save(client, auth_headers):
     assert body["county"] is None
     assert body["postcode"] is None
     assert body["payment_terms_days"] == 30
+    assert body["quote_validity_days"] == 30
     assert body["currency"] == "GBP"
     assert body["utr"] is None
     assert body["vat_number"] is None

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import * as api from '../api'
+import { ActivityTimeline } from '../components/ActivityTimeline'
 import { LineItemsTable } from '../components/LineItemsTable'
 import { PdfViewerModal } from '../components/PdfViewerModal'
 import { StatusBadge } from '../components/StatusBadge'
@@ -31,6 +32,9 @@ export function QuoteDetailPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  // Optional backdating for the resulting invoice - blank means "today"
+  // (see CLAUDE.md/QuoteService.convert_to_invoice).
+  const [convertIssueDate, setConvertIssueDate] = useState('')
 
   function closePdfPreview() {
     if (pdfUrl) URL.revokeObjectURL(pdfUrl)
@@ -124,18 +128,28 @@ export function QuoteDetailPage() {
           </button>
         )}
         {(quote.status === 'sent' || quote.status === 'accepted') && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() =>
-              run(async () => {
-                const invoice = await api.convertQuote(quote.id)
-                navigate(`/invoices/${invoice.id}`)
-              })
-            }
-          >
-            Convert to invoice
-          </button>
+          <span className="convert-action">
+            <label>
+              Issue date (optional, defaults to today)
+              <input
+                type="date"
+                value={convertIssueDate}
+                onChange={(event) => setConvertIssueDate(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() =>
+                run(async () => {
+                  const invoice = await api.convertQuote(quote.id, convertIssueDate || undefined)
+                  navigate(`/invoices/${invoice.id}`)
+                })
+              }
+            >
+              Convert to invoice
+            </button>
+          </span>
         )}
         {quote.status === 'converted' && convertedInvoice && (
           <button type="button" onClick={() => navigate(`/invoices/${convertedInvoice.id}`)}>
@@ -149,6 +163,8 @@ export function QuoteDetailPage() {
         title={quote.number ?? `Draft quote #${quote.id}`}
         onClose={closePdfPreview}
       />
+
+      <ActivityTimeline events={quote.events} />
     </section>
   )
 }
