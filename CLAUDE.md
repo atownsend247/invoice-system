@@ -544,9 +544,32 @@ Four separate things are easy to conflate here — don't:
   tabs and the one "Save settings" button (always visible below the
   tabpanels, not per-tab) still submits every field regardless of which
   tab happens to be showing — there's no per-tab independent save, since
-  the required fields (`first_name`/`last_name`/`business_name`) span
-  tabs and a single `PUT` already saves the whole profile atomically. No
-  URL involvement and no roving-tabindex arrow-key nav - a plain
+  the fields the server requires (`first_name`/`last_name`/
+  `business_name`/`payment_terms_days`/`quote_validity_days`/`currency`/
+  the three `*_number_digits` fields — `BusinessProfileService.save_profile`'s
+  own validation, see the Conventions bullet above) span tabs and a
+  single `PUT` already saves the whole profile atomically.
+  **None of those fields carry the native HTML `required` attribute** —
+  found the hard way: a field that's actually required but sits on a
+  tab other than the one currently showing is still present in the DOM,
+  just hidden via its tabpanel's `hidden` attribute, and Chrome's native
+  constraint validation tries to focus an invalid hidden field on submit
+  regardless of which tab you're on, can't (it's not focusable), and
+  silently aborts the *entire* submit with nothing but a console error
+  ("An invalid form control with name='' is not focusable") — no visible
+  error, no request sent, indistinguishable from the Save button doing
+  nothing at all. First actually triggered by `init-db --reset` (see the
+  gotcha above), which produces a genuinely blank `first_name`/
+  `last_name`/`business_name` the moment a user opens Settings on a
+  different tab afterward — but the underlying bug predates that feature
+  and would trip on any blank required field left on a hidden tab.
+  Removing `required` from every field in this form is safe precisely
+  *because* the server already validates all of them independently and
+  the page already surfaces that error (`{error && <p role="alert">...`)
+  — don't re-add `required` to a field here without also solving the
+  hidden-tab-focus problem some other way (e.g. switching to that field's
+  own tab before validating, which nothing currently does).
+  No URL involvement and no roving-tabindex arrow-key nav - a plain
   click/Tab-focus/Enter-activate button already covers basic keyboard
   operability for a 4-item tab bar. Each tab's original `<fieldset>/
   <legend>` moved inside its `tabpanel` unchanged, so the same semantic/

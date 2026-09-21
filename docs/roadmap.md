@@ -1289,5 +1289,34 @@ flow," not a restructuring, whenever it's actually needed.
       login against a fresh domain database). Full backend suite (418
       tests, 98.6%+ coverage), ruff clean.
 
+## Fixed — Settings page silently failed to save with a blank field on a hidden tab
+
+- [x] Surfaced by a real user report right after using `init-db --reset`
+      (Phase 38 above): `init-db --reset` produces a genuinely blank
+      `first_name`/`last_name`/`business_name`, and opening Settings on
+      any tab other than the one holding the blank field made "Save
+      settings" silently do nothing - no error, no request sent, just
+      "An invalid form control with name='' is not focusable" in the
+      browser console. Root cause predates `--reset` itself: every
+      profile field submits through one shared `<form>` (see
+      `SettingsPage.tsx`'s tabs Convention in `CLAUDE.md`), and several
+      fields carried the native HTML `required` attribute - when one of
+      those sits on a tab hidden via the `hidden` attribute, Chrome's
+      constraint validation tries to focus it on submit, can't, and
+      aborts the whole submission with no visible feedback.
+- [x] Fixed by removing `required` from every field in the form
+      (`first_name`/`last_name`/`business_name`/`payment_terms_days`/
+      `quote_validity_days`/`currency`/`quote_number_digits`/
+      `invoice_number_digits`/`expense_number_digits`) - safe because the
+      server already independently validates all of them
+      (`BusinessProfileService.save_profile`) and the page already
+      surfaces that error inline; the browser's native validation was
+      redundant *and* actively broken for a multi-tab single-form layout.
+- [x] New e2e regression test in `settings.spec.ts`: blank a field, switch
+      to a different tab, submit, and assert a real validation error
+      appears (not a silent no-op) - reproduces the exact failure mode.
+      Full e2e suite (68 tests) and frontend checks (tsc/lint/unit/build)
+      all pass.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

@@ -194,11 +194,11 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
             </label>
             <label>
               First name
-              <input value={firstName} onChange={(event) => setFirstName(event.target.value)} required />
+              <input value={firstName} onChange={(event) => setFirstName(event.target.value)} />
             </label>
             <label>
               Last name
-              <input value={lastName} onChange={(event) => setLastName(event.target.value)} required />
+              <input value={lastName} onChange={(event) => setLastName(event.target.value)} />
             </label>
           </div>
         </fieldset>
@@ -215,7 +215,7 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
           <div className="form-section-fields">
             <label>
               Business name
-              <input value={businessName} onChange={(event) => setBusinessName(event.target.value)} required />
+              <input value={businessName} onChange={(event) => setBusinessName(event.target.value)} />
             </label>
             <label>
               Address line 1 (optional)
@@ -258,7 +258,6 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
                 step={1}
                 value={paymentTermsDays}
                 onChange={(event) => setPaymentTermsDays(event.target.value)}
-                required
               />
             </label>
             <label>
@@ -269,7 +268,6 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
                 step={1}
                 value={quoteValidityDays}
                 onChange={(event) => setQuoteValidityDays(event.target.value)}
-                required
               />
             </label>
             <label>
@@ -278,7 +276,6 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
                 value={currency}
                 onChange={(event) => setCurrency(event.target.value.toUpperCase())}
                 maxLength={3}
-                required
               />
             </label>
             <label>
@@ -356,7 +353,6 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
                   step={1}
                   value={quoteNumberDigits}
                   onChange={(event) => setQuoteNumberDigits(event.target.value)}
-                  required
                 />
               </label>
               <label className="form-field-wide">
@@ -399,7 +395,6 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
                   step={1}
                   value={invoiceNumberDigits}
                   onChange={(event) => setInvoiceNumberDigits(event.target.value)}
-                  required
                 />
               </label>
               <label className="form-field-wide">
@@ -442,7 +437,6 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
                   step={1}
                   value={expenseNumberDigits}
                   onChange={(event) => setExpenseNumberDigits(event.target.value)}
-                  required
                 />
               </label>
               <label className="form-field-wide">

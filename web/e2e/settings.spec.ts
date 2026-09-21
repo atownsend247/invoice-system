@@ -371,9 +371,9 @@ test('rejects a blank business name', async ({ authenticatedPage: page }) => {
   await page.getByRole('button', { name: 'Save settings' }).click()
   await expect(page.getByText('Saved.')).toBeVisible()
 
-  // whitespace, not empty - the input has `required`, so an empty value
-  // would never reach the server at all (blocked by browser validation);
-  // this exercises the server's own non-blank-after-strip check instead.
+  // Whitespace, not empty - these inputs deliberately don't use the
+  // native `required` attribute (see the next test), so this exercises
+  // the server's own non-blank-after-strip check either way.
   await page.getByLabel('Business name').fill('   ')
   await page.getByRole('button', { name: 'Save settings' }).click()
   await expect(page.getByRole('alert')).toContainText('business_name')
@@ -391,6 +391,30 @@ test('rejects a blank first name', async ({ authenticatedPage: page }) => {
 
   await page.getByRole('tab', { name: 'User' }).click()
   await page.getByLabel('First name').fill('   ')
+  await page.getByRole('button', { name: 'Save settings' }).click()
+  await expect(page.getByRole('alert')).toContainText('first_name')
+})
+
+test('a blank required field left on a hidden tab still surfaces a server error, not a silent no-op', async ({
+  authenticatedPage: page,
+}) => {
+  // Every profile field submits together through one shared <form> - no
+  // per-tab save (see CLAUDE.md) - so a required-but-blank field left
+  // behind on a tab the user has since switched away from used to make
+  // Chrome try (and fail) to focus it for native HTML5 validation,
+  // silently aborting the whole submit with no visible error at all
+  // ("An invalid form control with name='' is not focusable" in the
+  // console, nothing else - found via a real user report after
+  // `init-db --reset` produced a genuinely blank profile). Fixed by
+  // dropping the native `required` attribute from every field in this
+  // form entirely and relying on the server's own validation instead
+  // (already enforced for all of them - see
+  // BusinessProfileService.save_profile) - this proves that fix holds:
+  // submitting from a *different* tab than the blank field still reaches
+  // the server and shows a real error, rather than doing nothing.
+  await page.goto('/settings')
+  await page.getByLabel('First name').fill('   ')
+  await page.getByRole('tab', { name: 'Document' }).click()
   await page.getByRole('button', { name: 'Save settings' }).click()
   await expect(page.getByRole('alert')).toContainText('first_name')
 })
