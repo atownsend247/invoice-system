@@ -91,38 +91,14 @@ Four separate things are easy to conflate here — don't:
   data only." See `docs/data-model.md`'s "Multi-tenancy" for the "multiple
   users per organisation" future work this is already shaped for.
 - **`BusinessProfile`** (this app's own domain table, `business_profiles`) —
-  the logged-in user's *own* details, in four groups (also how the
-  settings page presents them - see Conventions): **user settings**
-  (`title` optional, `first_name`, `last_name` — the account holder's
-  personal name, **never shown on a PDF**); **business settings**
-  (`business_name`, and a UK GOV.UK Design System-style address —
-  `address_line1`/`address_line2`/`town_or_city`/`county`/`postcode`, each
-  independently optional, no "all or nothing" rule); **payment and tax
-  settings** (`payment_terms_days`, `currency` - the *reporting* currency
-  the home dashboard's monthly-totals chart sums in, defaults `"GBP"`,
-  independent of the currency chosen per quote/invoice - `utr`/`vat_number`/
-  `bank_account_name`/`bank_sort_code`/`bank_account_number` all optional,
-  all purely informational except that whichever are set render as a
-  "Payment details" section on generated **invoices only** — never
-  quotes or expenses, see Conventions below); **document settings**
-  (`quote_document_header`/`quote_document_footer`,
-  `invoice_document_header`/`invoice_document_footer`,
-  `expense_document_header`/`expense_document_footer` — three independent
-  pairs of free text, one per document type so each can say something
-  different, each field independently optional - the one place free text
-  actually gets injected into the matching quote/invoice/expense PDF this
-  user generates, see Conventions below for where and why it's not a
-  per-page running header/footer); and `accent_color`, a single
-  `#RRGGBB` hex string used as the brand colour across every
-  quote/invoice/expense PDF this user generates (title, table header,
-  totals highlight) - one shared value, not a third per-document-type
-  triple, since it's "this business's colour" rather than something
-  that varies by document type. Unlike every other field on this
-  model, `accent_color`'s format *is* validated
-  (`BusinessProfileService.save_profile`) rather than accepted as
-  free-form text, since it's interpolated directly into a CSS
-  declaration by `pdf.py`'s template rather than shown as escaped body
-  text - see Conventions below. One per
+  the logged-in user's *own* details, in four groups matching the Settings
+  page's tabs: user settings (name — **never shown on a PDF**), business
+  settings (business name + address), payment and tax settings (payment
+  terms, reporting currency, UTR/VAT, bank details), document settings
+  (per-document-type header/footer pairs, plus a shared `accent_color`) —
+  see `docs/data-model.md`'s `BusinessProfile` entity row for the full
+  field list and `docs/api.md`'s Conventions for how the document/
+  accent-colour fields behave on a generated PDF. One per
   user, keyed by `user_id` = sessionkit's `User.id` — deliberately still
   per-*user*, not per-`Organisation`, even after `Organisation` was
   introduced (see `docs/data-model.md`'s "Multi-tenancy": today it's a
@@ -389,8 +365,8 @@ Four separate things are easy to conflate here — don't:
   is interpolated directly into a CSS custom property in the template -
   the one value in this whole render path that *isn't* just escaped free
   text, which is exactly why its format is validated at the service layer
-  rather than accepted as-is (see the `accent_color` paragraph above) -
-  `base_url=None` is passed to `weasyprint.HTML(...)` deliberately, so
+  rather than accepted as-is (see `docs/api.md`'s `accent_color`
+  Convention) - `base_url=None` is passed to `weasyprint.HTML(...)` deliberately, so
   there's no filesystem/network location WeasyPrint could resolve a
   `url()`/`<img src>` against even in principle, and the template itself
   never emits one (no logo in scope) - external resource fetching is
@@ -399,13 +375,8 @@ Four separate things are easy to conflate here — don't:
   assume WeasyPrint's engine supports) computes the pale tint used behind
   the status pill and the totals-row highlight.
 - `BusinessProfile`'s document header/footer (see "Four separate things"
-  above) is three **independent** pairs -
-  `quote_document_header`/`quote_document_footer`,
-  `invoice_document_header`/`invoice_document_footer`,
-  `expense_document_header`/`expense_document_footer` - not one shared
-  pair, so each document type can say something different (e.g. a quote's
-  footer noting it's only valid for 30 days, while an invoice's footer
-  gives payment terms). `pdf.py`'s `quote_header_lines()`/
+  above and `docs/api.md`'s Per-document-type header/footer Convention
+  for the three-independent-pairs shape). `pdf.py`'s `quote_header_lines()`/
   `quote_footer_lines()` and their `invoice_`/`expense_` equivalents each
   split their own field's free text into its non-blank lines (each
   individually stripped) - `_render()` no longer decides which field to
@@ -470,20 +441,16 @@ Four separate things are easy to conflate here — don't:
   don't add one without being asked, since the monthly-totals chart below
   only ever needs a binary paid/not-paid split, not partial amounts.
   `InvoiceService.monthly_totals(organisation_id, currency, months=12)` is
-  the aggregation behind that chart: it buckets every non-draft, non-void
-  invoice **belonging to that organisation** (not per-account) by the
-  calendar month of its `issue_date` (when it was *created*, not `due_date`
-  or `created_at`'s time-of-day), summing `paid` separately from everything
-  else (`sent` - there is no stored `overdue`, see above), and **only for
-  invoices whose `currency` matches the `currency` argument** - an invoice
-  in a different currency is silently excluded rather than naively summed
-  in with it (see `BusinessProfile.currency` above). The API/CLI resolve
-  both the organisation (from the Bearer token/`--user-id`, see "Four
-  separate things" above) and which currency to pass from the caller's own
-  business profile (`GET /invoices/monthly-totals`, CLI `invoice
-  monthly-totals --user-id`); `InvoiceService` itself takes a plain
-  `currency: str` and has no idea whose profile it came from, same pattern
-  as `payment_terms_days`.
+  the aggregation behind that chart (see `docs/api.md`'s `GET
+  /invoices/monthly-totals` row for the response shape/currency-filter
+  behaviour) - buckets every non-draft, non-void invoice **belonging to
+  that organisation** (not per-account) by the calendar month of its
+  `issue_date` (when it was *created*, not `due_date` or `created_at`'s
+  time-of-day), summing `paid` separately from everything else (`sent` -
+  there is no stored `overdue`, see above). `InvoiceService` itself takes
+  a plain `currency: str` and has no idea whose profile it came from - the
+  API/CLI resolve both the organisation and the currency to pass, same
+  pattern as `payment_terms_days`.
 - `ExpenseService.monthly_totals(organisation_id, currency, months=12)` is
   the same aggregation as `InvoiceService.monthly_totals` above - trailing
   12 months ending with the current one, bucketed by `issue_date`, filtered
@@ -553,61 +520,31 @@ Four separate things are easy to conflate here — don't:
   it doesn't also trigger the row's own navigation. Creating a new account
   navigates straight to its detail page on success, rather than staying on
   the list.
-- `Domain` (`core.py`'s `DomainService`) - which domains an `Account` owns,
-  when each expires, who it's registered with, and whether it's set to
-  auto-renew. Structurally closest to `ExpenseAttachment` below, not
-  `Expense`: always accessed through its parent `Account` (**no
-  `organisation_id` column of its own** - tenant ownership is resolved via
-  `AccountService`/`self._repository.get_account(...)` first, raising
-  `NotFound` if the account is missing or belongs to a different
-  organisation, same reasoning as `ExpenseAttachment`'s own docstring), no
-  `number`/lifecycle. Unlike an attachment though, a domain is user-edited
-  data, not an immutable uploaded file - `DomainService.update_domain` is a
-  full replace, mirroring `AccountService.update_account`'s PUT semantics,
-  rather than being add-only. `domain_name`/`expiry_date`/`registrar` are
-  all required (`ValidationFailed` on a blank `domain_name`/`registrar` -
-  no format validation, same "required but unvalidated format" convention
-  `Account.email`/`business_name` already use); `auto_renew` is a plain
-  informational boolean, defaulting `False` - nothing here talks to a
-  registrar's API. `registrar` is a plain string, **not** a foreign key to
-  `Registrar` below - the web UI's `DomainForm.tsx` populates it from a
-  strict `<select>` sourced from the managed registrar list, but the
-  chosen name is what actually gets stored, so renaming/deleting a
-  `Registrar` later never needs to touch already-recorded `Domain` rows
-  (see the `Registrar` bullet below for why). `POST/GET /accounts/{id}/domains`, `PUT`/`DELETE
-  .../domains/{domain_id}` (no single-`GET` route - the list is the only
-  read path, same as `GET /expenses?account_id=`). `SqliteRepository.
-  list_domains` orders **soonest-expiry-first**, not the newest-created-
-  first convention every other `list_*` method in this app uses - "what
-  needs attention soonest" is the useful default for this data, unlike the
-  chronological-record framing quotes/invoices/expenses share. Web UI: a
-  "Domains" section on `AccountDetailPage.tsx` (no separate route/page,
-  unlike Quote/Invoice/Expense's own detail pages - a domain has no
-  sub-resources or PDF of its own to justify one) - an inline "Add domain"
-  toggle reveals `components/DomainForm.tsx` (same `initial`/`submitLabel`/
-  `onSubmit`/`onDone`/`onCancel` prop shape as `AccountForm.tsx`, reused for
-  both add and per-row edit), and each row has its own Edit/Delete actions.
-- `Registrar` (`core.py`'s `RegistrarService`) - a business's managed list
-  of domain registrars, kept so `Domain.registrar` can be picked from a
-  `<select>` instead of typed freehand (avoiding "GoDaddy"/"godaddy"/"Go
-  Daddy" drift across domains - the dropdown is **strictly select-from-
-  list**, no free-text escape hatch). **Organisation-scoped, not
-  account-scoped like `Domain`** - it's a business-wide reference list,
-  not tied to any one client, so unlike `Domain` it carries its own
-  `organisation_id` and is structurally closest to `AccountService`: full
-  CRUD, tenant ownership checked directly rather than through a parent.
-  Unlike `Account` though, it supports **delete** - nothing holds a
-  foreign key to a `Registrar` (`Domain.registrar` stores the chosen name
-  as a plain string, see above), so removing one has no cascade to worry
-  about, unlike an `Account` with `Quote`/`Invoice`/`Expense`/`Domain`
-  rows depending on it. `name` required (`ValidationFailed` if blank);
-  `notes` optional free text (e.g. a support URL), no format validation.
-  `POST/GET /registrars`, `PUT`/`DELETE /registrars/{id}` - top-level, not
-  nested under `/accounts` like `Domain`, since a registrar has no parent.
-  `SqliteRepository.list_registrars` orders **alphabetically**
-  (`ORDER BY name COLLATE NOCASE`), the useful default for a dropdown's
-  option order - yet another `list_*` method with its own non-default
-  ordering, see `Domain`'s own soonest-expiry-first choice above. Web UI:
+- `Domain` (`core.py`'s `DomainService`) - see `docs/api.md`'s `Domain`
+  Convention for the field/route shape (required fields, no format
+  validation, plain-string `registrar` not a FK). Implementation notes
+  that convention doesn't cover: structurally closest to
+  `ExpenseAttachment`, not `Expense` - **no `organisation_id` column of
+  its own**, tenant ownership resolved via
+  `AccountService`/`self._repository.get_account(...)` first (`NotFound`
+  if missing/wrong organisation), same reasoning as `ExpenseAttachment`'s
+  docstring. `DomainService.update_domain` is a full replace mirroring
+  `AccountService.update_account`'s PUT semantics, unlike an attachment's
+  add-only shape. `SqliteRepository.list_domains` orders
+  **soonest-expiry-first**, not this app's usual newest-created-first -
+  "what needs attention soonest" is the useful default here. Web UI: a
+  "Domains" section on `AccountDetailPage.tsx` (no separate route/page - a
+  domain has no sub-resources or PDF to justify one), an inline "Add
+  domain" toggle revealing `components/DomainForm.tsx` (same
+  `initial`/`submitLabel`/`onSubmit`/`onDone`/`onCancel` prop shape as
+  `AccountForm.tsx`, reused for add and per-row edit).
+- `Registrar` (`core.py`'s `RegistrarService`) - see `docs/api.md`'s
+  `Registrar` Convention for the field/route shape (organisation-scoped
+  full CRUD, delete has no cascade since `Domain.registrar` stores a
+  plain string not a FK). `SqliteRepository.list_registrars` orders
+  **alphabetically** (`ORDER BY name COLLATE NOCASE`), the useful default
+  for a dropdown - yet another `list_*` method with its own non-default
+  ordering, see `Domain`'s soonest-expiry-first choice above. Web UI:
   a fifth Settings tab, "Registrars" - deliberately **not** a fifth
   `BusinessProfileForm` tabpanel (`SettingsPage.tsx`): it's a
   self-contained list with its own immediate add/edit/delete actions,
@@ -640,24 +577,16 @@ Four separate things are easy to conflate here — don't:
   share the same shape as Quote/Invoice's (`LineItem`, including a
   per-line `tax_rate`) rather than a simpler description+amount shape,
   since VAT paid on a business expense may be separately reclaimable.
-  `issue_date` (when the record was created) and `expense_date` (when the
-  money was actually spent) answer two different questions, easy to
-  conflate - see `models.Expense`'s docstring. `expense_date` defaults to
-  today at creation (`create_expense`'s own `expense_date` parameter,
-  `None` falling back to the clock) but, unlike every other top-level
-  field on `Expense`, stays editable afterward
-  (`ExpenseService.update_expense_date`, `PUT
-  /expenses/{id}/expense-date`, CLI `expense set-date`) - entering a
-  receipt today for something bought last week is exactly the case this
-  exists for. `monthly_totals` (the home dashboard's chart) buckets by
-  `expense_date`, **not** `issue_date`, for the same reason: spending
-  should land in the month it happened, not the month it was typed in.
-  `POST /expenses`, `GET /expenses` (optionally `?account_id=`), `GET
-  /expenses/{id}`, `POST /expenses/{id}/line-items`, `GET
-  /expenses/{id}/pdf` (same `render_expense_pdf` pattern as
+  `issue_date` (when the record was created) vs `expense_date` (when the
+  money was actually spent) - see `docs/api.md`'s Convention of the same
+  name for the field/editability/bucketing shape;
+  `ExpenseService.update_expense_date` is the one implementation detail
+  it doesn't name (`create_expense`'s `expense_date` param falls back to
+  the clock when `None`). Routes/CLI: see `docs/api.md`'s endpoint table;
+  `GET /expenses/{id}/pdf` uses the same `render_expense_pdf` pattern as
   quotes/invoices in `pdf.py`, but with no "Status:" line - `_render`'s
   `status` param is `None`-able specifically for this case - and no due/
-  expiry date). CLI: `expense create/list/add-item/pdf/set-date`, same
+  expiry date. CLI: `expense create/list/add-item/pdf/set-date`, same
   `--user-id`-resolves-organisation pattern as `quote`/`invoice`. Web UI:
   listed at the bottom of `AccountDetailPage.tsx` with a "New expense"
   link to `ExpenseNewPage.tsx` (same create-form pattern as
@@ -692,14 +621,12 @@ Four separate things are easy to conflate here — don't:
   path individually, same as `INVOICE_SYSTEM_DB`/`--db` do for the domain
   database — see `docs/deployment.md` for why the whole `storage/`
   directory needs its own backup story and why the nginx example config's
-  `client_max_body_size` has to match `MAX_ATTACHMENT_SIZE`. Routes: `POST
-  /expenses/{id}/attachments` (multipart upload — needs `python-multipart`
-  installed, FastAPI's own requirement for `UploadFile`), `GET
-  /expenses/{id}/attachments/{attachment_id}` (download/view bytes, same
-  route either way — see the PDF-preview convention below), `DELETE
-  /expenses/{id}/attachments/{attachment_id}`. Attachments are inlined on
-  `ExpenseOut`/`Expense` (`expense.attachments`), same as `line_items` —
-  no separate list endpoint. CLI: `expense attachment add/list/download/
+  `client_max_body_size` has to match `MAX_ATTACHMENT_SIZE`. See
+  `docs/api.md`'s endpoint table for the routes — the upload one needs
+  `python-multipart` installed (FastAPI's own requirement for
+  `UploadFile`). Attachments are inlined on `ExpenseOut`/`Expense`
+  (`expense.attachments`), same as `line_items` — no separate list
+  endpoint. CLI: `expense attachment add/list/download/
   delete`, same required `--user-id` pattern as everything else. Web UI:
   an "Attachments" section on `ExpenseDetailPage.tsx` below the line
   items, reusing the same `pdfUrl`/`PdfViewerModal` state as the
@@ -728,17 +655,12 @@ Four separate things are easy to conflate here — don't:
   on why a vendored cross-cutting concern keeps its own error base.
 - `AccountService.list_accounts`/`QuoteService.list_quotes`/
   `InvoiceService.list_invoices` are server-side paginated and filtered —
-  `page`/`page_size` (default `1`/`20`, `page_size` capped at
-  `MAX_PAGE_SIZE` = 200, both `ValidationFailed` outside range), plus
-  `query` (accounts — matches business/contact name, email, phone, or any
-  address line) and `account_name`/`status` (quotes/invoices —
-  `account_name` matches the linked account's business_name via a SQL
-  `JOIN`, both case-insensitive `LIKE`). All three return a `Page[T]`
-  (`models.py` — `items`, `total`), not a bare list; `GET /accounts`/`GET
-  /quotes`/`GET /invoices` wrap that in an `{items, total}` envelope
-  (`AccountListOut`/`QuoteListOut`/`InvoiceListOut`), a breaking response-
-  shape change from the bare array these routes used to return — fine here
-  since the web client and CLI are the only consumers. `Repository.list_*`
+  see `docs/api.md`'s pagination Convention for the `page`/`page_size`/
+  `{items, total}` shape. Filter fields: `query` (accounts — matches
+  business/contact name, email, phone, or any address line) and
+  `account_name`/`status` (quotes/invoices — `account_name` matches the
+  linked account's business_name via a SQL `JOIN`, both case-insensitive
+  `LIKE`). All three return a `Page[T]` (`models.py`). `Repository.list_*`
   (the layer below) take `limit`/`offset` instead of `page`/`page_size`,
   and `limit=None` skips `LIMIT`/`OFFSET` entirely (returning
   `len(rows)` as `total` rather than a second `COUNT` query) — that's what
@@ -747,38 +669,18 @@ Four separate things are easy to conflate here — don't:
   before. `InvoiceStatus.OVERDUE` is accepted as a `status` filter value
   but can never match anything, since it's never actually persisted (see
   the home dashboard bullet above) — not special-cased, just naturally
-  returns zero rows. `AccountDetailPage.tsx`'s three `?account_id=`-scoped
-  sub-list fetches, `HomePage.tsx`'s `sent`-only invoice fetch (for
-  Overdue/Outstanding), and the "select an account" dropdowns on
-  `QuoteNewPage.tsx`/`ExpenseNewPage.tsx` all request `page_size=200`
-  explicitly rather than relying on the `20` default — each is inherently
-  bounded (one client's history, currently-unpaid invoices, or this
-  organisation's own account list) rather than something that grows with
-  the whole organisation's total data over time, so 200 is a deliberately
-  generous cap, not true pagination. Migration 10 (see the migrations
-  gotcha below) added the indexes backing all of this.
-- **Invite-gated registration**: `RegistrationInvite` (models.py) is a
-  single-use, 7-day-expiring token (a UUID4, same as every other id here)
-  gating the public `/register` page — `RegistrationInviteService`
-  (`core.py`) manages it and, like every other service, never imports
-  `sessionkit` (see the "Four separate things" section and architecture
-  rules above); the one place that actually calls
-  `sessionkit.AuthService.create_user` is `api/auth.py`'s `POST
-  /auth/register` route handler, which calls `consume_invite` first, then
-  creates the login — in that order, deliberately, so a failed
-  `create_user` (e.g. a duplicate email) only ever burns the invite,
-  never risks two callers succeeding with the same one-time token.
-  `check_invite`/`consume_invite` both raise the same `NotFound` for an
-  unknown, expired, *or already-used* token — deliberately indistinguishable,
-  so a caller (or an attacker probing tokens) can't tell which. Not tied
-  to a specific email nor an `Organisation` — whoever holds a valid token
-  can register with any email, and their own `Organisation` is created
-  lazily on first login exactly like every other user
-  (`OrganisationService.get_or_create_for_user`). Invites are created
-  **only** via the CLI (`invoice-system-cli invite create
-  [--expires-in-days N]`, default 7) — there is deliberately no API route
-  to create one, matching the "no unconditional public signup" posture
-  above; `SqliteRepository.consume_registration_invite` is a single locked
+  returns zero rows. Migration 10 (see the migrations gotcha above) added
+  the indexes backing all of this.
+- **Invite-gated registration**: see `docs/api.md`'s "Invite-gated
+  registration" Convention for the token/flow shape (single-use,
+  7-day-expiring, CLI-only creation, consume-before-create-user
+  ordering, indistinguishable-404 probing resistance). Implementation
+  notes that convention doesn't cover: `RegistrationInviteService`
+  (`core.py`), like every other service, never imports `sessionkit` (see
+  the "Four separate things" section and architecture rules above) — the
+  one place that actually calls `sessionkit.AuthService.create_user` is
+  `api/auth.py`'s `POST /auth/register` route handler itself.
+  `SqliteRepository.consume_registration_invite` is a single locked
   `UPDATE ... WHERE used_at IS NULL`, the same atomic
   check-then-claim shape as `add_organisation_member`'s documented race
   fix, so the token is genuinely single-use under concurrent submissions,
@@ -836,103 +738,34 @@ Four separate things are easy to conflate here — don't:
   frozen at the *previous* migration, inserts a row in the old shape, runs
   `migrate()`, and asserts the data survived in the new shape — two
   patterns worth knowing before writing one:
-  - Relaxing a `NOT NULL` constraint: SQLite can't `ALTER COLUMN` a
-    constraint in place, so this needs a rebuild-and-swap — new table with
-    the target shape, `INSERT ... SELECT` the old data across (`NULLIF`
-    where a required-with-default-`''` column becomes genuinely nullable),
-    `DROP` the old table, `RENAME` the new one into its place.
-  - Adding/dropping a nullable column, or adding one with a constant
-    default: both are plain `ALTER TABLE` statements SQLite supports
-    directly — no rebuild needed.
-  (`MIGRATIONS` was flattened to a single baseline entry on 2026-09-16 —
-  no real database had been started against the prior 5-migration history
-  yet, so there was nothing any later migration needed to carry forward.
-  Don't flatten it again once a real database exists somewhere; that's
-  exactly the scenario forward-only migrations exist to handle instead.
-  Migration 2, added the same day, is the current reference example of the
-  "adding a column with a constant default" case above: `quote_line_items`/
-  `invoice_line_items` both get `tax_rate TEXT NOT NULL DEFAULT '0'`.
-  Migration 3 added `Organisation`/`organisation_members` plus nullable
-  `organisation_id` on `accounts`/`quotes`/`invoices` (nullable, not a
-  constant default, since there's no sensible organisation to backfill
-  existing rows with — see `docs/data-model.md`'s "Multi-tenancy" on the
-  consequence: old rows become invisible, not an error). Migration 4 is the
-  other rebuild-and-swap reference example, alongside the `NOT NULL`
-  case above: `quotes.number`/`invoices.number` had a column-level
-  `UNIQUE`, wrong once numbering became per-organisation (two
-  organisations' first quotes can both legitimately be `Q-0001`) — SQLite
-  can't drop a column constraint via `ALTER TABLE` any more than it can add
-  one, so this rebuilds both tables and replaces it with a composite
-  `UNIQUE INDEX` on `(organisation_id, number)` instead, carrying row ids
-  across explicitly so `quote_line_items`/`invoice_line_items` and
-  `invoices.quote_id` keep pointing at the right rows. Migration 5 split
-  `accounts.address` into `address_line1`/`address_line2`/`town_or_city`/
-  `county`/`postcode` (same structure as `business_profiles`' - see
-  data-model.md) — this one's a plain `ADD COLUMN` × 5 + `UPDATE ... SET
-  address_line1 = address` + `DROP COLUMN address`, no rebuild needed
-  (SQLite supports dropping a column directly, including a `NOT NULL`
-  one, as long as it isn't part of an index/constraint or the table's last
-  column); the old free-text value moves into `address_line1` wholesale,
-  not guessed-at-split, same reasoning as `business_profiles`' own
-  historical address split. Migration 6 added five more nullable columns
-  to `business_profiles` — `bank_account_name`/`bank_sort_code`/
-  `bank_account_number`/`document_header`/`document_footer`, plain `ADD
-  COLUMN` × 5, no rebuild needed, same as migration 2. Migration 7 is the
-  UUID reset (see `docs/data-model.md`'s "Opaque ids"). Migration 8 added
-  `expenses`/`expense_line_items` - two brand new tables, so a plain
-  `CREATE TABLE` × 2 (`expenses.number` is `NOT NULL`, unlike
-  `quotes.number`/`invoices.number`, since an `Expense` has no draft state
-  to leave it null through - see `ExpenseService`), no rebuild needed,
-  same reasoning as every other pure-addition migration in this file.
-  Migration 9 added `expense_attachments` - metadata only (the uploaded
-  bytes themselves live on disk, not in this table - see `attachments.py`),
-  one more new table, no rebuild needed either. Migration 10 added five
-  plain `CREATE INDEX` statements - `idx_accounts_organisation`,
-  `idx_quotes_organisation_account`/`idx_invoices_organisation_account`,
-  `idx_quotes_organisation_status`/`idx_invoices_organisation_status` -
-  backing the server-side pagination/filtering added to `GET /accounts`/
-  `GET /quotes`/`GET /invoices` (see the Conventions bullet below); no
-  rebuild needed, an index is never a rebuild-and-swap case. Migration 11
-  added `registration_invites` (see the invite-gated registration
-  Conventions bullet) - one more new table, no rebuild needed. Migration
-  12 is the third rebuild-and-swap-free reference example (alongside
-  migrations 4/5): `business_profiles.document_header`/`document_footer`
-  (added by migration 6 above) split into three independent pairs, one
-  per document type - same shape as migration 5's `accounts.address`
-  split - `ADD COLUMN` × 6 for the new `quote_`/`invoice_`/
-  `expense_document_header`/`document_footer` columns, an `UPDATE` copying
-  the one old value into all three new header columns and all three new
-  footer columns (existing values preserved, not dropped), then `DROP
-  COLUMN` × 2 for the old `document_header`/`document_footer`. Migration 13
-  added `idx_invoices_organisation_quote`, one more plain `CREATE INDEX`
-  backing `list_invoices`' `quote_id` filter (see the Quote/Invoice
-  conversion note above). Migration 14 added a nullable `accent_color`
-  column to `business_profiles` - plain `ADD COLUMN`, no rebuild needed,
-  same shape as migration 6 (see `pdf.py`'s accent-colour rendering
-  bullet above). Migration 15 added `domains` - one more brand new table
-  plus its own `idx_domains_account` index (see the `Domain` Conventions
-  bullet above), no rebuild needed, same reasoning as every other
-  pure-addition migration in this file. Migration 16 added `registrars` -
-  another brand new table plus its own `idx_registrars_organisation`
-  index (see the `Registrar` Conventions bullet above), no rebuild
-  needed either. Migration 17 is the fourth rebuild-and-swap-free
-  reference example (alongside migrations 4/5/12): `expenses.expense_date`
-  (see the `ExpenseService` Conventions bullet above) - same shape as
-  migration 5's `accounts.address_line1` split, a `NOT NULL DEFAULT ''`
-  `ADD COLUMN` (SQLite requires a constant default to add a `NOT NULL`
-  column to a non-empty table) immediately backfilled via `UPDATE
-  expenses SET expense_date = issue_date` - every existing expense's own
-  `issue_date` is the best available value, since `expense_date` didn't
-  exist yet to have recorded anything better.) Migration 18 added
-  `quote_events`/`invoice_events` - two brand new tables (see the
-  `ActivityEvent` Conventions bullet below), each with its own
-  `idx_quote_events_quote`/`idx_invoice_events_invoice` index, no rebuild
-  needed - same reasoning as every other pure-addition migration in this
-  file, and no backfill attempted since a pre-existing quote/invoice's real
-  creation/status-change history was never captured to backfill from.
-  Migration 19 added `business_profiles.quote_validity_days` - one more
-  `NOT NULL DEFAULT 30` `ADD COLUMN`, no rebuild needed, same shape as
-  `payment_terms_days` itself.)
+  - Relaxing/dropping a column-level constraint (`NOT NULL`, `UNIQUE`):
+    SQLite can't `ALTER COLUMN` a constraint in place, so this needs a
+    rebuild-and-swap — new table with the target shape, `INSERT ...
+    SELECT` the old data across (`NULLIF` where a required-with-default-
+    `''` column becomes genuinely nullable), `DROP` the old table,
+    `RENAME` the new one into its place, carrying row ids across
+    explicitly so anything referencing them keeps pointing at the right
+    rows. Migration 4 (rescoping `quotes.number`/`invoices.number`
+    uniqueness to per-organisation, replacing a column-level `UNIQUE`
+    with a composite `UNIQUE INDEX` on `(organisation_id, number)`) is
+    the reference example.
+  - Adding/dropping a nullable column, adding one with a constant
+    default, or adding an index: all plain `ALTER TABLE`/`CREATE INDEX`
+    statements SQLite supports directly — no rebuild needed. A `NOT
+    NULL` column needs a constant default on the `ADD COLUMN` itself
+    (SQLite's requirement for a non-empty table); where a smarter
+    default than the constant exists, follow it with a real backfill
+    `UPDATE` — migration 17 (`expenses.expense_date`, backfilled from
+    the existing `issue_date`) is the reference example for that case.
+  `MIGRATIONS` was flattened to a single baseline entry on 2026-09-16 — no
+  real database had been started against the prior 5-migration history yet,
+  so there was nothing any later migration needed to carry forward. Don't
+  flatten it again once a real database exists somewhere; that's exactly
+  the scenario forward-only migrations exist to handle instead. Migration 7
+  is the UUID reset (see `docs/data-model.md`'s "Opaque ids"). **The full
+  migration-by-migration history (what each of the current nineteen
+  actually did) lives in `docs/data-model.md`'s opening paragraph, not
+  here** — update that list, not this one, when you add a new migration.
 - Storage is a single shared SQLite connection/file — **serialise every
   access on a lock** inside the repository implementation rather than
   assuming the caller will. That lock is per-*call*, not across a sequence
