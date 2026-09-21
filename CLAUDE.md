@@ -543,32 +543,50 @@ Four separate things are easy to conflate here — don't:
   conditional unmounting, so every field's React state survives switching
   tabs and the one "Save settings" button (always visible below the
   tabpanels, not per-tab) still submits every field regardless of which
-  tab happens to be showing — there's no per-tab independent save, since
-  the fields the server requires (`first_name`/`last_name`/
-  `business_name`/`payment_terms_days`/`quote_validity_days`/`currency`/
-  the three `*_number_digits` fields — `BusinessProfileService.save_profile`'s
-  own validation, see the Conventions bullet above) span tabs and a
-  single `PUT` already saves the whole profile atomically.
-  **None of those fields carry the native HTML `required` attribute** —
-  found the hard way: a field that's actually required but sits on a
-  tab other than the one currently showing is still present in the DOM,
-  just hidden via its tabpanel's `hidden` attribute, and Chrome's native
-  constraint validation tries to focus an invalid hidden field on submit
-  regardless of which tab you're on, can't (it's not focusable), and
-  silently aborts the *entire* submit with nothing but a console error
-  ("An invalid form control with name='' is not focusable") — no visible
-  error, no request sent, indistinguishable from the Save button doing
-  nothing at all. First actually triggered by `init-db --reset` (see the
-  gotcha above), which produces a genuinely blank `first_name`/
-  `last_name`/`business_name` the moment a user opens Settings on a
-  different tab afterward — but the underlying bug predates that feature
-  and would trip on any blank required field left on a hidden tab.
-  Removing `required` from every field in this form is safe precisely
-  *because* the server already validates all of them independently and
-  the page already surfaces that error (`{error && <p role="alert">...`)
-  — don't re-add `required` to a field here without also solving the
-  hidden-tab-focus problem some other way (e.g. switching to that field's
-  own tab before validating, which nothing currently does).
+  tab happens to be showing — there's no *actual* per-tab save endpoint,
+  a single `PUT` always saves the whole profile atomically, but every
+  tab is still independently save-able in practice: **`first_name`/
+  `last_name`/`business_name` are the only three `BusinessProfile` fields
+  with no sensible default** (`payment_terms_days`/`quote_validity_days`/
+  `currency`/the three `*_number_digits` fields are also required by
+  `BusinessProfileService.save_profile`, but each already has a real
+  default constant backing it — `DEFAULT_PAYMENT_TERMS_DAYS`,
+  `DEFAULT_CURRENCY`, `DEFAULT_NUMBER_DIGITS` — baked into
+  `get_profile()`'s virtual-default response the moment the page loads,
+  even before anything has ever been saved, so their form state is never
+  genuinely blank). `first_name`/`last_name`/`business_name` used to be
+  required-non-blank too, with no such default (`get_profile()` returns
+  `""` for all three when nothing's been saved) — **found the hard way**:
+  a brand-new user filling in just one tab (say, Document) before ever
+  touching User or Business couldn't save *anything*, since the shared
+  PUT would carry those three still-blank fields along and the server
+  rejected them. Fixed by dropping that requirement entirely
+  (`BusinessProfileService.save_profile` no longer validates them) —
+  blank is accepted and stored as `""` (not normalised to `None` — these
+  stay a plain `str`, unlike title/address/UTR/etc., since nothing
+  downstream needs to tell "never set" apart from "set to blank":
+  `pdf.py`'s `business_profile_lines()` already just checks `if not
+  profile.business_name.strip()`).
+  **None of the four still-required fields (nor these three, now that
+  they're optional) carry the native HTML `required` attribute** — found
+  the hard way *before* the validation fix above: a field that's
+  genuinely required but sits on a tab other than the one currently
+  showing is still present in the DOM, just hidden via its tabpanel's
+  `hidden` attribute, and Chrome's native constraint validation tries to
+  focus an invalid hidden field on submit regardless of which tab you're
+  on, can't (it's not focusable), and silently aborts the *entire* submit
+  with nothing but a console error ("An invalid form control with
+  name='' is not focusable") — no visible error, no request sent,
+  indistinguishable from the Save button doing nothing at all. First
+  actually triggered by `init-db --reset` (see the gotcha above), which
+  produces a genuinely blank `first_name`/`last_name`/`business_name` the
+  moment a user opens Settings on a different tab afterward. Removing
+  `required` from every field in this form is safe precisely *because*
+  the server already validates the ones that still need it independently
+  and the page already surfaces that error (`{error && <p role="alert">
+  ...`) — don't re-add `required` to a field here without also solving
+  the hidden-tab-focus problem some other way (e.g. switching to that
+  field's own tab before validating, which nothing currently does).
   No URL involvement and no roving-tabindex arrow-key nav - a plain
   click/Tab-focus/Enter-activate button already covers basic keyboard
   operability for a 4-item tab bar. Each tab's original `<fieldset>/

@@ -458,12 +458,19 @@ class BusinessProfileService:
         expense_number_digits: int,
         accent_color: str | None = None,
     ) -> BusinessProfile:
-        if not first_name.strip():
-            raise ValidationFailed("first_name is required")
-        if not last_name.strip():
-            raise ValidationFailed("last_name is required")
-        if not business_name.strip():
-            raise ValidationFailed("business_name is required")
+        # first_name/last_name/business_name are deliberately NOT validated
+        # as non-blank, unlike every other check below - this is a single
+        # full-profile PUT covering four tab-separated groups on the
+        # settings page (see CLAUDE.md), and these three had no sensible
+        # default to fall back to the way payment_terms_days/currency/the
+        # number-prefix fields do. Requiring them non-blank meant a user
+        # filling in just one tab (e.g. Document) before ever touching
+        # User/Business couldn't save at all - blank is accepted and
+        # stored as "" (not normalised to None - these stay a plain `str`,
+        # not `str | None`, since nothing downstream needs to distinguish
+        # "never set" from "set to blank": pdf.py's business_profile_lines()
+        # already checks `if not profile.business_name.strip()`, treating
+        # both the same way).
         if payment_terms_days <= 0:
             raise ValidationFailed("payment_terms_days must be a positive number of days")
         if quote_validity_days <= 0:

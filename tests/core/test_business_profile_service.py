@@ -188,7 +188,14 @@ def test_blank_optional_fields_are_stored_as_none(application):
 
 
 @pytest.mark.parametrize(("field", "value"), [("first_name", ""), ("last_name", "  "), ("business_name", "")])
-def test_save_profile_requires_non_blank_required_fields(application, field, value):
+def test_save_profile_accepts_a_blank_first_last_or_business_name(application, field, value):
+    # Unlike every other field checked below, these three have no sensible
+    # default to fall back to (payment_terms_days/currency/the
+    # number-prefix fields all do) - requiring them non-blank meant a user
+    # filling in just one of the settings page's tabs before ever touching
+    # User/Business couldn't save at all, since this is one shared
+    # full-profile PUT (see CLAUDE.md). Stored as "" (not normalised to
+    # None - these stay a plain `str`, unlike title/address/UTR/etc.).
     kwargs = {
         "first_name": "Ada",
         "last_name": "Lovelace",
@@ -203,8 +210,8 @@ def test_save_profile_requires_non_blank_required_fields(application, field, val
         "expense_number_digits": 4,
     }
     kwargs[field] = value
-    with pytest.raises(ValidationFailed):
-        application.business_profiles.save_profile(user_id="user-1", **kwargs)
+    profile = application.business_profiles.save_profile(user_id="user-1", **kwargs)
+    assert getattr(profile, field) == value
 
 
 def test_save_profile_requires_positive_payment_terms(application):

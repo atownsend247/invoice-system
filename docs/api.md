@@ -82,7 +82,7 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | GET | `/expenses/{id}/attachments/{attachment_id}` | required | The uploaded bytes (`Content-Type` is whatever was uploaded, `Content-Disposition: inline` - the web UI's "View"/"Download" both hit this one route, same pattern as the generated PDF routes above). |
 | DELETE | `/expenses/{id}/attachments/{attachment_id}` | required | Delete it. `204`. |
 | GET | `/settings/business-profile` | required | The current user's own profile. Never 404s — returns sensible defaults (`payment_terms_days: 30`, `quote_validity_days: 30`, `currency: "GBP"`, everything else blank/`null`) if nothing's been saved yet. |
-| PUT | `/settings/business-profile` | required | Upsert it (`first_name`, `last_name`, `business_name`, `payment_terms_days`, `quote_validity_days`, `quote_number_prefix`, `quote_number_digits`, `invoice_number_prefix`, `invoice_number_digits`, `expense_number_prefix`, `expense_number_digits` required (the number-prefix/digits fields default `"Q-"`/`"INV-"`/`"EXP-"` and `4` respectively when omitted - see Conventions below); `currency` defaults `"GBP"`; `title`, `address_line1`, `address_line2`, `town_or_city`, `county`, `postcode`, `utr`, `vat_number`, `bank_account_name`, `bank_sort_code`, `bank_account_number`, `quote_document_header`, `quote_document_footer`, `invoice_document_header`, `invoice_document_footer`, `expense_document_header`, `expense_document_footer`, `accent_color` optional — each address line independently optional, each document header/footer is its own independent pair per document type, not one shared pair, and `accent_color` (a `#RRGGBB` hex string, one shared value across all three document types) is the one field here whose format is actually validated, not accepted as free-form text - see the Conventions section). 422 on a blank required field, `payment_terms_days <= 0`, `quote_validity_days <= 0`, any `*_number_digits < 1`, a blank `currency`, or a malformed `accent_color`. |
+| PUT | `/settings/business-profile` | required | Upsert it. `payment_terms_days`, `quote_validity_days`, `quote_number_prefix`, `quote_number_digits`, `invoice_number_prefix`, `invoice_number_digits`, `expense_number_prefix`, `expense_number_digits`, and `currency` all have schema defaults (`30`, `30`, `"Q-"`, `4`, `"INV-"`, `4`, `"EXP-"`, `4`, `"GBP"`) but are still validated once resolved (see below) - the request body can omit any of them. `first_name`, `last_name`, `business_name` also default to `""` when omitted and are **not** validated for non-blankness at all - see Conventions below for why. `title`, `address_line1`, `address_line2`, `town_or_city`, `county`, `postcode`, `utr`, `vat_number`, `bank_account_name`, `bank_sort_code`, `bank_account_number`, `quote_document_header`, `quote_document_footer`, `invoice_document_header`, `invoice_document_footer`, `expense_document_header`, `expense_document_footer`, `accent_color` are all optional too — each address line independently optional, each document header/footer is its own independent pair per document type, not one shared pair, and `accent_color` (a `#RRGGBB` hex string, one shared value across all three document types) is the one field here whose format is actually validated, not accepted as free-form text - see the Conventions section. 422 on `payment_terms_days <= 0`, `quote_validity_days <= 0`, any `*_number_digits < 1`, a blank `currency`, or a malformed `accent_color`. |
 | GET | `/stats` | required | All-time counters for the home dashboard, scoped to the current user's organisation: `{account_count, quote_count, invoice_count, quotes_sent_count, quotes_converted_count, total_paid, currency}`. `total_paid` is filtered to `currency` (the caller's own business profile's reporting currency, same resolution as `/invoices/monthly-totals`) — a paid invoice in a different currency isn't counted. `quotes_sent_count`/`quotes_converted_count` are raw counts, not a precomputed rate; the web UI derives a conversion percentage from them client-side (`HomePage.tsx`'s `conversionRate`). |
 
 Every account/quote/invoice/expense route above resolves the caller's
@@ -172,6 +172,21 @@ See `docs/data-model.md`'s "Demo data" section and `CLAUDE.md`.
   pair - a quote/invoice/expense PDF only ever shows its own pair, never
   another type's. All six are free text, each independently optional,
   each split into non-blank lines when rendered.
+- **`first_name`/`last_name`/`business_name` are not required to be
+  non-blank**, unlike every other field this route validates - they're
+  the only three `BusinessProfile` fields with no sensible default to
+  fall back to (`payment_terms_days`/`quote_validity_days`/`currency`/the
+  number-prefix/digits fields below all have one). The settings page
+  presents these four groups as tabs sharing **one** `PUT` (see
+  `CLAUDE.md`'s settings-page tabs Convention) - requiring them non-blank
+  meant a user filling in just one tab before ever touching User/Business
+  couldn't save anything at all, since the shared request always carries
+  every field along. A blank value is accepted and stored as `""`, not
+  normalised to `null` (unlike `title`/address lines/`utr`/etc.) - these
+  stay a plain string field, since nothing reads them as "never set" vs.
+  "set to blank" (`pdf.py`'s `business_profile_lines()` already just
+  checks non-blank either way, and neither is ever shown on a PDF at all
+  for `first_name`/`last_name`).
 - **Document number prefix/digits and "set next number"**:
   `quote_number_prefix`/`quote_number_digits` (default `"Q-"`/`4`),
   `invoice_number_prefix`/`invoice_number_digits` (default `"INV-"`/`4`),

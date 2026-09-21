@@ -1318,5 +1318,52 @@ flow," not a restructuring, whenever it's actually needed.
       Full e2e suite (68 tests) and frontend checks (tsc/lint/unit/build)
       all pass.
 
+## Fixed — settings page tabs couldn't actually be saved independently
+
+- [x] Follow-up to the fix above, from a second real user report: even
+      with the native-`required`/hidden-tab-focus bug fixed, the settings
+      page still couldn't save one tab without the *other* tabs already
+      being filled in - filling in User first demanded Business already
+      be set, and vice versa. Root cause: `first_name`/`last_name`/
+      `business_name` were the only three `BusinessProfile` fields
+      validated as non-blank with **no sensible default** to fall back to
+      (`payment_terms_days`/`quote_validity_days`/`currency`/the three
+      `*_number_digits` fields are also required, but each already has a
+      real default constant, so their form state is never genuinely
+      blank even on a brand-new profile - only these three ever actually
+      trip this). Since the settings page is one shared full-profile
+      `PUT` across all four tabs (see `CLAUDE.md`), a first-time user
+      filling in just one tab left these three still blank in the
+      request body, and the server rejected it outright.
+- [x] Fixed by dropping the non-blank validation for these three fields
+      entirely (`BusinessProfileService.save_profile`) - blank is now
+      accepted and stored as `""` (staying a plain `str`, not normalised
+      to `None` like other optional fields, since nothing downstream
+      needs to tell "never set" apart from "set to blank" -
+      `pdf.py`'s `business_profile_lines()` already just checks
+      non-blank either way, and neither `first_name` nor `last_name` is
+      ever shown on a PDF at all). `BusinessProfileIn`'s API schema
+      gained matching `""` defaults so a `PUT` can omit them entirely
+      too, not just send `""` explicitly. The CLI's `settings set
+      --first-name`/`--last-name`/`--business-name` stay **required
+      options** deliberately (unlike the web form, a CLI invocation has
+      no memory of previously-saved values - a full-replace command that
+      silently defaulted an omitted flag to blank would blank out
+      already-saved data instead of just accepting an explicitly blank
+      value).
+- [x] Backend tests updated to assert blank is *accepted* rather than
+      rejected (`tests/core/test_business_profile_service.py`,
+      `tests/api/test_routes.py`, `tests/cli/test_cli.py`); two new e2e
+      tests in `settings.spec.ts` replace the old "rejects a blank
+      business name"/"rejects a blank first name" tests - one confirming
+      blank values round-trip through a save+reload, one reproducing the
+      exact reported bug (fill in Business while User is blank, save,
+      switch to an unrelated tab, fill it in, save again - both must
+      succeed). Full backend suite (419 tests, 98.6%+ coverage), full
+      frontend checks, and full e2e suite (67 tests) all pass, including
+      a `--repeat-each=3 --workers=1` stress run of `settings.spec.ts`
+      itself (this project's own established way to shake out
+      shared-singleton-profile races - see `CLAUDE.md`).
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

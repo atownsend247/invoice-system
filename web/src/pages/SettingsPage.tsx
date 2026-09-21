@@ -193,11 +193,11 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
               <input value={title} onChange={(event) => setTitle(event.target.value)} />
             </label>
             <label>
-              First name
+              First name (optional)
               <input value={firstName} onChange={(event) => setFirstName(event.target.value)} />
             </label>
             <label>
-              Last name
+              Last name (optional)
               <input value={lastName} onChange={(event) => setLastName(event.target.value)} />
             </label>
           </div>
@@ -214,7 +214,7 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
           <legend>Business settings</legend>
           <div className="form-section-fields">
             <label>
-              Business name
+              Business name (optional)
               <input value={businessName} onChange={(event) => setBusinessName(event.target.value)} />
             </label>
             <label>

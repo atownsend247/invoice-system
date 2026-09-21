@@ -330,9 +330,12 @@ class ExpenseOut(BaseModel):
 
 
 class BusinessProfileIn(BaseModel):
-    first_name: str
-    last_name: str
-    business_name: str
+    # No longer required to be non-blank (see BusinessProfileService.save_profile) -
+    # defaulted here like every other field that has a sensible fallback,
+    # so a PUT can omit them entirely too, not just send "".
+    first_name: str = ""
+    last_name: str = ""
+    business_name: str = ""
     title: str | None = None
     address_line1: str | None = None
     address_line2: str | None = None

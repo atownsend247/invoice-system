@@ -1809,7 +1809,12 @@ def test_settings_show_defaults_then_set_and_show_again(tmp_path):
     assert "Accent colour: #2563EB" in result.output
 
 
-def test_settings_set_requires_first_name(tmp_path):
+def test_settings_set_accepts_a_blank_first_name(tmp_path):
+    # --first-name/--last-name/--business-name stay *required options*
+    # (settings set is a full replace with no memory of prior state,
+    # unlike the web UI's form - omitting one here would silently blank an
+    # already-saved value), but their *value* is no longer required to be
+    # non-blank - see BusinessProfileService.save_profile.
     db_path = tmp_path / "test.db"
     runner = CliRunner()
     runner.invoke(
@@ -1843,7 +1848,24 @@ def test_settings_set_requires_first_name(tmp_path):
             "Acme",
         ],
     )
-    assert result.exit_code != 0
+    assert result.exit_code == 0, result.output
+
+    result = runner.invoke(
+        cli,
+        [
+            "--db",
+            str(db_path),
+            "--attachments-dir",
+            str(db_path.parent / "attachments"),
+            "settings",
+            "show",
+            "--user-id",
+            "1",
+        ],
+    )
+    # cli/main.py's settings_show: f"Name: {(first_name + ' ' + last_name).strip() or '-'}"
+    # - a blank first_name just leaves the last name on its own, not "- Lovelace".
+    assert "Name: Lovelace" in result.output
 
 
 def test_invoice_send_with_user_id_uses_the_profiles_payment_terms(tmp_path):

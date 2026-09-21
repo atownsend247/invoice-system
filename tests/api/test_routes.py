@@ -1188,22 +1188,41 @@ def test_blank_bank_and_document_fields_are_normalised_to_null(client, auth_head
     assert response.json()["expense_document_header"] is None
 
 
-def test_saving_business_profile_without_a_name_returns_422(client, auth_headers):
+def test_saving_business_profile_with_a_blank_name_succeeds(client, auth_headers):
+    # first_name/last_name/business_name are deliberately NOT required -
+    # unlike every other field the server validates, they have no sensible
+    # default to fall back to, and this is one shared full-profile PUT
+    # covering every tab on the settings page (see CLAUDE.md) - requiring
+    # them non-blank meant a user filling in just one tab before ever
+    # touching User/Business couldn't save at all.
     response = client.put(
         "/settings/business-profile",
         json={"first_name": "Ada", "last_name": "Lovelace", "business_name": "", "payment_terms_days": 30},
         headers=auth_headers,
     )
-    assert response.status_code == 422
+    assert response.status_code == 200, response.text
+    assert response.json()["business_name"] == ""
 
 
-def test_saving_business_profile_without_first_name_returns_422(client, auth_headers):
+def test_saving_business_profile_with_a_blank_first_name_succeeds(client, auth_headers):
     response = client.put(
         "/settings/business-profile",
         json={"first_name": "", "last_name": "Lovelace", "business_name": "Acme", "payment_terms_days": 30},
         headers=auth_headers,
     )
-    assert response.status_code == 422
+    assert response.status_code == 200, response.text
+    assert response.json()["first_name"] == ""
+
+
+def test_saving_business_profile_with_an_empty_body_succeeds(client, auth_headers):
+    # Every BusinessProfileIn field now has a schema-level default (see
+    # api/schemas.py) - first_name/last_name/business_name were the last
+    # three without one.
+    response = client.put("/settings/business-profile", json={}, headers=auth_headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["first_name"] == ""
+    assert response.json()["last_name"] == ""
+    assert response.json()["business_name"] == ""
 
 
 def test_saving_business_profile_with_a_malformed_accent_color_returns_422(client, auth_headers):
