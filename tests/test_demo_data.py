@@ -138,3 +138,32 @@ def test_seed_demo_data_is_idempotent(application, auth):
     assert first is True
     assert second is False
     assert application.stats.get_stats(organisation_id, DEMO_CURRENCY).account_count == accounts_after_first
+
+
+def test_seed_demo_data_reseeds_domain_data_for_an_existing_login_with_a_fresh_domain_db(
+    application, auth, tmp_path
+):
+    # Simulates `invoice-system-cli init-db --reset`, which deliberately
+    # leaves auth.db untouched (see CLAUDE.md) - the demo login already
+    # exists, but this fresh domain database has no organisation for it
+    # yet. A DuplicateUser-only check would bail out here and leave the
+    # login unable to see any data at all; seed_demo_data instead detects
+    # "no organisation for this user in *this* db" and reseeds properly.
+    seed_demo_data(application, auth, now=FIXED_NOW)
+    organisation_id_before = _demo_organisation_id(application, auth)
+
+    fresh_application = build_application(
+        tmp_path / "reset.db", attachments_dir=tmp_path / "reset-attachments"
+    )
+    try:
+        seeded = seed_demo_data(fresh_application, auth, now=FIXED_NOW)
+        assert seeded is True
+
+        login = auth.service.login(DEMO_EMAIL, DEMO_PASSWORD)
+        organisation_id_after = fresh_application.organisations.get_or_create_for_user(login.user.id)
+        # Same login, but necessarily a *different* organisation - the
+        # original one only ever existed in the old (now-irrelevant) db.
+        assert organisation_id_after != organisation_id_before
+        assert fresh_application.stats.get_stats(organisation_id_after, DEMO_CURRENCY).account_count >= 3
+    finally:
+        fresh_application.close()

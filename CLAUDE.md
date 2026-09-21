@@ -131,6 +131,13 @@ Four separate things are easy to conflate here — don't:
   Pass `--no-demo` for an empty database instead, then create your own
   login with `uv run sessionkit add you@example.com`. Re-running `init-db`
   is safe either way — demo seeding is a no-op once the demo user exists.
+  `init-db --reset` wipes all domain data (accounts/quotes/invoices/
+  expenses/business profiles/organisations — the whole domain database
+  file) and every uploaded expense-attachment PDF, then reinitialises from
+  scratch — irreversible, so it prompts for confirmation unless `--yes`/
+  `-y` is also given. Deliberately leaves `auth.db` untouched (existing
+  logins, demo included, are kept) — see the Gotchas bullet below for why
+  that needed a small `seed_demo_data` fix, not just a CLI-layer change.
 - Serve: `uv run uvicorn invoice_system.api.app:app --reload` (API on
   `:8000`; everything persistent defaults under `storage/` -
   `INVOICE_SYSTEM_STORAGE_DIR` moves that whole base directory,
@@ -813,6 +820,31 @@ Four separate things are easy to conflate here — don't:
   littering an empty `storage/db/` into the repo root on every single CLI
   invocation, including ones that override both `--db` and
   `--attachments-dir` and never touch the derived default at all.
+- **`init-db --reset`** (`cli/main.py`'s `init_db`) deletes the domain
+  database file and the attachments directory, then rebuilds a fresh
+  `Application` against the same paths - it has to, because the `cli`
+  group's own callback already opened (and migrated) a `SqliteRepository`
+  connection against the *old* file before `init_db`'s body ever runs;
+  closing that connection, deleting the file, and calling
+  `build_application()` again is the only way to actually get a clean
+  slate rather than continuing to operate on a stale open handle. `--reset`
+  deliberately does **not** touch `auth.db` (see the Commands bullet
+  above) - which broke `seed_demo_data`'s original idempotency check the
+  first time this was built: it only checked `DuplicateUser` on
+  `auth.service.create_user(DEMO_EMAIL, ...)`, so after a reset the demo
+  login (untouched, still in `auth.db`) would hit that duplicate and bail
+  out immediately, leaving a login that could authenticate but see zero
+  domain data - not caught by reasoning about it up front, only by
+  actually running `init-db` twice with a reset in between.
+  `seed_demo_data` now additionally checks
+  `application.repository.get_organisation_id_for_user(user.id)` on a
+  `DuplicateUser` and, if that comes back `None` (the auth user exists but
+  this domain database has never seen it), falls through and seeds fresh
+  domain data for that existing user instead of returning `False` - a
+  strictly more correct idempotency check ("has *this database* already
+  been seeded for this user", not just "does the login exist"), which
+  also keeps `test_seed_demo_data_is_idempotent` passing unchanged since a
+  normal repeat run still has both.
 - **Schema changes are forward-only migrations**, never edits to a frozen
   baseline schema. Append a numbered entry to a `MIGRATIONS` list; a
   migration runner applies whatever's pending and tracks progress via

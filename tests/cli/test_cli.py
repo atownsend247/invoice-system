@@ -2485,3 +2485,130 @@ def test_accounts_are_isolated_per_user(tmp_path):
     )
     assert "User 2's Client" in result.output
     assert "User 1's Client" not in result.output
+
+
+def test_init_db_reset_wipes_domain_data_and_attachments_but_keeps_the_login(tmp_path):
+    db_path = tmp_path / "test.db"
+    auth_db_path = tmp_path / "auth.db"
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli, [*_base_args(db_path), "init-db"], env={"INVOICE_SYSTEM_AUTH_DB": str(auth_db_path)}
+    )
+    assert result.exit_code == 0, result.output
+    demo_user_id = _demo_user_id(auth_db_path)
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "account",
+            "create",
+            "--user-id",
+            demo_user_id,
+            "--business-name",
+            "Pre-reset Client",
+            "--email",
+            "pre-reset@example.test",
+            "--address-line1",
+            "1 Main St",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    account_id = _id_from(result.output, r"Created account (\S+):")
+
+    result = runner.invoke(
+        cli,
+        [*_base_args(db_path), "expense", "create", "--user-id", demo_user_id, "--account-id", account_id],
+    )
+    assert result.exit_code == 0, result.output
+    expense_id = _id_from(result.output, r"Created expense (\S+) \(")
+
+    receipt_path = tmp_path / "receipt.pdf"
+    receipt_path.write_bytes(b"%PDF-1.4 fake receipt")
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "expense",
+            "attachment",
+            "add",
+            expense_id,
+            "--file",
+            str(receipt_path),
+            "--user-id",
+            demo_user_id,
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    attachments_dir = db_path.parent / "attachments"
+    assert list(attachments_dir.glob("*.pdf")), "expected an uploaded receipt on disk before reset"
+
+    result = runner.invoke(cli, [*_base_args(db_path), "init-db", "--reset", "--yes", "--no-demo"])
+    assert result.exit_code == 0, result.output
+    assert "reset" in result.output.lower()
+
+    # Domain data is gone - a fresh organisation for the same user has no
+    # accounts anymore (the account/expense/attachment created above lived
+    # in the now-deleted domain db, not auth.db).
+    result = runner.invoke(cli, [*_base_args(db_path), "account", "list", "--user-id", demo_user_id])
+    assert result.exit_code == 0, result.output
+    assert "total 0" in result.output
+    assert not list(attachments_dir.glob("*.pdf")), "expected uploaded attachments to be gone after reset"
+
+    # The login itself (auth.db) was left untouched - same user id resolves
+    # to the same email as before the reset.
+    assert _demo_user_id(auth_db_path) == demo_user_id
+
+
+def test_init_db_reset_then_demo_reseeds_domain_data_for_the_existing_login(tmp_path):
+    db_path = tmp_path / "test.db"
+    auth_db_path = tmp_path / "auth.db"
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli, [*_base_args(db_path), "init-db"], env={"INVOICE_SYSTEM_AUTH_DB": str(auth_db_path)}
+    )
+    assert result.exit_code == 0, result.output
+    demo_user_id_before = _demo_user_id(auth_db_path)
+
+    # Reset with the default --demo (not --no-demo): the demo login already
+    # exists in auth.db (untouched by --reset), so seed_demo_data must
+    # reseed domain data for that *existing* user rather than silently
+    # no-op-ing on DuplicateUser (see demo_data.py).
+    result = runner.invoke(
+        cli,
+        [*_base_args(db_path), "init-db", "--reset", "--yes"],
+        env={"INVOICE_SYSTEM_AUTH_DB": str(auth_db_path)},
+    )
+    assert result.exit_code == 0, result.output
+    assert "reset and re-seeded" in result.output.lower()
+
+    demo_user_id_after = _demo_user_id(auth_db_path)
+    assert demo_user_id_after == demo_user_id_before
+
+    result = runner.invoke(cli, [*_base_args(db_path), "account", "list", "--user-id", demo_user_id_after])
+    assert result.exit_code == 0, result.output
+    assert "total 0" not in result.output, "expected demo accounts to be reseeded after reset"
+
+
+def test_init_db_reset_without_yes_prompts_and_aborts_on_decline(tmp_path):
+    db_path = tmp_path / "test.db"
+    auth_db_path = tmp_path / "auth.db"
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli, [*_base_args(db_path), "init-db"], env={"INVOICE_SYSTEM_AUTH_DB": str(auth_db_path)}
+    )
+    assert result.exit_code == 0, result.output
+    demo_user_id = _demo_user_id(auth_db_path)
+
+    result = runner.invoke(cli, [*_base_args(db_path), "init-db", "--reset"], input="n\n")
+    assert result.exit_code == 0, result.output
+    assert "aborted" in result.output.lower()
+
+    # Nothing was deleted - the demo data seeded by the first init-db call
+    # is still there.
+    result = runner.invoke(cli, [*_base_args(db_path), "account", "list", "--user-id", demo_user_id])
+    assert result.exit_code == 0, result.output
+    assert "total 0" not in result.output

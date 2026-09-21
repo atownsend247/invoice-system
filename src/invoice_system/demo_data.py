@@ -399,15 +399,28 @@ _SCENARIOS = _CURATED_SCENARIOS + [
 
 def seed_demo_data(application: Application, auth: Auth, *, now: datetime | None = None) -> bool:
     """Seeds the demo login user, business profile, accounts, and a
-    12-month spread of quotes/invoices. Returns False (no-op) if the demo
-    user already exists - safe to call on every `init-db`. `now` is the
-    reference point everything is backdated from (defaults to the real
-    time); tests pass a fixed value so "is this invoice overdue yet"
-    assertions don't depend on which day the suite happens to run."""
+    12-month spread of quotes/invoices. Returns False (no-op) if this demo
+    user's data already exists *in this domain database* - safe to call on
+    every `init-db`. `now` is the reference point everything is backdated
+    from (defaults to the real time); tests pass a fixed value so "is this
+    invoice overdue yet" assertions don't depend on which day the suite
+    happens to run.
+
+    The idempotency check is domain-db-based, not just "does the login
+    exist" - `invoice-system-cli init-db --reset` deliberately leaves
+    auth.db untouched (see CLAUDE.md), so the demo login can already exist
+    there even when this domain database is completely fresh. Bailing out
+    on `DuplicateUser` alone would leave that login able to sign in but see
+    no data at all; checking for an organisation in *this* database first
+    means a reset correctly reseeds domain data for the existing login
+    instead of silently no-op-ing."""
     try:
         user = auth.service.create_user(DEMO_EMAIL, DEMO_PASSWORD, name="Demo User")
     except DuplicateUser:
-        return False
+        user = auth.service.find_user(DEMO_EMAIL)
+        assert user is not None  # DuplicateUser guarantees a matching user exists
+        if application.repository.get_organisation_id_for_user(user.id) is not None:
+            return False
 
     now = now or datetime.now(UTC)
     business_name = "Blake Freelance Design"

@@ -30,6 +30,14 @@ separate SQLite files — see `CLAUDE.md`. No signup route; manage login
 accounts with the `sessionkit` CLI (`add`, `list`, `passwd`, `delete`,
 `2fa-disable` — `uv run sessionkit --help`), not through this app.
 
+To wipe accumulated local test data and start over, `uv run
+invoice-system-cli init-db --reset` deletes the domain database and every
+uploaded expense-attachment file, then reinitialises (reseeding demo data
+by default, same as a first run). It leaves login accounts untouched, so
+you don't need to recreate your own login (or the demo one) afterward.
+This is irreversible — it prompts for confirmation unless `--yes`/`-y` is
+also passed.
+
 ## Where persistent data lives
 
 Every kind of persistent data this app writes lives under one base

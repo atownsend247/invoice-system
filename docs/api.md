@@ -139,8 +139,12 @@ stays per-user, not per-organisation (see `docs/data-model.md`'s
 --next-number N`, `expense set-next-number --next-number N`. `init-db` has
 no API equivalent at all (there's no `POST
 /accounts/db` — bootstrapping is CLI-only) and seeds demo data by default;
-`--no-demo` skips it. See `docs/data-model.md`'s "Demo data" section and
-`CLAUDE.md`.
+`--no-demo` skips it. `init-db --reset` deletes all existing domain data
+and uploaded expense attachments before reinitialising - irreversible, so
+it prompts for confirmation unless `--yes`/`-y` is also given; it
+deliberately leaves `auth.db` (login users) untouched - see CLAUDE.md's
+`init-db --reset` gotcha for why that needed a small `seed_demo_data` fix.
+See `docs/data-model.md`'s "Demo data" section and `CLAUDE.md`.
 
 ## Conventions
 

@@ -1,6 +1,7 @@
 import math
 import mimetypes
 import os
+import shutil
 import sys
 from datetime import datetime
 from decimal import Decimal
@@ -59,18 +60,20 @@ def cli(ctx: click.Context, storage_dir: str, db_path: str | None, attachments_d
         # --attachments-dir - see the matching guard in api/app.py's
         # lifespan and this repo's test fixtures).
         paths.ensure_db_dir()
-    application = build_application(
-        db_path or str(paths.domain_db_path),
-        attachments_dir=attachments_dir or str(paths.attachments_dir),
-    )
+    resolved_db_path = db_path or str(paths.domain_db_path)
+    resolved_attachments_dir = attachments_dir or str(paths.attachments_dir)
+    application = build_application(resolved_db_path, attachments_dir=resolved_attachments_dir)
     ctx.call_on_close(application.close)
     ctx.obj = application
     # Click's `meta` dict, not `obj` - `obj` is the Application every
     # subcommand already receives via @click.pass_obj (100+ call sites);
     # only init-db additionally needs the resolved storage paths (to
-    # default INVOICE_SYSTEM_AUTH_DB's own fallback), so that one command
-    # alone reaches into `meta` via @click.pass_context instead.
+    # default INVOICE_SYSTEM_AUTH_DB's own fallback, and to know exactly
+    # which files `--reset` should delete), so that one command alone
+    # reaches into `meta` via @click.pass_context instead.
     ctx.meta["storage_paths"] = paths
+    ctx.meta["db_path"] = resolved_db_path
+    ctx.meta["attachments_dir"] = resolved_attachments_dir
 
 
 @cli.command("init-db")
@@ -81,11 +84,53 @@ def cli(ctx: click.Context, storage_dir: str, db_path: str | None, attachments_d
     help="Seed a demo login user, business profile, accounts, and a year of quotes/invoices "
     "in a mix of statuses. Safe to repeat - a no-op once the demo user already exists.",
 )
+@click.option(
+    "--reset",
+    is_flag=True,
+    default=False,
+    help="Delete all existing domain data (accounts/quotes/invoices/expenses/business profiles/"
+    "organisations/counters - the whole domain database file) and every uploaded expense-"
+    "attachment PDF, then reinitialise from scratch. Does NOT touch auth.db - existing logins "
+    "are kept (if the demo login already exists there, its domain data is reseeded for it "
+    "rather than a duplicate being created - see demo_data.py). Irreversible; prompts for "
+    "confirmation unless --yes is also given.",
+)
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    default=False,
+    help="Skip the --reset confirmation prompt (for scripted/non-interactive use). Ignored without --reset.",
+)
 @click.pass_context
-def init_db(ctx: click.Context, demo: bool) -> None:
+def init_db(ctx: click.Context, demo: bool, reset: bool, yes: bool) -> None:
     application: Application = ctx.obj
+
+    if reset:
+        db_path: str = ctx.meta["db_path"]
+        attachments_dir: str = ctx.meta["attachments_dir"]
+        if not yes and not click.confirm(
+            f"This will permanently delete {db_path} and every uploaded expense attachment "
+            f"under {attachments_dir}. Login users in auth.db are kept. Continue?"
+        ):
+            click.echo("Aborted - nothing was deleted.")
+            return
+
+        # The `cli` group above already opened (and migrated) `application`'s
+        # connection against the *old* file, before this command's own body
+        # ever runs - close it before deleting the file so nothing holds it
+        # open, then rebuild a fresh Application against the same path
+        # (sqlite3.connect() recreates a file that doesn't exist, and
+        # build_application() re-runs migrations from scratch against it).
+        application.close()
+        Path(db_path).unlink(missing_ok=True)
+        shutil.rmtree(attachments_dir, ignore_errors=True)
+        application = build_application(db_path, attachments_dir=attachments_dir)
+        ctx.obj = application
+        ctx.call_on_close(application.close)
+
     if not demo:
-        click.echo("Database ready")
+        click.echo("Database reset" if reset else "Database ready")
         return
 
     paths: StoragePaths = ctx.meta["storage_paths"]
@@ -99,7 +144,8 @@ def init_db(ctx: click.Context, demo: bool) -> None:
         auth.close()
 
     if seeded:
-        click.echo(f"Database ready with demo data (log in as {DEMO_EMAIL} / {DEMO_PASSWORD})")
+        prefix = "Database reset and re-seeded" if reset else "Database ready"
+        click.echo(f"{prefix} with demo data (log in as {DEMO_EMAIL} / {DEMO_PASSWORD})")
     else:
         click.echo("Database ready (demo data already present)")
 

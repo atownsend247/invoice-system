@@ -1247,5 +1247,47 @@ flow," not a restructuring, whenever it's actually needed.
       the backend/API/CLI test suites, which don't share mutable state
       across tests.
 
+## Phase 38 — `init-db --reset` (done)
+
+- [x] `invoice-system-cli init-db --reset` deletes the domain database
+      file (accounts/quotes/invoices/expenses/business profiles/
+      organisations/counters) and every uploaded expense-attachment PDF,
+      then reinitialises from scratch - a clean slate without hand-deleting
+      files. Deliberately leaves `auth.db` untouched (confirmed with the
+      user before building this: resetting domain data shouldn't also log
+      everyone out or force recreating logins) - if the demo login already
+      exists there, its domain data is reseeded for that existing login
+      rather than a duplicate attempt silently no-op-ing (see the
+      `seed_demo_data` fix below). Irreversible, so it prompts for
+      confirmation (`click.confirm`) unless `--yes`/`-y` is also passed,
+      for scripted/non-interactive use.
+- [x] Implementation note: the `cli` group's own callback already opens
+      (and migrates) a `SqliteRepository` connection against the domain db
+      *before* `init-db`'s own body runs, so `--reset` has to close that
+      connection, delete the file/attachments directory, and rebuild a
+      fresh `Application` against the same resolved paths (now stashed in
+      `ctx.meta` from the `cli` group) - not something `init-db`'s body
+      could do to an already-open connection.
+- [x] Found and fixed a real bug while building this, not just a
+      CLI-layer concern: `seed_demo_data`'s idempotency check only tested
+      whether the demo login already existed in `auth.db`
+      (`DuplicateUser`). Since `--reset` deliberately keeps `auth.db`, the
+      demo login survives a reset - so the old check would hit
+      `DuplicateUser` and bail out immediately, leaving a login that could
+      authenticate but see zero domain data. Fixed by additionally
+      checking `application.repository.get_organisation_id_for_user(user.id)`
+      on a `DuplicateUser` and falling through to seed fresh domain data
+      when that comes back `None` (this database has never seen this
+      user) rather than returning `False` - a more correct idempotency
+      check in general ("has *this* database already been seeded for this
+      user"), which keeps the existing `test_seed_demo_data_is_idempotent`
+      passing unchanged.
+- [x] `tests/cli/test_cli.py` (reset wipes domain data/attachments but
+      keeps the login; reset + demo reseeds domain data for the existing
+      login; declining the confirmation prompt aborts without deleting
+      anything), `tests/test_demo_data.py` (reseeding for an existing
+      login against a fresh domain database). Full backend suite (418
+      tests, 98.6%+ coverage), ruff clean.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.
