@@ -409,8 +409,24 @@ def quote_add_item(
 @click.option("--user-id", required=True, help=_USER_ID_HELP)
 @click.pass_obj
 def quote_send(application: Application, quote_id: str, user_id: str) -> None:
-    sent = application.quotes.send(_organisation_id(application, user_id), quote_id)
+    organisation_id = _organisation_id(application, user_id)
+    profile = application.business_profiles.get_profile(user_id)
+    sent = application.quotes.send(
+        organisation_id,
+        quote_id,
+        number_prefix=profile.quote_number_prefix,
+        number_digits=profile.quote_number_digits,
+    )
     click.echo(f"Quote {quote_id} sent as {sent.number}")
+
+
+@quote.command("set-next-number")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option("--next-number", required=True, type=int, help="The number the next sent quote will get.")
+@click.pass_obj
+def quote_set_next_number(application: Application, user_id: str, next_number: int) -> None:
+    application.quotes.set_next_number(_organisation_id(application, user_id), next_number)
+    click.echo(f"Next quote number set - the next one sent will be number {next_number}")
 
 
 @quote.command("convert")
@@ -481,9 +497,24 @@ def invoice_list(
 @click.pass_obj
 def invoice_send(application: Application, invoice_id: str, user_id: str) -> None:
     organisation_id = _organisation_id(application, user_id)
-    payment_terms_days = application.business_profiles.get_profile(user_id).payment_terms_days
-    sent = application.invoices.send(organisation_id, invoice_id, payment_terms_days=payment_terms_days)
+    profile = application.business_profiles.get_profile(user_id)
+    sent = application.invoices.send(
+        organisation_id,
+        invoice_id,
+        payment_terms_days=profile.payment_terms_days,
+        number_prefix=profile.invoice_number_prefix,
+        number_digits=profile.invoice_number_digits,
+    )
     click.echo(f"Invoice {invoice_id} sent as {sent.number} (due {sent.due_date})")
+
+
+@invoice.command("set-next-number")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option("--next-number", required=True, type=int, help="The number the next sent invoice will get.")
+@click.pass_obj
+def invoice_set_next_number(application: Application, user_id: str, next_number: int) -> None:
+    application.invoices.set_next_number(_organisation_id(application, user_id), next_number)
+    click.echo(f"Next invoice number set - the next one sent will be number {next_number}")
 
 
 @invoice.command("void")
@@ -559,13 +590,25 @@ def expense() -> None:
 def expense_create(
     application: Application, user_id: str, account_id: str, currency: str, expense_date: datetime | None
 ) -> None:
+    profile = application.business_profiles.get_profile(user_id)
     created = application.expenses.create_expense(
         organisation_id=_organisation_id(application, user_id),
         account_id=account_id,
         currency=currency,
         expense_date=expense_date.date() if expense_date else None,
+        number_prefix=profile.expense_number_prefix,
+        number_digits=profile.expense_number_digits,
     )
     click.echo(f"Created expense {created.id} ({created.number})")
+
+
+@expense.command("set-next-number")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option("--next-number", required=True, type=int, help="The number the next created expense will get.")
+@click.pass_obj
+def expense_set_next_number(application: Application, user_id: str, next_number: int) -> None:
+    application.expenses.set_next_number(_organisation_id(application, user_id), next_number)
+    click.echo(f"Next expense number set - the next one created will be number {next_number}")
 
 
 @expense.command("list")
@@ -810,6 +853,9 @@ def settings_show(application: Application, user_id: str) -> None:
     click.echo(f"Invoice footer: {profile.invoice_document_footer or '-'}")
     click.echo(f"Expense header: {profile.expense_document_header or '-'}")
     click.echo(f"Expense footer: {profile.expense_document_footer or '-'}")
+    click.echo(f"Quote number: {profile.quote_number_prefix} + {profile.quote_number_digits} digits")
+    click.echo(f"Invoice number: {profile.invoice_number_prefix} + {profile.invoice_number_digits} digits")
+    click.echo(f"Expense number: {profile.expense_number_prefix} + {profile.expense_number_digits} digits")
     click.echo(f"Accent colour: {profile.accent_color or '-'}")
 
 
@@ -846,6 +892,12 @@ def settings_show(application: Application, user_id: str) -> None:
 @click.option(
     "--expense-footer", default=None, help="Free text (multi-line OK) shown below every expense PDF."
 )
+@click.option("--quote-number-prefix", default="Q-", show_default=True)
+@click.option("--quote-number-digits", type=int, default=4, show_default=True)
+@click.option("--invoice-number-prefix", default="INV-", show_default=True)
+@click.option("--invoice-number-digits", type=int, default=4, show_default=True)
+@click.option("--expense-number-prefix", default="EXP-", show_default=True)
+@click.option("--expense-number-digits", type=int, default=4, show_default=True)
 @click.option(
     "--accent-color",
     default=None,
@@ -878,6 +930,12 @@ def settings_set(
     invoice_footer: str | None,
     expense_header: str | None,
     expense_footer: str | None,
+    quote_number_prefix: str,
+    quote_number_digits: int,
+    invoice_number_prefix: str,
+    invoice_number_digits: int,
+    expense_number_prefix: str,
+    expense_number_digits: int,
     accent_color: str | None,
 ) -> None:
     application.business_profiles.save_profile(
@@ -905,6 +963,12 @@ def settings_set(
         invoice_document_footer=invoice_footer,
         expense_document_header=expense_header,
         expense_document_footer=expense_footer,
+        quote_number_prefix=quote_number_prefix,
+        quote_number_digits=quote_number_digits,
+        invoice_number_prefix=invoice_number_prefix,
+        invoice_number_digits=invoice_number_digits,
+        expense_number_prefix=expense_number_prefix,
+        expense_number_digits=expense_number_digits,
         accent_color=accent_color,
     )
     click.echo(f"Saved business profile for user {user_id}")

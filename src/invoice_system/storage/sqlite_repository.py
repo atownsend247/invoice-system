@@ -372,8 +372,11 @@ class SqliteRepository:
                 "payment_terms_days, quote_validity_days, currency, utr, vat_number, bank_account_name, "
                 "bank_sort_code, bank_account_number, quote_document_header, quote_document_footer, "
                 "invoice_document_header, invoice_document_footer, expense_document_header, "
-                "expense_document_footer, accent_color, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "expense_document_footer, quote_number_prefix, quote_number_digits, "
+                "invoice_number_prefix, invoice_number_digits, expense_number_prefix, "
+                "expense_number_digits, accent_color, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                "?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(user_id) DO UPDATE SET "
                 "title = excluded.title, "
                 "first_name = excluded.first_name, "
@@ -398,6 +401,12 @@ class SqliteRepository:
                 "invoice_document_footer = excluded.invoice_document_footer, "
                 "expense_document_header = excluded.expense_document_header, "
                 "expense_document_footer = excluded.expense_document_footer, "
+                "quote_number_prefix = excluded.quote_number_prefix, "
+                "quote_number_digits = excluded.quote_number_digits, "
+                "invoice_number_prefix = excluded.invoice_number_prefix, "
+                "invoice_number_digits = excluded.invoice_number_digits, "
+                "expense_number_prefix = excluded.expense_number_prefix, "
+                "expense_number_digits = excluded.expense_number_digits, "
                 "accent_color = excluded.accent_color, "
                 "updated_at = excluded.updated_at",
                 (
@@ -426,6 +435,12 @@ class SqliteRepository:
                     profile.invoice_document_footer,
                     profile.expense_document_header,
                     profile.expense_document_footer,
+                    profile.quote_number_prefix,
+                    profile.quote_number_digits,
+                    profile.invoice_number_prefix,
+                    profile.invoice_number_digits,
+                    profile.expense_number_prefix,
+                    profile.expense_number_digits,
                     profile.accent_color,
                     profile.created_at.isoformat(),
                     profile.updated_at.isoformat(),
@@ -465,6 +480,12 @@ class SqliteRepository:
             invoice_document_footer=row["invoice_document_footer"],
             expense_document_header=row["expense_document_header"],
             expense_document_footer=row["expense_document_footer"],
+            quote_number_prefix=row["quote_number_prefix"],
+            quote_number_digits=row["quote_number_digits"],
+            invoice_number_prefix=row["invoice_number_prefix"],
+            invoice_number_digits=row["invoice_number_digits"],
+            expense_number_prefix=row["expense_number_prefix"],
+            expense_number_digits=row["expense_number_digits"],
             accent_color=row["accent_color"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
@@ -614,8 +635,11 @@ class SqliteRepository:
             self._conn.commit()
             return event
 
-    def next_quote_number(self, organisation_id: str) -> str:
-        return self._next_number(f"{organisation_id}:quote", "Q-")
+    def next_quote_number(self, organisation_id: str, prefix: str, digits: int) -> str:
+        return self._next_number(f"{organisation_id}:quote", prefix, digits)
+
+    def set_next_quote_number(self, organisation_id: str, next_number: int) -> None:
+        self._set_next_number(f"{organisation_id}:quote", next_number)
 
     @staticmethod
     def _row_to_quote(row: sqlite3.Row, item_rows: list[sqlite3.Row], event_rows: list[sqlite3.Row]) -> Quote:
@@ -792,8 +816,11 @@ class SqliteRepository:
             self._conn.commit()
             return event
 
-    def next_invoice_number(self, organisation_id: str) -> str:
-        return self._next_number(f"{organisation_id}:invoice", "INV-")
+    def next_invoice_number(self, organisation_id: str, prefix: str, digits: int) -> str:
+        return self._next_number(f"{organisation_id}:invoice", prefix, digits)
+
+    def set_next_invoice_number(self, organisation_id: str, next_number: int) -> None:
+        self._set_next_number(f"{organisation_id}:invoice", next_number)
 
     @staticmethod
     def _row_to_invoice(
@@ -939,8 +966,11 @@ class SqliteRepository:
             )
             self._conn.commit()
 
-    def next_expense_number(self, organisation_id: str) -> str:
-        return self._next_number(f"{organisation_id}:expense", "EXP-")
+    def next_expense_number(self, organisation_id: str, prefix: str, digits: int) -> str:
+        return self._next_number(f"{organisation_id}:expense", prefix, digits)
+
+    def set_next_expense_number(self, organisation_id: str, next_number: int) -> None:
+        self._set_next_number(f"{organisation_id}:expense", next_number)
 
     def update_expense_date(self, expense: Expense) -> Expense:
         with self._lock:
@@ -1069,7 +1099,7 @@ class SqliteRepository:
 
     # -- Shared --------------------------------------------------------------
 
-    def _next_number(self, name: str, prefix: str) -> str:
+    def _next_number(self, name: str, prefix: str, digits: int) -> str:
         # `name` is "<organisation_id>:quote"/"<organisation_id>:invoice",
         # not just "quote"/"invoice" - each organisation gets its own
         # independent Q-0001/INV-0001 sequence starting from one, rather
@@ -1079,7 +1109,9 @@ class SqliteRepository:
         # No schema change needed for this - `counters.name` was already a
         # free-text key, not literally constrained to "quote"/"invoice", and
         # organisation_id being a UUID string rather than an int works
-        # exactly the same way embedded in this key.
+        # exactly the same way embedded in this key. `prefix`/`digits` come
+        # from the caller's BusinessProfile (see core.py) - this method
+        # itself has no opinion on formatting beyond applying them.
         with self._lock:
             row = self._conn.execute("SELECT value FROM counters WHERE name = ?", (name,)).fetchone()
             value = (row["value"] if row else 0) + 1
@@ -1089,4 +1121,18 @@ class SqliteRepository:
                 (name, value),
             )
             self._conn.commit()
-        return f"{prefix}{value:04d}"
+        return f"{prefix}{value:0{digits}d}"
+
+    def _set_next_number(self, name: str, next_number: int) -> None:
+        # Writes next_number - 1, so the *next* _next_number() call (which
+        # always increments first) produces exactly next_number - lets a
+        # caller jump the sequence forward (e.g. resuming numbering from an
+        # external/legacy system) without needing to know or reason about
+        # the counter's own internal "last issued" representation.
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO counters (name, value) VALUES (?, ?) "
+                "ON CONFLICT(name) DO UPDATE SET value = excluded.value",
+                (name, next_number - 1),
+            )
+            self._conn.commit()

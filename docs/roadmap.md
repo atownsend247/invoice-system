@@ -1184,5 +1184,68 @@ flow," not a restructuring, whenever it's actually needed.
       tests, including new expenses.spec.ts coverage for editing,
       cancelling an edit, and deleting a line item) updated and passing.
 
+## Phase 37 — Configurable document number prefix/digits + "set next number" (done)
+
+- [x] `Quote.number`/`Invoice.number`/`Expense.number` were always
+      `Q-0001`/`INV-0001`/`EXP-0001` - a hardcoded prefix and 4-digit
+      zero-pad baked into `SqliteRepository._next_number`. Now each is
+      independently configurable per business, alongside the existing
+      per-document-type header/footer fields: `quote_number_prefix`/
+      `quote_number_digits`, `invoice_number_prefix`/
+      `invoice_number_digits`, `expense_number_prefix`/
+      `expense_number_digits` on `BusinessProfile` (migration 20 - see
+      `docs/data-model.md`), only affecting numbers assigned from then on,
+      never rewriting an already-issued one.
+- [x] A separate "set next number" action per document type -
+      `QuoteService.set_next_number`/`InvoiceService.set_next_number`/
+      `ExpenseService.set_next_number` (`ValidationFailed` if
+      `next_number < 1`), backed by a new `_set_next_number` on
+      `SqliteRepository` that writes `next_number - 1` into the same
+      `counters` table `_next_number` already uses. Confirmed with the
+      user before building this: it's a one-time **jump**, not a
+      persisted additive offset - "start at 67" means the very next
+      document is `67` regardless of how many already exist, which only a
+      direct counter-set achieves. `POST /quotes|invoices|expenses/
+      next-number` (`204`), CLI `quote|invoice|expense set-next-number
+      --next-number N`.
+- [x] `send_quote`/`create_expense` API routes previously didn't resolve
+      the caller's business profile at all (only `send_invoice` did, for
+      `payment_terms_days`) - both now do, to read the matching
+      prefix/digits.
+- [x] Web UI: the Settings page's Document tab's three per-document-type
+      sub-groups (Quotes/Invoices/Expenses) each gained a "Number prefix"/
+      "Number digits" field pair (saved by the normal "Save settings"
+      button) plus a separate, immediately-submitted "Next number" action
+      (`NextNumberAction` in `SettingsPage.tsx` - a plain `<div>`, not a
+      nested `<form>`, since it already sits inside
+      `BusinessProfileForm`'s own form) with its own busy/error/success
+      state.
+- [x] Full backend suite (414 tests, 98%+ coverage) and e2e coverage in
+      `settings.spec.ts` (the new prefix/digits fields save and reload,
+      then reset back to the app's own defaults before the test ends -
+      needed because `quotes.spec.ts`/`invoices.spec.ts`/
+      `expenses.spec.ts` run concurrently with this file, not just within
+      it - see below; a dedicated "set next number" test that resets to
+      known defaults first, jumps to one past whatever the highest
+      existing quote number already is (not a fixed constant, which
+      collides with itself on a second local run against the same
+      persisted demo database - see `CLAUDE.md`), and asserts the result
+      is `>=` that rather than an exact match).
+      Deliberately **did not** add live "custom prefix produces this exact
+      number" e2e tests to `quotes.spec.ts`/`invoices.spec.ts`/
+      `expenses.spec.ts` as originally planned - instead, running the
+      full suite fresh surfaced that those files' own *pre-existing*
+      tests (asserting an exact default-format `^Q-\d{4}$`/`^INV-\d{4}$`/
+      `^EXP-\d{4}$` number) could actually fail against a concurrently-
+      running `settings.spec.ts` worker, since the prefix is now a shared
+      mutable field - not a hypothetical risk, an observed failure. Fixed
+      by loosening those exact assertions to `/^\S+-\d+$/` (a number was
+      assigned, not which format it's in), same "Deliberately not exact"
+      reasoning `home.spec.ts`'s monthly chart already established for
+      the reporting-currency race, now extended to this field - see
+      `CLAUDE.md`. Custom-prefix-produces-this-string coverage stays in
+      the backend/API/CLI test suites, which don't share mutable state
+      across tests.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

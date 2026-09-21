@@ -163,6 +163,10 @@ class QuoteConvertIn(BaseModel):
     issue_date: date | None = None
 
 
+class NextNumberIn(BaseModel):
+    next_number: int
+
+
 class ActivityEventOut(BaseModel):
     id: str
     event_type: str
@@ -349,6 +353,12 @@ class BusinessProfileIn(BaseModel):
     invoice_document_footer: str | None = None
     expense_document_header: str | None = None
     expense_document_footer: str | None = None
+    quote_number_prefix: str = "Q-"
+    quote_number_digits: int = 4
+    invoice_number_prefix: str = "INV-"
+    invoice_number_digits: int = 4
+    expense_number_prefix: str = "EXP-"
+    expense_number_digits: int = 4
     accent_color: str | None = None
 
 
@@ -376,6 +386,12 @@ class BusinessProfileOut(BaseModel):
     invoice_document_footer: str | None
     expense_document_header: str | None
     expense_document_footer: str | None
+    quote_number_prefix: str
+    quote_number_digits: int
+    invoice_number_prefix: str
+    invoice_number_digits: int
+    expense_number_prefix: str
+    expense_number_digits: int
     accent_color: str | None
     updated_at: datetime
 
@@ -405,6 +421,12 @@ class BusinessProfileOut(BaseModel):
             invoice_document_footer=profile.invoice_document_footer,
             expense_document_header=profile.expense_document_header,
             expense_document_footer=profile.expense_document_footer,
+            quote_number_prefix=profile.quote_number_prefix,
+            quote_number_digits=profile.quote_number_digits,
+            invoice_number_prefix=profile.invoice_number_prefix,
+            invoice_number_digits=profile.invoice_number_digits,
+            expense_number_prefix=profile.expense_number_prefix,
+            expense_number_digits=profile.expense_number_digits,
             accent_color=profile.accent_color,
             updated_at=profile.updated_at,
         )

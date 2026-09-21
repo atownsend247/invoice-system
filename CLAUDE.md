@@ -346,6 +346,66 @@ Four separate things are easy to conflate here — don't:
   pay yet against a quote, and an expense is money already spent, not
   billed to the account. Whichever of the three fields are actually set,
   same "print what's there" pattern as the address lines above.
+- **Document number prefix/digits + "set next number"**: `quote_number_prefix`/
+  `quote_number_digits` (default `"Q-"`/`4`), `invoice_number_prefix`/
+  `invoice_number_digits` (default `"INV-"`/`4`), and
+  `expense_number_prefix`/`expense_number_digits` (default `"EXP-"`/`4`) on
+  `BusinessProfile` replace what used to be a hardcoded `Q-0001`-style
+  format baked into `SqliteRepository._next_number` — same "plain resolved
+  value in, `None` falls back to a module constant" pattern as
+  `payment_terms_days` above, so `QuoteService.send`/`InvoiceService.send`/
+  `ExpenseService.create_expense` never look up a profile themselves;
+  `send_quote`/`create_expense`'s API routes previously didn't resolve the
+  caller's profile at all (only `send_invoice` did, for
+  `payment_terms_days`) — both now do. A separate `set_next_number(organisation_id,
+  next_number)` on each of the three services (`ValidationFailed` if
+  `next_number < 1`) is a one-time **jump**, not a persisted additive
+  offset — confirmed with the user before building this: "start at 67"
+  means the very next document of that type is exactly `67` regardless of
+  how many already exist, which only a direct counter-set achieves (an
+  additive offset would instead land on `existing_count + 67`). Backed by
+  a new private `SqliteRepository._set_next_number(name, next_number)`
+  that writes `next_number - 1` into the same `counters` table
+  `_next_number` already uses — `POST /quotes|invoices|expenses/next-number`
+  (`204`), CLI `quote|invoice|expense set-next-number --next-number N`.
+  Web UI: each of the Document tab's three sub-groups
+  (Quotes/Invoices/Expenses, see the settings-page tabs bullet below)
+  gained a "Number prefix"/"Number digits" field pair (saved by the
+  normal "Save settings" button) plus a separate, immediately-submitted
+  "Next number" action (`NextNumberAction` in `SettingsPage.tsx` — a
+  plain `<div>`, not a nested `<form>`, same reasoning as why Registrars
+  sits outside `BusinessProfileForm`'s own `<form>`) with its own local
+  busy/error/success state, independent of the profile-save flow.
+  **Deliberately no live e2e coverage of "a custom prefix produces this
+  exact number string"** — `quotes.spec.ts`/`invoices.spec.ts`/
+  `expenses.spec.ts` run concurrently with each other (`fullyParallel:
+  false` only serialises tests *within* one file, not across files, see
+  the `settings.spec.ts` gotcha below), and the number prefix/digit count
+  are now a shared, mutable `BusinessProfile` field - `settings.spec.ts`'s
+  own persistence test briefly saves it as something else mid-run, on a
+  worker running fully concurrently with whichever of those other files
+  happen to be sending a quote/invoice/creating an expense at that exact
+  moment. Those three files' own pre-existing tests used to assert an
+  *exact* default-format number (`/^Q-\d{4}$/` etc.) - found to actually
+  fail this way in practice (not just in theory) by running the full
+  suite fresh once this feature landed, so their assertions were loosened
+  to `/^\S+-\d+$/` (a number was assigned, not which format it's in) -
+  the same "Deliberately not exact" reasoning `home.spec.ts`'s monthly
+  chart already established for the shared reporting-currency race, now
+  extended to this new shared field. `settings.spec.ts`'s own "set next
+  number" test resets prefix/digits to "Q-"/`4` first (serial mode makes
+  that safe *within this one file*, though not suite-wide) and jumps to
+  one past whatever the highest existing quote number already is (read
+  via the API), not a fixed constant - a fixed constant collides with
+  itself the second time the test runs against the same persisted local
+  demo database (a normal `npm run test:e2e` re-run, not just
+  `--repeat-each` - `reuseExistingServer` keeps that database around
+  locally between invocations), and an unboundedly-growing value like
+  `Date.now()` avoids that but permanently inflates the number's digit
+  *width* for the rest of the organisation's lifetime, since the jump
+  itself is a genuinely irreversible action (see above) - both caught by
+  actually rerunning the suite against already-seeded data before
+  trusting it, not by reasoning about it up front.
 - `pdf.py` renders every quote/invoice/expense PDF via Jinja2 (builds the
   HTML) + [WeasyPrint](https://weasyprint.org/) (HTML/CSS → PDF bytes),
   not reportlab/platypus - `_render()`'s own signature/parameters are
@@ -788,7 +848,7 @@ Four separate things are easy to conflate here — don't:
   flatten it again once a real database exists somewhere; that's exactly
   the scenario forward-only migrations exist to handle instead. Migration 7
   is the UUID reset (see `docs/data-model.md`'s "Opaque ids"). **The full
-  migration-by-migration history (what each of the current nineteen
+  migration-by-migration history (what each of the current twenty
   actually did) lives in `docs/data-model.md`'s opening paragraph, not
   here** — update that list, not this one, when you add a new migration.
 - Storage is a single shared SQLite connection/file — **serialise every

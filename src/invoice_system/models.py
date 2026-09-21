@@ -225,6 +225,17 @@ class BusinessProfile:
     terms or a thank-you note at the bottom) on the short, mostly-single-
     page documents this app generates.
 
+    quote_number_prefix/invoice_number_prefix/expense_number_prefix
+    (defaults "Q-"/"INV-"/"EXP-") and quote_number_digits/
+    invoice_number_digits/expense_number_digits (defaults 4) control the
+    text and zero-padding of the Q-0001/INV-0001/EXP-0001-style numbers
+    QuoteService.send/InvoiceService.send/ExpenseService.create_expense
+    assign - resolved the same way as payment_terms_days (a plain value
+    passed in by the API/CLI layer, see CLAUDE.md), not looked up by
+    those services themselves. Changing either only affects numbers
+    assigned from then on - an already-issued number is a stored string,
+    never rewritten to match a later setting change.
+
     accent_color is a single `#RRGGBB` hex string (e.g. "#2563EB") used as
     the brand colour across every quote/invoice/expense PDF this user
     generates (the title, the line-items table header, the totals
@@ -265,6 +276,12 @@ class BusinessProfile:
     invoice_document_footer: str | None
     expense_document_header: str | None
     expense_document_footer: str | None
+    quote_number_prefix: str
+    quote_number_digits: int
+    invoice_number_prefix: str
+    invoice_number_digits: int
+    expense_number_prefix: str
+    expense_number_digits: int
     accent_color: str | None
     created_at: datetime
     updated_at: datetime

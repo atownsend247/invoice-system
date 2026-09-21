@@ -592,4 +592,16 @@ MIGRATIONS: list[str] = [
     -- itself.
     ALTER TABLE business_profiles ADD COLUMN quote_validity_days INTEGER NOT NULL DEFAULT 30;
     """,
+    """
+    -- Configurable document-number prefix/zero-padding, one pair per
+    -- document type (see models.BusinessProfile) - six plain ADD COLUMNs
+    -- with constant defaults matching the previously-hardcoded
+    -- Q-0001/INV-0001/EXP-0001 shape, no rebuild needed.
+    ALTER TABLE business_profiles ADD COLUMN quote_number_prefix TEXT NOT NULL DEFAULT 'Q-';
+    ALTER TABLE business_profiles ADD COLUMN quote_number_digits INTEGER NOT NULL DEFAULT 4;
+    ALTER TABLE business_profiles ADD COLUMN invoice_number_prefix TEXT NOT NULL DEFAULT 'INV-';
+    ALTER TABLE business_profiles ADD COLUMN invoice_number_digits INTEGER NOT NULL DEFAULT 4;
+    ALTER TABLE business_profiles ADD COLUMN expense_number_prefix TEXT NOT NULL DEFAULT 'EXP-';
+    ALTER TABLE business_profiles ADD COLUMN expense_number_digits INTEGER NOT NULL DEFAULT 4;
+    """,
 ]

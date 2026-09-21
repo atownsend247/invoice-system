@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures'
+import { apiFetch, expect, test } from './fixtures'
 
 // The shared test user's profile - not per-test isolated data like
 // testAccount, since a business profile is a singleton per user rather
@@ -127,12 +127,21 @@ test('saving all fields persists them across a reload', async ({ authenticatedPa
 
   await page.getByRole('tab', { name: 'Document' }).click()
   await page.getByLabel('Accent colour').fill('#2563eb')
-  await page.getByLabel('Quote header (optional)').fill('Contoso Consulting')
-  await page.getByLabel('Quote footer (optional)').fill('Valid for 30 days.')
-  await page.getByLabel('Invoice header (optional)').fill('Contoso Consulting\nCompany no. 12345678')
-  await page.getByLabel('Invoice footer (optional)').fill('Thank you for your business!')
-  await page.getByLabel('Expense header (optional)').fill('Contoso Consulting')
-  await page.getByLabel('Expense footer (optional)').fill('Internal use only.')
+  const quoteGroup = page.getByRole('group', { name: 'Quotes' })
+  await quoteGroup.getByLabel('Number prefix').fill('QUOTE-')
+  await quoteGroup.getByLabel('Number digits').fill('6')
+  await quoteGroup.getByLabel('Quote header (optional)').fill('Contoso Consulting')
+  await quoteGroup.getByLabel('Quote footer (optional)').fill('Valid for 30 days.')
+  const invoiceGroup = page.getByRole('group', { name: 'Invoices' })
+  await invoiceGroup.getByLabel('Number prefix').fill('INVOICE-')
+  await invoiceGroup.getByLabel('Number digits').fill('6')
+  await invoiceGroup.getByLabel('Invoice header (optional)').fill('Contoso Consulting\nCompany no. 12345678')
+  await invoiceGroup.getByLabel('Invoice footer (optional)').fill('Thank you for your business!')
+  const expenseGroup = page.getByRole('group', { name: 'Expenses' })
+  await expenseGroup.getByLabel('Number prefix').fill('EXPENSE-')
+  await expenseGroup.getByLabel('Number digits').fill('6')
+  await expenseGroup.getByLabel('Expense header (optional)').fill('Contoso Consulting')
+  await expenseGroup.getByLabel('Expense footer (optional)').fill('Internal use only.')
 
   await page.getByRole('button', { name: 'Save settings' }).click()
   await expect(page.getByText('Saved.')).toBeVisible()
@@ -162,14 +171,124 @@ test('saving all fields persists them across a reload', async ({ authenticatedPa
 
   await page.getByRole('tab', { name: 'Document' }).click()
   await expect(page.getByLabel('Accent colour')).toHaveValue('#2563eb')
-  await expect(page.getByLabel('Quote header (optional)')).toHaveValue('Contoso Consulting')
-  await expect(page.getByLabel('Quote footer (optional)')).toHaveValue('Valid for 30 days.')
-  await expect(page.getByLabel('Invoice header (optional)')).toHaveValue(
+  const reloadedQuoteGroup = page.getByRole('group', { name: 'Quotes' })
+  await expect(reloadedQuoteGroup.getByLabel('Number prefix')).toHaveValue('QUOTE-')
+  await expect(reloadedQuoteGroup.getByLabel('Number digits')).toHaveValue('6')
+  await expect(reloadedQuoteGroup.getByLabel('Quote header (optional)')).toHaveValue('Contoso Consulting')
+  await expect(reloadedQuoteGroup.getByLabel('Quote footer (optional)')).toHaveValue('Valid for 30 days.')
+  const reloadedInvoiceGroup = page.getByRole('group', { name: 'Invoices' })
+  await expect(reloadedInvoiceGroup.getByLabel('Number prefix')).toHaveValue('INVOICE-')
+  await expect(reloadedInvoiceGroup.getByLabel('Number digits')).toHaveValue('6')
+  await expect(reloadedInvoiceGroup.getByLabel('Invoice header (optional)')).toHaveValue(
     'Contoso Consulting\nCompany no. 12345678',
   )
-  await expect(page.getByLabel('Invoice footer (optional)')).toHaveValue('Thank you for your business!')
-  await expect(page.getByLabel('Expense header (optional)')).toHaveValue('Contoso Consulting')
-  await expect(page.getByLabel('Expense footer (optional)')).toHaveValue('Internal use only.')
+  await expect(reloadedInvoiceGroup.getByLabel('Invoice footer (optional)')).toHaveValue(
+    'Thank you for your business!',
+  )
+  const reloadedExpenseGroup = page.getByRole('group', { name: 'Expenses' })
+  await expect(reloadedExpenseGroup.getByLabel('Number prefix')).toHaveValue('EXPENSE-')
+  await expect(reloadedExpenseGroup.getByLabel('Number digits')).toHaveValue('6')
+  await expect(reloadedExpenseGroup.getByLabel('Expense header (optional)')).toHaveValue('Contoso Consulting')
+  await expect(reloadedExpenseGroup.getByLabel('Expense footer (optional)')).toHaveValue('Internal use only.')
+
+  // Reset the number prefix/digits back to the app's own defaults before
+  // finishing - quotes.spec.ts/invoices.spec.ts/expenses.spec.ts assert
+  // exact default-format numbers (e.g. /^Q-\d{4}$/) against this same
+  // shared demo organisation, and those files' workers can run
+  // concurrently with (or after) this one - see CLAUDE.md's number-prefix
+  // gotcha. Every other field this test touches isn't asserted exactly by
+  // another spec file, so only these six need restoring.
+  await reloadedQuoteGroup.getByLabel('Number prefix').fill('Q-')
+  await reloadedQuoteGroup.getByLabel('Number digits').fill('4')
+  await reloadedInvoiceGroup.getByLabel('Number prefix').fill('INV-')
+  await reloadedInvoiceGroup.getByLabel('Number digits').fill('4')
+  await reloadedExpenseGroup.getByLabel('Number prefix').fill('EXP-')
+  await reloadedExpenseGroup.getByLabel('Number digits').fill('4')
+  await page.getByRole('button', { name: 'Save settings' }).click()
+  await expect(page.getByText('Saved.')).toBeVisible()
+})
+
+test('setting the next quote number takes effect on the following quote', async ({
+  authenticatedPage: page,
+  testAccount,
+  apiToken,
+}) => {
+  // Quote numbering is organisation-scoped, and every e2e test shares one
+  // demo login/organisation (see fixtures.ts) - a *different* spec file's
+  // worker can send its own quote at any moment, including right between
+  // this test's own "read the current highest number" and "send a new
+  // quote" steps below, so this deliberately doesn't assert an exact
+  // number (same "Deliberately not exact" reasoning as home.spec.ts's
+  // monthly chart, see CLAUDE.md). The jump target is "the highest
+  // existing quote number plus a five-hundred buffer" (read via the API
+  // just below), not a fixed constant and not something unboundedly
+  // large - three failure modes were each caught by actually rerunning
+  // the suite against already-seeded data before trusting this test, not
+  // by reasoning about it up front:
+  //   - A fixed constant (e.g. 5000) collides with itself the *second*
+  //     time this test runs against the same persisted local demo
+  //     database (a normal `npm run test:e2e` re-run, not just
+  //     `--repeat-each` - `reuseExistingServer` keeps that database
+  //     around between separate invocations).
+  //   - An unboundedly-growing value (e.g. Date.now()) avoids that but
+  //     permanently inflates the organisation's quote-number *width*
+  //     past what `quotes.spec.ts`'s own assertions assume - "set next
+  //     number" is a genuinely irreversible jump (see CLAUDE.md), so
+  //     that pollution never un-happens for the rest of a suite run.
+  //   - Jumping to exactly one past the current highest number sounds
+  //     safest, but the "read current highest" step is itself a snapshot
+  //     that can go stale before the "Set" call lands - a concurrent
+  //     worker's own quote-send in that window claims that same number
+  //     first, and this test's `next-number` call then *rewinds* the
+  //     counter behind it, so the following send() collides with that
+  //     quote (sqlite3.IntegrityError: UNIQUE constraint failed on a
+  //     completely fresh database, not just a repeated one). A few
+  //     hundred quotes get sent by the rest of the suite in the seconds
+  //     this test's own window is open, so a five-hundred buffer keeps
+  //     that realistically out of reach while still advancing the
+  //     counter only modestly relative to organic growth.
+  // page_size=200 (not 1) and taking the max, not items[0] - GET /quotes
+  // sorts newest-*created*-first, not by assigned number, so the most
+  // recently created row could easily be an as-yet-unsent draft
+  // (`number: null`) rather than the highest-numbered quote.
+  const recent = await apiFetch<{ items: { number: string | null }[] }>(
+    '/quotes?page_size=200',
+    apiToken,
+  )
+  const latestNumber = Math.max(
+    0,
+    ...recent.items.map((quote) => Number(quote.number?.replace(/^\D+/, '') ?? '0')),
+  )
+  const nextNumber = latestNumber + 500
+
+  await page.goto('/settings')
+  await page.getByRole('tab', { name: 'Document' }).click()
+
+  // Reset the prefix/digits to known values first - an earlier test in
+  // this same serial-mode file (or a previous run) may have left the
+  // shared profile's quote prefix as something other than "Q-".
+  const quoteGroup = page.getByRole('group', { name: 'Quotes' })
+  await quoteGroup.getByLabel('Number prefix').fill('Q-')
+  await quoteGroup.getByLabel('Number digits').fill('4')
+  await page.getByRole('button', { name: 'Save settings' }).click()
+  await expect(page.getByText('Saved.')).toBeVisible()
+
+  await quoteGroup.getByLabel('Next quote number').fill(String(nextNumber))
+  await quoteGroup.getByRole('button', { name: 'Set' }).click()
+  await expect(quoteGroup.getByText('Set.')).toBeVisible()
+
+  await page.goto(`/quotes/new?accountId=${testAccount.id}`)
+  await page.getByLabel('Account').selectOption({ label: testAccount.business_name })
+  await page.getByRole('button', { name: 'Create draft quote' }).click()
+  await page.getByLabel('Description').fill('Work')
+  await page.getByLabel('Qty').fill('1')
+  await page.getByLabel('Unit price').fill('100.00')
+  await page.getByRole('button', { name: 'Add item' }).click()
+  await page.getByRole('button', { name: 'Send' }).click()
+
+  const numberText = await page.getByText(/^Q-\d{4,}$/).textContent()
+  const number = Number(numberText?.replace('Q-', ''))
+  expect(number).toBeGreaterThanOrEqual(nextNumber)
 })
 
 test('title, every address line, UTR and VAT number can all be left blank', async ({

@@ -680,6 +680,38 @@ button.secondary {
   font-size: 0.92rem;
 }
 
+.next-number-action {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+
+.next-number-action label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.next-number-action input {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.92rem;
+  width: 8rem;
+}
+
+.next-number-action .form-error,
+.next-number-action .form-success {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 .activity-timeline {
   margin-top: 1.5rem;
 }

@@ -55,6 +55,41 @@ def test_expense_numbers_are_sequential_per_organisation(application, organisati
     assert other_expense.number == "EXP-0001"  # each organisation's own sequence, not a shared one
 
 
+def test_create_expense_uses_a_custom_prefix_and_digit_count(application, organisation_id, account):
+    expense = application.expenses.create_expense(
+        organisation_id=organisation_id, account_id=account.id, number_prefix="EXPENSE-", number_digits=6
+    )
+    assert expense.number == "EXPENSE-000001"
+
+
+def test_create_expense_falls_back_to_the_default_prefix_and_digits_when_not_given(
+    application, organisation_id, account
+):
+    expense = application.expenses.create_expense(
+        organisation_id=organisation_id, account_id=account.id, number_prefix=None, number_digits=None
+    )
+    assert expense.number == "EXP-0001"
+
+
+def test_set_next_number_jumps_the_counter_regardless_of_existing_expenses(
+    application, organisation_id, account
+):
+    application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)  # EXP-0001
+
+    application.expenses.set_next_number(organisation_id, 67)
+
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    assert expense.number == "EXP-0067"
+
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    assert expense.number == "EXP-0068"
+
+
+def test_set_next_number_rejects_a_value_below_one(application, organisation_id):
+    with pytest.raises(ValidationFailed):
+        application.expenses.set_next_number(organisation_id, 0)
+
+
 def test_create_expense_defaults_expense_date_to_today(application, organisation_id, account, fake_clock):
     fake_clock.set(datetime(2026, 3, 10, tzinfo=UTC))
     expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)

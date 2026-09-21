@@ -1253,6 +1253,82 @@ def test_payment_terms_from_profile_drive_the_invoice_due_date(client, auth_head
     assert sent["due_date"] == expected_due.isoformat()
 
 
+def test_document_number_prefix_and_digits_are_configurable(client, auth_headers):
+    client.put(
+        "/settings/business-profile",
+        json={
+            "first_name": "Ada",
+            "last_name": "Lovelace",
+            "business_name": "Acme Consulting",
+            "quote_number_prefix": "QUOTE-",
+            "quote_number_digits": 6,
+            "invoice_number_prefix": "INVOICE-",
+            "invoice_number_digits": 6,
+            "expense_number_prefix": "EXPENSE-",
+            "expense_number_digits": 6,
+        },
+        headers=auth_headers,
+    )
+
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Client Co", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+
+    quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+    client.post(
+        f"/quotes/{quote_id}/line-items",
+        json={"description": "Work", "quantity": "1", "unit_price": "100.00"},
+        headers=auth_headers,
+    )
+    sent_quote = client.post(f"/quotes/{quote_id}/send", headers=auth_headers).json()
+    assert sent_quote["number"] == "QUOTE-000001"
+
+    invoice = client.post(f"/quotes/{quote_id}/convert", headers=auth_headers).json()
+    sent_invoice = client.post(f"/invoices/{invoice['id']}/send", headers=auth_headers).json()
+    assert sent_invoice["number"] == "INVOICE-000001"
+
+    expense = client.post("/expenses", json={"account_id": account_id}, headers=auth_headers).json()
+    assert expense["number"] == "EXPENSE-000001"
+
+
+def test_set_next_number_jumps_the_counter_for_each_document_type(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Client Co", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+
+    response = client.post("/quotes/next-number", json={"next_number": 67}, headers=auth_headers)
+    assert response.status_code == 204
+    response = client.post("/invoices/next-number", json={"next_number": 67}, headers=auth_headers)
+    assert response.status_code == 204
+    response = client.post("/expenses/next-number", json={"next_number": 67}, headers=auth_headers)
+    assert response.status_code == 204
+
+    quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+    client.post(
+        f"/quotes/{quote_id}/line-items",
+        json={"description": "Work", "quantity": "1", "unit_price": "100.00"},
+        headers=auth_headers,
+    )
+    sent_quote = client.post(f"/quotes/{quote_id}/send", headers=auth_headers).json()
+    assert sent_quote["number"] == "Q-0067"
+
+    invoice = client.post(f"/quotes/{quote_id}/convert", headers=auth_headers).json()
+    sent_invoice = client.post(f"/invoices/{invoice['id']}/send", headers=auth_headers).json()
+    assert sent_invoice["number"] == "INV-0067"
+
+    expense = client.post("/expenses", json={"account_id": account_id}, headers=auth_headers).json()
+    assert expense["number"] == "EXP-0067"
+
+
+def test_set_next_number_rejects_a_value_below_one(client, auth_headers):
+    response = client.post("/quotes/next-number", json={"next_number": 0}, headers=auth_headers)
+    assert response.status_code == 422
+
+
 def test_pdf_still_renders_with_no_business_profile_set(client, auth_headers):
     account_id = client.post(
         "/accounts",

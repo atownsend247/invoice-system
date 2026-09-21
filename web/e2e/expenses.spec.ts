@@ -11,9 +11,12 @@ test('recording an expense from an account and adding a line item', async ({
   await page.getByRole('textbox', { name: 'Currency' }).fill('USD')
   await page.getByRole('button', { name: 'Record expense' }).click()
 
-  // Unlike a quote, an expense gets its EXP-number immediately - no
-  // draft state to move through first (see CLAUDE.md).
-  await expect(page.getByRole('heading', { name: /^EXP-\d{4}$/ })).toBeVisible()
+  // Unlike a quote, an expense gets its number immediately - no draft
+  // state to move through first (see CLAUDE.md). Not the default
+  // "EXP-0001"-style prefix specifically - see the same reasoning in
+  // quotes.spec.ts's "sending a quote assigns a number..." test, and
+  // CLAUDE.md's number-prefix/digits gotcha.
+  await expect(page.getByRole('heading', { name: /^\S+-\d+$/ })).toBeVisible()
 
   await page.getByLabel('Description').fill('Domain renewal')
   await page.getByLabel('Qty').fill('1')
@@ -39,7 +42,7 @@ test('setting an explicit expense date at creation, then editing it afterward', 
   await page.getByRole('textbox', { name: 'Expense date' }).fill('2026-02-20')
   await page.getByRole('button', { name: 'Record expense' }).click()
 
-  await expect(page.getByRole('heading', { name: /^EXP-\d{4}$/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /^\S+-\d+$/ })).toBeVisible()
   await expect(page.getByText('Expense date: 2026-02-20')).toBeVisible()
 
   await page.getByRole('button', { name: 'Edit' }).click()
@@ -193,7 +196,9 @@ test('downloading the PDF works', async ({ authenticatedPage: page, expense }) =
     page.waitForEvent('download'),
     page.getByRole('button', { name: 'Download PDF' }).click(),
   ])
-  expect(download.suggestedFilename()).toMatch(/^EXP-\d{4}\.pdf$/)
+  // Not the default "EXP-0001"-style prefix specifically - see CLAUDE.md's
+  // number-prefix/digits gotcha.
+  expect(download.suggestedFilename()).toMatch(/^\S+-\d+\.pdf$/)
 })
 
 test('the account detail page lists its expenses', async ({

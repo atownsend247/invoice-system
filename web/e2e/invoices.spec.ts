@@ -44,7 +44,10 @@ test('viewing the PDF opens an in-page preview instead of downloading it', async
 test('sending an invoice assigns a number and a due date', async ({ authenticatedPage: page, draftInvoice }) => {
   await page.goto(`/invoices/${draftInvoice.id}`)
   await page.getByRole('button', { name: 'Send' }).click()
-  await expect(page.getByText(/^INV-\d{4}$/)).toBeVisible()
+  // Not the default "INV-0001"-style prefix specifically - see the same
+  // reasoning in quotes.spec.ts's "sending a quote assigns a number..."
+  // test, and CLAUDE.md's number-prefix/digits gotcha.
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(/^\S+-\d+$/)
   await expect(page.getByText(/due \d{4}-\d{2}-\d{2}/)).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Activity' })).toBeVisible()
   await expect(page.locator('.activity-timeline li').first()).toContainText('draft → sent')

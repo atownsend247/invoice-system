@@ -43,6 +43,7 @@ from .schemas import (
     LineItemIn,
     MonthlyExpenseTotalsReportOut,
     MonthlyTotalsReportOut,
+    NextNumberIn,
     QuoteConvertIn,
     QuoteCreateIn,
     QuoteListOut,
@@ -391,9 +392,26 @@ def add_quote_line_item(
 def send_quote(
     quote_id: str,
     application: Application = Depends(get_application),
+    user: SessionUser = Depends(get_current_user),
     organisation_id: str = Depends(get_organisation_id),
 ) -> QuoteOut:
-    return QuoteOut.from_model(application.quotes.send(organisation_id, quote_id))
+    profile = application.business_profiles.get_profile(user.id)
+    quote = application.quotes.send(
+        organisation_id,
+        quote_id,
+        number_prefix=profile.quote_number_prefix,
+        number_digits=profile.quote_number_digits,
+    )
+    return QuoteOut.from_model(quote)
+
+
+@domain_router.post("/quotes/next-number", status_code=204)
+def set_next_quote_number(
+    body: NextNumberIn,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> None:
+    application.quotes.set_next_number(organisation_id, body.next_number)
 
 
 @domain_router.post("/quotes/{quote_id}/convert", response_model=InvoiceOut, status_code=201)
@@ -475,9 +493,22 @@ def send_invoice(
 ) -> InvoiceOut:
     profile = application.business_profiles.get_profile(user.id)
     invoice = application.invoices.send(
-        organisation_id, invoice_id, payment_terms_days=profile.payment_terms_days
+        organisation_id,
+        invoice_id,
+        payment_terms_days=profile.payment_terms_days,
+        number_prefix=profile.invoice_number_prefix,
+        number_digits=profile.invoice_number_digits,
     )
     return InvoiceOut.from_model(invoice)
+
+
+@domain_router.post("/invoices/next-number", status_code=204)
+def set_next_invoice_number(
+    body: NextNumberIn,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> None:
+    application.invoices.set_next_number(organisation_id, body.next_number)
 
 
 @domain_router.post("/invoices/{invoice_id}/void", response_model=InvoiceOut)
@@ -515,15 +546,28 @@ def get_invoice_pdf(
 def create_expense(
     body: ExpenseCreateIn,
     application: Application = Depends(get_application),
+    user: SessionUser = Depends(get_current_user),
     organisation_id: str = Depends(get_organisation_id),
 ) -> ExpenseOut:
+    profile = application.business_profiles.get_profile(user.id)
     expense = application.expenses.create_expense(
         organisation_id=organisation_id,
         account_id=body.account_id,
         currency=body.currency,
         expense_date=body.expense_date,
+        number_prefix=profile.expense_number_prefix,
+        number_digits=profile.expense_number_digits,
     )
     return ExpenseOut.from_model(expense)
+
+
+@domain_router.post("/expenses/next-number", status_code=204)
+def set_next_expense_number(
+    body: NextNumberIn,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> None:
+    application.expenses.set_next_number(organisation_id, body.next_number)
 
 
 @domain_router.get("/expenses", response_model=list[ExpenseOut])
@@ -721,6 +765,12 @@ def save_business_profile(
         invoice_document_footer=body.invoice_document_footer,
         expense_document_header=body.expense_document_header,
         expense_document_footer=body.expense_document_footer,
+        quote_number_prefix=body.quote_number_prefix,
+        quote_number_digits=body.quote_number_digits,
+        invoice_number_prefix=body.invoice_number_prefix,
+        invoice_number_digits=body.invoice_number_digits,
+        expense_number_prefix=body.expense_number_prefix,
+        expense_number_digits=body.expense_number_digits,
         accent_color=body.accent_color,
     )
     return BusinessProfileOut.from_model(profile)

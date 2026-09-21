@@ -124,7 +124,14 @@ test('sending a quote assigns a number and freezes its line items', async ({
   await page.getByRole('button', { name: 'Add item' }).click()
 
   await page.getByRole('button', { name: 'Send' }).click()
-  await expect(page.getByText(/^Q-\d{4}$/)).toBeVisible()
+  // Not the default "Q-0001"-style prefix specifically - the quote-number
+  // prefix/digit count are themselves now a shared BusinessProfile field
+  // (see CLAUDE.md's number-prefix/digits gotcha), and settings.spec.ts's
+  // own persistence test briefly saves it as something else mid-run on a
+  // concurrent worker. What this test actually verifies is that *a*
+  // number got assigned (shown as the page's own heading once sent), not
+  // which format it's in.
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(/^\S+-\d+$/)
   await expect(page.getByLabel('Description')).toHaveCount(0) // add-item form is gone
 })
 

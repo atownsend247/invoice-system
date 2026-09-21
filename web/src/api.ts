@@ -487,11 +487,35 @@ export interface SaveBusinessProfileInput {
   invoice_document_footer?: string
   expense_document_header?: string
   expense_document_footer?: string
+  quote_number_prefix?: string
+  quote_number_digits?: number
+  invoice_number_prefix?: string
+  invoice_number_digits?: number
+  expense_number_prefix?: string
+  expense_number_digits?: number
   accent_color?: string
 }
 
 export function saveBusinessProfile(input: SaveBusinessProfileInput): Promise<BusinessProfile> {
   return request('/settings/business-profile', { method: 'PUT', body: JSON.stringify(input) })
+}
+
+export function setNextQuoteNumber(nextNumber: number): Promise<void> {
+  return request('/quotes/next-number', { method: 'POST', body: JSON.stringify({ next_number: nextNumber }) })
+}
+
+export function setNextInvoiceNumber(nextNumber: number): Promise<void> {
+  return request('/invoices/next-number', {
+    method: 'POST',
+    body: JSON.stringify({ next_number: nextNumber }),
+  })
+}
+
+export function setNextExpenseNumber(nextNumber: number): Promise<void> {
+  return request('/expenses/next-number', {
+    method: 'POST',
+    body: JSON.stringify({ next_number: nextNumber }),
+  })
 }
 
 // -- stats ----------------------------------------------------------------

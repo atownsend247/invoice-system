@@ -5,7 +5,7 @@ import pytest
 
 from invoice_system.errors import InvalidTransition, NotFound, ValidationFailed
 from invoice_system.ids import new_id
-from invoice_system.models import ActivityEventType, Invoice, InvoiceStatus
+from invoice_system.models import ActivityEventType, Invoice, InvoiceStatus, LineItem
 
 
 @pytest.fixture
@@ -106,6 +106,63 @@ def test_send_invoice_falls_back_to_the_default_when_payment_terms_not_given(
 ):
     invoice = application.invoices.send(organisation_id, draft_invoice.id, payment_terms_days=None)
     assert invoice.due_date == fake_clock().date() + timedelta(days=30)
+
+
+def test_send_invoice_uses_a_custom_prefix_and_digit_count(application, organisation_id, draft_invoice):
+    invoice = application.invoices.send(
+        organisation_id, draft_invoice.id, number_prefix="INVOICE-", number_digits=6
+    )
+    assert invoice.number == "INVOICE-000001"
+
+
+def test_send_invoice_falls_back_to_the_default_prefix_and_digits_when_not_given(
+    application, organisation_id, draft_invoice
+):
+    invoice = application.invoices.send(
+        organisation_id, draft_invoice.id, number_prefix=None, number_digits=None
+    )
+    assert invoice.number == "INV-0001"
+
+
+def test_set_next_number_jumps_the_counter_regardless_of_existing_invoices(
+    application, organisation_id, draft_invoice
+):
+    application.invoices.send(organisation_id, draft_invoice.id)  # INV-0001 already issued
+
+    application.invoices.set_next_number(organisation_id, 67)
+
+    other = application.repository.create_invoice(
+        Invoice(
+            id=new_id(),
+            organisation_id=organisation_id,
+            account_id=draft_invoice.account_id,
+            quote_id=None,
+            number=None,
+            status=InvoiceStatus.DRAFT,
+            currency="USD",
+            issue_date=draft_invoice.issue_date,
+            due_date=None,
+            created_at=draft_invoice.created_at,
+        )
+    )
+    application.repository.add_invoice_line_item(
+        other.id,
+        LineItem(
+            id=new_id(),
+            description="Work",
+            quantity=Decimal("1"),
+            unit_price=Decimal("1"),
+            tax_rate=Decimal("0"),
+            position=0,
+        ),
+    )
+    sent = application.invoices.send(organisation_id, other.id)
+    assert sent.number == "INV-0067"
+
+
+def test_set_next_number_rejects_a_value_below_one(application, organisation_id):
+    with pytest.raises(ValidationFailed):
+        application.invoices.set_next_number(organisation_id, 0)
 
 
 def test_send_invoice_computes_due_date_from_issue_date_not_today(

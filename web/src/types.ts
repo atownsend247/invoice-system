@@ -162,6 +162,15 @@ export interface BusinessProfile {
   invoice_document_footer: string | null
   expense_document_header: string | null
   expense_document_footer: string | null
+  // Configurable per-document-type number prefix/zero-padding (e.g.
+  // "Q-" + 4 digits -> Q-0001) - only affects numbers assigned from now
+  // on, never rewrites an already-issued one.
+  quote_number_prefix: string
+  quote_number_digits: number
+  invoice_number_prefix: string
+  invoice_number_digits: number
+  expense_number_prefix: string
+  expense_number_digits: number
   // A single #RRGGBB hex colour used as the brand colour across every
   // quote/invoice/expense PDF this user generates - one shared value, not
   // a per-document-type triple like the header/footer pairs above.

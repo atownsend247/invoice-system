@@ -1000,6 +1000,165 @@ def test_quote_create_and_convert_accept_an_explicit_issue_date(tmp_path):
     assert "Converted quote" in result.output
 
 
+def test_configurable_document_number_prefix_and_digits(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "settings",
+            "set",
+            "--user-id",
+            "1",
+            "--first-name",
+            "Ada",
+            "--last-name",
+            "Lovelace",
+            "--business-name",
+            "Acme",
+            "--quote-number-prefix",
+            "QUOTE-",
+            "--quote-number-digits",
+            "6",
+            "--invoice-number-prefix",
+            "INVOICE-",
+            "--invoice-number-digits",
+            "6",
+            "--expense-number-prefix",
+            "EXPENSE-",
+            "--expense-number-digits",
+            "6",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    account_id = _id_from(
+        runner.invoke(
+            cli,
+            [
+                *_base_args(db_path),
+                "account",
+                "create",
+                "--user-id",
+                "1",
+                "--business-name",
+                "Acme",
+                "--email",
+                "a@b.test",
+                "--address-line1",
+                "1 Main St",
+            ],
+        ).output,
+        r"Created account (\S+):",
+    )
+
+    quote_id = _id_from(
+        runner.invoke(
+            cli, [*_base_args(db_path), "quote", "create", "--user-id", "1", "--account-id", account_id]
+        ).output,
+        r"Created quote (\S+) \(draft\)",
+    )
+    runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "quote",
+            "add-item",
+            quote_id,
+            "--user-id",
+            "1",
+            "--description",
+            "Work",
+            "--quantity",
+            "1",
+            "--unit-price",
+            "100.00",
+        ],
+    )
+    result = runner.invoke(cli, [*_base_args(db_path), "quote", "send", quote_id, "--user-id", "1"])
+    assert "QUOTE-000001" in result.output
+
+    result = runner.invoke(cli, [*_base_args(db_path), "quote", "convert", quote_id, "--user-id", "1"])
+    invoice_id = _id_from(result.output, r"to invoice (\S+)")
+    result = runner.invoke(cli, [*_base_args(db_path), "invoice", "send", invoice_id, "--user-id", "1"])
+    assert "INVOICE-000001" in result.output
+
+    result = runner.invoke(
+        cli, [*_base_args(db_path), "expense", "create", "--user-id", "1", "--account-id", account_id]
+    )
+    assert "EXPENSE-000001" in result.output
+
+
+def test_set_next_number_jumps_the_counter_for_each_document_type(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
+    account_id = _id_from(
+        runner.invoke(
+            cli,
+            [
+                *_base_args(db_path),
+                "account",
+                "create",
+                "--user-id",
+                "1",
+                "--business-name",
+                "Acme",
+                "--email",
+                "a@b.test",
+                "--address-line1",
+                "1 Main St",
+            ],
+        ).output,
+        r"Created account (\S+):",
+    )
+
+    for group in ("quote", "invoice", "expense"):
+        result = runner.invoke(
+            cli, [*_base_args(db_path), group, "set-next-number", "--user-id", "1", "--next-number", "67"]
+        )
+        assert result.exit_code == 0, result.output
+
+    quote_id = _id_from(
+        runner.invoke(
+            cli, [*_base_args(db_path), "quote", "create", "--user-id", "1", "--account-id", account_id]
+        ).output,
+        r"Created quote (\S+) \(draft\)",
+    )
+    runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "quote",
+            "add-item",
+            quote_id,
+            "--user-id",
+            "1",
+            "--description",
+            "Work",
+            "--quantity",
+            "1",
+            "--unit-price",
+            "100.00",
+        ],
+    )
+    result = runner.invoke(cli, [*_base_args(db_path), "quote", "send", quote_id, "--user-id", "1"])
+    assert "Q-0067" in result.output
+
+    result = runner.invoke(cli, [*_base_args(db_path), "quote", "convert", quote_id, "--user-id", "1"])
+    invoice_id = _id_from(result.output, r"to invoice (\S+)")
+    result = runner.invoke(cli, [*_base_args(db_path), "invoice", "send", invoice_id, "--user-id", "1"])
+    assert "INV-0067" in result.output
+
+    result = runner.invoke(
+        cli, [*_base_args(db_path), "expense", "create", "--user-id", "1", "--account-id", account_id]
+    )
+    assert "EXP-0067" in result.output
+
+
 def test_quote_add_item_with_tax_rate(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()

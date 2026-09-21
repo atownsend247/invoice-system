@@ -221,7 +221,7 @@ def test_migration_8_adds_expenses_without_touching_existing_data(tmp_path):
             id=new_id(),
             organisation_id=org_id,
             account_id=account.id,
-            number=repository.next_expense_number(org_id),
+            number=repository.next_expense_number(org_id, "EXP-", 4),
             currency="GBP",
             issue_date=date(2026, 1, 1),
             expense_date=date(2026, 1, 1),
@@ -629,9 +629,9 @@ def test_list_invoices_filters_by_quote_id(repo, organisation_id):
 
 
 def test_next_number_increments_and_is_scoped_by_name(repo, organisation_id):
-    assert repo.next_quote_number(organisation_id) == "Q-0001"
-    assert repo.next_quote_number(organisation_id) == "Q-0002"
-    assert repo.next_invoice_number(organisation_id) == "INV-0001"
+    assert repo.next_quote_number(organisation_id, "Q-", 4) == "Q-0001"
+    assert repo.next_quote_number(organisation_id, "Q-", 4) == "Q-0002"
+    assert repo.next_invoice_number(organisation_id, "INV-", 4) == "INV-0001"
 
 
 def test_next_number_is_scoped_per_organisation(repo, organisation_id):
@@ -639,9 +639,32 @@ def test_next_number_is_scoped_per_organisation(repo, organisation_id):
         Organisation(id=new_id(), name="Other Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
     )
 
-    assert repo.next_quote_number(organisation_id) == "Q-0001"
-    assert repo.next_quote_number(other.id) == "Q-0001"
-    assert repo.next_quote_number(organisation_id) == "Q-0002"
+    assert repo.next_quote_number(organisation_id, "Q-", 4) == "Q-0001"
+    assert repo.next_quote_number(other.id, "Q-", 4) == "Q-0001"
+    assert repo.next_quote_number(organisation_id, "Q-", 4) == "Q-0002"
+
+
+def test_next_number_applies_a_custom_digit_count(repo, organisation_id):
+    assert repo.next_quote_number(organisation_id, "QUOTE-", 6) == "QUOTE-000001"
+
+
+def test_set_next_quote_number_jumps_the_counter(repo, organisation_id):
+    repo.next_quote_number(organisation_id, "Q-", 4)  # Q-0001 already issued
+
+    repo.set_next_quote_number(organisation_id, 67)
+
+    assert repo.next_quote_number(organisation_id, "Q-", 4) == "Q-0067"
+    assert repo.next_quote_number(organisation_id, "Q-", 4) == "Q-0068"
+
+
+def test_set_next_invoice_number_jumps_the_counter(repo, organisation_id):
+    repo.set_next_invoice_number(organisation_id, 67)
+    assert repo.next_invoice_number(organisation_id, "INV-", 4) == "INV-0067"
+
+
+def test_set_next_expense_number_jumps_the_counter(repo, organisation_id):
+    repo.set_next_expense_number(organisation_id, 67)
+    assert repo.next_expense_number(organisation_id, "EXP-", 4) == "EXP-0067"
 
 
 def test_get_business_profile_returns_none_when_unset(repo):
@@ -676,6 +699,12 @@ def test_upsert_business_profile_round_trip_and_update(repo):
         invoice_document_footer="Thank you!",
         expense_document_header="Expense header",
         expense_document_footer="Expense footer",
+        quote_number_prefix="Q-",
+        quote_number_digits=4,
+        invoice_number_prefix="INV-",
+        invoice_number_digits=4,
+        expense_number_prefix="EXP-",
+        expense_number_digits=4,
         accent_color="#2563EB",
         created_at=created_at,
         updated_at=created_at,
@@ -734,6 +763,12 @@ def test_upsert_business_profile_round_trip_and_update(repo):
         invoice_document_footer=None,
         expense_document_header=None,
         expense_document_footer=None,
+        quote_number_prefix="Q-",
+        quote_number_digits=6,
+        invoice_number_prefix="INV-",
+        invoice_number_digits=4,
+        expense_number_prefix="EXP-",
+        expense_number_digits=4,
         accent_color=None,
         created_at=created_at,
         updated_at=updated_at,
@@ -754,6 +789,7 @@ def test_upsert_business_profile_round_trip_and_update(repo):
     assert updated.quote_document_header is None
     assert updated.invoice_document_header is None
     assert updated.expense_document_header is None
+    assert updated.quote_number_digits == 6
     assert updated.accent_color is None
 
 
@@ -764,7 +800,7 @@ def test_expense_round_trip_with_line_items(repo, organisation_id):
             id=new_id(),
             organisation_id=organisation_id,
             account_id=account.id,
-            number=repo.next_expense_number(organisation_id),
+            number=repo.next_expense_number(organisation_id, "EXP-", 4),
             currency="GBP",
             issue_date=date(2026, 1, 1),
             expense_date=date(2026, 1, 1),
@@ -800,7 +836,7 @@ def test_update_expense_line_item_changes_fields_in_place(repo, organisation_id)
             id=new_id(),
             organisation_id=organisation_id,
             account_id=account.id,
-            number=repo.next_expense_number(organisation_id),
+            number=repo.next_expense_number(organisation_id, "EXP-", 4),
             currency="GBP",
             issue_date=date(2026, 1, 1),
             expense_date=date(2026, 1, 1),
@@ -847,7 +883,7 @@ def test_delete_expense_line_item_removes_only_that_row(repo, organisation_id):
             id=new_id(),
             organisation_id=organisation_id,
             account_id=account.id,
-            number=repo.next_expense_number(organisation_id),
+            number=repo.next_expense_number(organisation_id, "EXP-", 4),
             currency="GBP",
             issue_date=date(2026, 1, 1),
             expense_date=date(2026, 1, 1),
@@ -896,7 +932,7 @@ def test_get_expense_from_another_organisation_returns_none(repo, organisation_i
             id=new_id(),
             organisation_id=organisation_id,
             account_id=account.id,
-            number=repo.next_expense_number(organisation_id),
+            number=repo.next_expense_number(organisation_id, "EXP-", 4),
             currency="GBP",
             issue_date=date(2026, 1, 1),
             expense_date=date(2026, 1, 1),
@@ -1055,9 +1091,9 @@ def test_next_expense_number_increments_and_is_scoped_per_organisation(repo, org
         Organisation(id=new_id(), name="Other Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
     )
 
-    assert repo.next_expense_number(organisation_id) == "EXP-0001"
-    assert repo.next_expense_number(organisation_id) == "EXP-0002"
-    assert repo.next_expense_number(other.id) == "EXP-0001"
+    assert repo.next_expense_number(organisation_id, "EXP-", 4) == "EXP-0001"
+    assert repo.next_expense_number(organisation_id, "EXP-", 4) == "EXP-0002"
+    assert repo.next_expense_number(other.id, "EXP-", 4) == "EXP-0001"
 
 
 def _expense_for(repo: SqliteRepository, organisation_id: str) -> Expense:
@@ -1067,7 +1103,7 @@ def _expense_for(repo: SqliteRepository, organisation_id: str) -> Expense:
             id=new_id(),
             organisation_id=organisation_id,
             account_id=account.id,
-            number=repo.next_expense_number(organisation_id),
+            number=repo.next_expense_number(organisation_id, "EXP-", 4),
             currency="GBP",
             issue_date=date(2026, 1, 1),
             expense_date=date(2026, 1, 1),

@@ -441,6 +441,15 @@ def seed_demo_data(application: Application, auth: Auth, *, now: datetime | None
         invoice_document_footer="Thank you for your business!\nPayment is due within the stated terms.",
         expense_document_header="Blake Freelance Design",
         expense_document_footer="Recorded for internal accounting purposes only.",
+        # Left at the defaults - showing off a customised prefix/padding
+        # isn't the point of this seed data the way the header/footer text
+        # and accent colour are.
+        quote_number_prefix="Q-",
+        quote_number_digits=4,
+        invoice_number_prefix="INV-",
+        invoice_number_digits=4,
+        expense_number_prefix="EXP-",
+        expense_number_digits=4,
         # Shows off the accent-colour feature in the seeded PDFs rather than
         # leaving it at the neutral default every never-customised profile
         # gets (see pdf.py's _ACCENT_FALLBACK).

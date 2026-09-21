@@ -56,17 +56,20 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | GET | `/quotes` | required | Paginated list of quotes - `{items, total}`. Optionally filtered by `?account_id=` (exact), `?account_name=` (matches the linked account's business_name, case-insensitively), and/or `?status=` (`draft`/`sent`/`accepted`/`rejected`/`expired`/`converted`). `?page=`/`?page_size=`, same as `/accounts` - see Conventions below. |
 | GET | `/quotes/{id}` | required | Fetch one quote with its line items, `events` (its audit trail, newest-first - see Conventions below), `subtotal`, `tax_total`, and (gross) `total`. |
 | POST | `/quotes/{id}/line-items` | required | Add a line item to a draft quote (`description`, `quantity`, `unit_price` required; `tax_rate` defaults `"0"`, must be within `[0, 1]`). 409 if not draft, 422 on an out-of-range `tax_rate`. |
-| POST | `/quotes/{id}/send` | required | Assign a quote number, transition `draft → sent`. 422 if no line items. |
+| POST | `/quotes/{id}/send` | required | Assign a quote number (using the caller's own `quote_number_prefix`/`quote_number_digits`, e.g. `Q-0001` by default - see Conventions below), transition `draft → sent`. 422 if no line items. |
+| POST | `/quotes/next-number` | required | `{next_number}` - jump the organisation's quote counter so the *next* quote sent gets exactly this number, regardless of how many quotes already exist (see Conventions below). `204`, `422` if `next_number < 1`. |
 | POST | `/quotes/{id}/convert` | required | Convert a `sent`/`accepted` quote into a new draft invoice, copying line items (`issue_date` optional in the request body, defaults to today - lets the caller backdate the resulting invoice). 409 otherwise. |
 | GET | `/quotes/{id}/pdf` | required | Render the quote as a PDF (`application/pdf`) - the web UI offers this both as a download and as an in-page preview (see Conventions below), the route itself is the same either way. |
 | GET | `/invoices` | required | Paginated list of invoices - `{items, total}`. Optionally filtered by `?account_id=` (exact), `?account_name=` (matches the linked account's business_name, case-insensitively), `?status=` (`draft`/`sent`/`paid`/`void` - `overdue` is accepted but never matches anything, see Conventions below), and/or `?quote_id=` (exact - a quote converts to at most one invoice, so this matches 0 or 1 row; used by `QuoteDetailPage.tsx`'s "View invoice" button on a converted quote). `?page=`/`?page_size=`, same as `/accounts`. |
 | GET | `/invoices/{id}` | required | Fetch one invoice with its line items, `events` (its audit trail, newest-first - see Conventions below), `subtotal`, `tax_total`, and (gross) `total`. |
-| POST | `/invoices/{id}/send` | required | Assign an invoice number and due date (`issue_date` + the current user's `payment_terms_days`, default 30 - not "today", so a backdated invoice's due date reflects when it was actually issued), transition `draft → sent`. 422 if no line items. |
+| POST | `/invoices/{id}/send` | required | Assign an invoice number (using the caller's own `invoice_number_prefix`/`invoice_number_digits`, e.g. `INV-0001` by default) and due date (`issue_date` + the current user's `payment_terms_days`, default 30 - not "today", so a backdated invoice's due date reflects when it was actually issued), transition `draft → sent`. 422 if no line items. |
+| POST | `/invoices/next-number` | required | `{next_number}` - jump the organisation's invoice counter so the *next* invoice sent gets exactly this number (see Conventions below). `204`, `422` if `next_number < 1`. |
 | POST | `/invoices/{id}/void` | required | Transition to `void`. 409 if already `paid`. |
 | POST | `/invoices/{id}/pay` | required | Transition `sent → paid`. 409 if not currently `sent` (covers `draft`, `void`, and already-`paid`). |
 | GET | `/invoices/monthly-totals` | required | Registered *before* `/invoices/{id}` (see `CLAUDE.md`'s architecture rules on route ordering). `{currency, months: [{month, paid_total, unpaid_total}]}` for the trailing 12 months, scoped to the current user's organisation, in the current user's business profile `currency`. An invoice in any other currency isn't counted. |
 | GET | `/invoices/{id}/pdf` | required | Render the invoice as a PDF (`application/pdf`), with a "From" section for the current user's business name/address if set (with "Bill to" beside it, not below, when it is), their `invoice_document_header`/`invoice_document_footer` (if set) above the title/below the totals table, and — invoices only, never quotes or expenses — a "Payment details" section for whichever of `bank_account_name`/`bank_sort_code`/`bank_account_number` are set, after the totals table. Quotes/expenses render the same way via their own `quote_document_header`/`quote_document_footer`/`expense_document_header`/`expense_document_footer` pair instead - see the Conventions section. |
-| POST | `/expenses` | required | Create an expense against an account (`account_id` required; `currency` defaults `USD`; `expense_date` optional, defaults to today). Unlike a quote, its `EXP-0001` `number` is assigned immediately - there's no draft state (see `CLAUDE.md`). |
+| POST | `/expenses` | required | Create an expense against an account (`account_id` required; `currency` defaults `USD`; `expense_date` optional, defaults to today). Unlike a quote, its `number` (using the caller's own `expense_number_prefix`/`expense_number_digits`, e.g. `EXP-0001` by default) is assigned immediately - there's no draft state (see `CLAUDE.md`). |
+| POST | `/expenses/next-number` | required | `{next_number}` - jump the organisation's expense counter so the *next* expense created gets exactly this number (see Conventions below). `204`, `422` if `next_number < 1`. |
 | GET | `/expenses` | required | List expenses, optionally filtered by `?account_id=`. |
 | GET | `/expenses/{id}` | required | Fetch one expense with its line items, `subtotal`, `tax_total`, and (gross) `total`. |
 | PUT | `/expenses/{id}/expense-date` | required | Update just `expense_date` (required) - the one `Expense` field editable after creation, unlike `account_id`/`currency`/`issue_date`. 404 if missing/wrong organisation. |
@@ -79,7 +82,7 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | GET | `/expenses/{id}/attachments/{attachment_id}` | required | The uploaded bytes (`Content-Type` is whatever was uploaded, `Content-Disposition: inline` - the web UI's "View"/"Download" both hit this one route, same pattern as the generated PDF routes above). |
 | DELETE | `/expenses/{id}/attachments/{attachment_id}` | required | Delete it. `204`. |
 | GET | `/settings/business-profile` | required | The current user's own profile. Never 404s — returns sensible defaults (`payment_terms_days: 30`, `quote_validity_days: 30`, `currency: "GBP"`, everything else blank/`null`) if nothing's been saved yet. |
-| PUT | `/settings/business-profile` | required | Upsert it (`first_name`, `last_name`, `business_name`, `payment_terms_days`, `quote_validity_days` required; `currency` defaults `"GBP"`; `title`, `address_line1`, `address_line2`, `town_or_city`, `county`, `postcode`, `utr`, `vat_number`, `bank_account_name`, `bank_sort_code`, `bank_account_number`, `quote_document_header`, `quote_document_footer`, `invoice_document_header`, `invoice_document_footer`, `expense_document_header`, `expense_document_footer`, `accent_color` optional — each address line independently optional, each document header/footer is its own independent pair per document type, not one shared pair, and `accent_color` (a `#RRGGBB` hex string, one shared value across all three document types) is the one field here whose format is actually validated, not accepted as free-form text - see the Conventions section). 422 on a blank required field, `payment_terms_days <= 0`, `quote_validity_days <= 0`, a blank `currency`, or a malformed `accent_color`. |
+| PUT | `/settings/business-profile` | required | Upsert it (`first_name`, `last_name`, `business_name`, `payment_terms_days`, `quote_validity_days`, `quote_number_prefix`, `quote_number_digits`, `invoice_number_prefix`, `invoice_number_digits`, `expense_number_prefix`, `expense_number_digits` required (the number-prefix/digits fields default `"Q-"`/`"INV-"`/`"EXP-"` and `4` respectively when omitted - see Conventions below); `currency` defaults `"GBP"`; `title`, `address_line1`, `address_line2`, `town_or_city`, `county`, `postcode`, `utr`, `vat_number`, `bank_account_name`, `bank_sort_code`, `bank_account_number`, `quote_document_header`, `quote_document_footer`, `invoice_document_header`, `invoice_document_footer`, `expense_document_header`, `expense_document_footer`, `accent_color` optional — each address line independently optional, each document header/footer is its own independent pair per document type, not one shared pair, and `accent_color` (a `#RRGGBB` hex string, one shared value across all three document types) is the one field here whose format is actually validated, not accepted as free-form text - see the Conventions section). 422 on a blank required field, `payment_terms_days <= 0`, `quote_validity_days <= 0`, any `*_number_digits < 1`, a blank `currency`, or a malformed `accent_color`. |
 | GET | `/stats` | required | All-time counters for the home dashboard, scoped to the current user's organisation: `{account_count, quote_count, invoice_count, quotes_sent_count, quotes_converted_count, total_paid, currency}`. `total_paid` is filtered to `currency` (the caller's own business profile's reporting currency, same resolution as `/invoices/monthly-totals`) — a paid invoice in a different currency isn't counted. `quotes_sent_count`/`quotes_converted_count` are raw counts, not a precomputed rate; the web UI derives a conversion percentage from them client-side (`HomePage.tsx`'s `conversionRate`). |
 
 Every account/quote/invoice/expense route above resolves the caller's
@@ -117,14 +120,24 @@ at all, so quotes have nothing to paginate on the CLI side.
 --user-id` also
 reuse that same user id for their pre-existing purpose (the PDF "From"
 section, the payment-terms-driven due date) - `quote create --user-id` does
-too, resolving `quote_validity_days` the same way. `quote create`/`quote
+too, resolving `quote_validity_days` the same way; `quote send`/`invoice
+send`/`expense create --user-id` additionally resolve that profile's
+`quote_number_prefix`/`quote_number_digits` (etc.) to format the assigned
+number - see the number-prefix/digits Convention above. `quote create`/`quote
 convert` both additionally take an optional `--issue-date` (`YYYY-MM-DD`,
 defaults to today - see the issue-date-driven dates Convention below).
 `settings show`/`settings
 set --user-id` (no API equivalent by path, but the same
 `BusinessProfileService` underneath) are unaffected, since `BusinessProfile`
 stays per-user, not per-organisation (see `docs/data-model.md`'s
-"Multi-tenancy"). `init-db` has no API equivalent at all (there's no `POST
+"Multi-tenancy"); `settings set` gains `--quote-number-prefix`/
+`--quote-number-digits`/`--invoice-number-prefix`/`--invoice-number-digits`/
+`--expense-number-prefix`/`--expense-number-digits`, mirrored by three new
+`--user-id`-scoped commands with no API equivalent by path (same
+`set_next_number` service methods the `next-number` routes above call) -
+`quote set-next-number --next-number N`, `invoice set-next-number
+--next-number N`, `expense set-next-number --next-number N`. `init-db` has
+no API equivalent at all (there's no `POST
 /accounts/db` — bootstrapping is CLI-only) and seeds demo data by default;
 `--no-demo` skips it. See `docs/data-model.md`'s "Demo data" section and
 `CLAUDE.md`.
@@ -155,6 +168,20 @@ stays per-user, not per-organisation (see `docs/data-model.md`'s
   pair - a quote/invoice/expense PDF only ever shows its own pair, never
   another type's. All six are free text, each independently optional,
   each split into non-blank lines when rendered.
+- **Document number prefix/digits and "set next number"**:
+  `quote_number_prefix`/`quote_number_digits` (default `"Q-"`/`4`),
+  `invoice_number_prefix`/`invoice_number_digits` (default `"INV-"`/`4`),
+  and `expense_number_prefix`/`expense_number_digits` (default `"EXP-"`/`4`)
+  control how each document type's number is formatted
+  (`f"{prefix}{value:0{digits}d}"`) when it's assigned - `POST
+  /quotes/{id}/send`/`POST /invoices/{id}/send`/`POST /expenses` read
+  these from the caller's own business profile at the moment a number is
+  assigned, so changing them only affects numbers issued from then on,
+  never rewrites an already-issued one. `POST /quotes|invoices|expenses/
+  next-number` is a separate, one-time **jump**, not a persisted additive
+  offset — `{next_number: 67}` sets the counter so the very next document
+  of that type is exactly `67`, regardless of how many already exist
+  (an additive offset would instead land on `existing_count + 67`).
 - **`accent_color`**: one shared `#RRGGBB` hex colour, used as the brand
   colour across every quote/invoice/expense PDF (unlike the header/footer
   pairs above, not per-document-type). The one `business-profile` field

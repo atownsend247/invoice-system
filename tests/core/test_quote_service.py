@@ -346,3 +346,58 @@ def test_quote_numbers_are_independent_per_organisation(application, organisatio
 
     assert first.number == "Q-0001"
     assert second.number == "Q-0001"
+
+
+def test_send_uses_a_custom_prefix_and_digit_count(application, organisation_id, account):
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    quote = application.quotes.add_line_item(
+        organisation_id, quote.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    sent = application.quotes.send(organisation_id, quote.id, number_prefix="QUOTE-", number_digits=6)
+    assert sent.number == "QUOTE-000001"
+
+
+def test_send_falls_back_to_the_default_prefix_and_digits_when_not_given(
+    application, organisation_id, account
+):
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    quote = application.quotes.add_line_item(
+        organisation_id, quote.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    sent = application.quotes.send(organisation_id, quote.id, number_prefix=None, number_digits=None)
+    assert sent.number == "Q-0001"
+
+
+def test_set_next_number_jumps_the_counter_regardless_of_existing_quotes(
+    application, organisation_id, account
+):
+    # Two quotes already sent (Q-0001, Q-0002) before the jump - the next
+    # one must be exactly Q-0067, not offset by however many already exist.
+    for _ in range(2):
+        quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+        quote = application.quotes.add_line_item(
+            organisation_id, quote.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+        )
+        application.quotes.send(organisation_id, quote.id)
+
+    application.quotes.set_next_number(organisation_id, 67)
+
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    quote = application.quotes.add_line_item(
+        organisation_id, quote.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    sent = application.quotes.send(organisation_id, quote.id)
+    assert sent.number == "Q-0067"
+
+    # And the one after that continues normally from there.
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    quote = application.quotes.add_line_item(
+        organisation_id, quote.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    sent = application.quotes.send(organisation_id, quote.id)
+    assert sent.number == "Q-0068"
+
+
+def test_set_next_number_rejects_a_value_below_one(application, organisation_id):
+    with pytest.raises(ValidationFailed):
+        application.quotes.set_next_number(organisation_id, 0)

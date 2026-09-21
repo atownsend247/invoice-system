@@ -34,6 +34,10 @@ from .repository import Repository
 DEFAULT_INVOICE_DUE_DAYS = 30
 DEFAULT_PAYMENT_TERMS_DAYS = 30
 DEFAULT_QUOTE_VALIDITY_DAYS = 30
+DEFAULT_QUOTE_NUMBER_PREFIX = "Q-"
+DEFAULT_INVOICE_NUMBER_PREFIX = "INV-"
+DEFAULT_EXPENSE_NUMBER_PREFIX = "EXP-"
+DEFAULT_NUMBER_DIGITS = 4
 DEFAULT_CURRENCY = "GBP"
 MONTHLY_TOTALS_MONTHS = 12
 DEFAULT_ORGANISATION_NAME = "My Organisation"
@@ -408,6 +412,12 @@ class BusinessProfileService:
             invoice_document_footer=None,
             expense_document_header=None,
             expense_document_footer=None,
+            quote_number_prefix=DEFAULT_QUOTE_NUMBER_PREFIX,
+            quote_number_digits=DEFAULT_NUMBER_DIGITS,
+            invoice_number_prefix=DEFAULT_INVOICE_NUMBER_PREFIX,
+            invoice_number_digits=DEFAULT_NUMBER_DIGITS,
+            expense_number_prefix=DEFAULT_EXPENSE_NUMBER_PREFIX,
+            expense_number_digits=DEFAULT_NUMBER_DIGITS,
             accent_color=None,
             created_at=now,
             updated_at=now,
@@ -440,6 +450,12 @@ class BusinessProfileService:
         invoice_document_footer: str | None = None,
         expense_document_header: str | None = None,
         expense_document_footer: str | None = None,
+        quote_number_prefix: str,
+        quote_number_digits: int,
+        invoice_number_prefix: str,
+        invoice_number_digits: int,
+        expense_number_prefix: str,
+        expense_number_digits: int,
         accent_color: str | None = None,
     ) -> BusinessProfile:
         if not first_name.strip():
@@ -452,6 +468,12 @@ class BusinessProfileService:
             raise ValidationFailed("payment_terms_days must be a positive number of days")
         if quote_validity_days <= 0:
             raise ValidationFailed("quote_validity_days must be a positive number of days")
+        if quote_number_digits < 1:
+            raise ValidationFailed("quote_number_digits must be at least 1")
+        if invoice_number_digits < 1:
+            raise ValidationFailed("invoice_number_digits must be at least 1")
+        if expense_number_digits < 1:
+            raise ValidationFailed("expense_number_digits must be at least 1")
         if not currency.strip():
             raise ValidationFailed("currency is required")
         accent_color = _blank_to_none(accent_color)
@@ -486,6 +508,12 @@ class BusinessProfileService:
             invoice_document_footer=_blank_to_none(invoice_document_footer),
             expense_document_header=_blank_to_none(expense_document_header),
             expense_document_footer=_blank_to_none(expense_document_footer),
+            quote_number_prefix=quote_number_prefix,
+            quote_number_digits=quote_number_digits,
+            invoice_number_prefix=invoice_number_prefix,
+            invoice_number_digits=invoice_number_digits,
+            expense_number_prefix=expense_number_prefix,
+            expense_number_digits=expense_number_digits,
             accent_color=accent_color,
             created_at=created_at,
             updated_at=self._clock(),
@@ -581,18 +609,32 @@ class QuoteService:
         self._repository.add_quote_line_item(quote_id, item)
         return self._get_quote(organisation_id, quote_id)
 
-    def send(self, organisation_id: str, quote_id: str) -> Quote:
+    def send(
+        self,
+        organisation_id: str,
+        quote_id: str,
+        *,
+        number_prefix: str | None = None,
+        number_digits: int | None = None,
+    ) -> Quote:
         quote = self._get_quote(organisation_id, quote_id)
         if quote.status != QuoteStatus.DRAFT:
             raise InvalidTransition(f"quote {quote_id} is not a draft (status={quote.status.value})")
         if not quote.line_items:
             raise ValidationFailed(f"quote {quote_id} has no line items")
-        quote.number = self._repository.next_quote_number(organisation_id)
+        prefix = number_prefix if number_prefix is not None else DEFAULT_QUOTE_NUMBER_PREFIX
+        digits = number_digits if number_digits is not None else DEFAULT_NUMBER_DIGITS
+        quote.number = self._repository.next_quote_number(organisation_id, prefix, digits)
         from_status = quote.status
         quote.status = QuoteStatus.SENT
         self._repository.update_quote(quote)
         self._record_event(quote.id, from_status=from_status, to_status=quote.status)
         return self._get_quote(organisation_id, quote_id)
+
+    def set_next_number(self, organisation_id: str, next_number: int) -> None:
+        if next_number < 1:
+            raise ValidationFailed("next_number must be at least 1")
+        self._repository.set_next_quote_number(organisation_id, next_number)
 
     def mark_accepted(self, organisation_id: str, quote_id: str) -> Quote:
         return self._transition(
@@ -776,13 +818,17 @@ class InvoiceService:
         *,
         due_date: date_ | None = None,
         payment_terms_days: int | None = None,
+        number_prefix: str | None = None,
+        number_digits: int | None = None,
     ) -> Invoice:
         invoice = self._get_invoice(organisation_id, invoice_id)
         if invoice.status != InvoiceStatus.DRAFT:
             raise InvalidTransition(f"invoice {invoice_id} is not a draft (status={invoice.status.value})")
         if not invoice.line_items:
             raise ValidationFailed(f"invoice {invoice_id} has no line items")
-        invoice.number = self._repository.next_invoice_number(organisation_id)
+        prefix = number_prefix if number_prefix is not None else DEFAULT_INVOICE_NUMBER_PREFIX
+        digits = number_digits if number_digits is not None else DEFAULT_NUMBER_DIGITS
+        invoice.number = self._repository.next_invoice_number(organisation_id, prefix, digits)
         days = payment_terms_days if payment_terms_days is not None else DEFAULT_INVOICE_DUE_DAYS
         invoice.due_date = due_date or invoice.issue_date + timedelta(days=days)
         from_status = invoice.status
@@ -790,6 +836,11 @@ class InvoiceService:
         self._repository.update_invoice(invoice)
         self._record_event(invoice.id, from_status=from_status, to_status=invoice.status)
         return self._get_invoice(organisation_id, invoice_id)
+
+    def set_next_number(self, organisation_id: str, next_number: int) -> None:
+        if next_number < 1:
+            raise ValidationFailed("next_number must be at least 1")
+        self._repository.set_next_invoice_number(organisation_id, next_number)
 
     def void(self, organisation_id: str, invoice_id: str) -> Invoice:
         invoice = self._get_invoice(organisation_id, invoice_id)
@@ -913,20 +964,29 @@ class ExpenseService:
         account_id: str,
         currency: str = "USD",
         expense_date: date_ | None = None,
+        number_prefix: str | None = None,
+        number_digits: int | None = None,
     ) -> Expense:
         if self._repository.get_account(organisation_id, account_id) is None:
             raise NotFound(f"account {account_id} not found")
+        prefix = number_prefix if number_prefix is not None else DEFAULT_EXPENSE_NUMBER_PREFIX
+        digits = number_digits if number_digits is not None else DEFAULT_NUMBER_DIGITS
         expense = Expense(
             id=self._new_id(),
             organisation_id=organisation_id,
             account_id=account_id,
-            number=self._repository.next_expense_number(organisation_id),
+            number=self._repository.next_expense_number(organisation_id, prefix, digits),
             currency=currency,
             issue_date=self._clock().date(),
             expense_date=expense_date if expense_date is not None else self._clock().date(),
             created_at=self._clock(),
         )
         return self._repository.create_expense(expense)
+
+    def set_next_number(self, organisation_id: str, next_number: int) -> None:
+        if next_number < 1:
+            raise ValidationFailed("next_number must be at least 1")
+        self._repository.set_next_expense_number(organisation_id, next_number)
 
     def get_expense(self, organisation_id: str, expense_id: str) -> Expense:
         return self._get_expense(organisation_id, expense_id)

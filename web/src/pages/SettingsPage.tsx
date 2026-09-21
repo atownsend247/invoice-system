@@ -88,6 +88,12 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
   const [invoiceFooter, setInvoiceFooter] = useState(profile.invoice_document_footer ?? '')
   const [expenseHeader, setExpenseHeader] = useState(profile.expense_document_header ?? '')
   const [expenseFooter, setExpenseFooter] = useState(profile.expense_document_footer ?? '')
+  const [quoteNumberPrefix, setQuoteNumberPrefix] = useState(profile.quote_number_prefix)
+  const [quoteNumberDigits, setQuoteNumberDigits] = useState(String(profile.quote_number_digits))
+  const [invoiceNumberPrefix, setInvoiceNumberPrefix] = useState(profile.invoice_number_prefix)
+  const [invoiceNumberDigits, setInvoiceNumberDigits] = useState(String(profile.invoice_number_digits))
+  const [expenseNumberPrefix, setExpenseNumberPrefix] = useState(profile.expense_number_prefix)
+  const [expenseNumberDigits, setExpenseNumberDigits] = useState(String(profile.expense_number_digits))
   const [accentColor, setAccentColor] = useState(profile.accent_color ?? '')
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
@@ -123,6 +129,12 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
         invoice_document_footer: invoiceFooter || undefined,
         expense_document_header: expenseHeader || undefined,
         expense_document_footer: expenseFooter || undefined,
+        quote_number_prefix: quoteNumberPrefix,
+        quote_number_digits: Number(quoteNumberDigits),
+        invoice_number_prefix: invoiceNumberPrefix,
+        invoice_number_digits: Number(invoiceNumberDigits),
+        expense_number_prefix: expenseNumberPrefix,
+        expense_number_digits: Number(expenseNumberDigits),
         accent_color: accentColor || undefined,
       })
       // Reflect what the server actually stored (e.g. a blank UTR is
@@ -150,6 +162,12 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
       setInvoiceFooter(updated.invoice_document_footer ?? '')
       setExpenseHeader(updated.expense_document_header ?? '')
       setExpenseFooter(updated.expense_document_footer ?? '')
+      setQuoteNumberPrefix(updated.quote_number_prefix)
+      setQuoteNumberDigits(String(updated.quote_number_digits))
+      setInvoiceNumberPrefix(updated.invoice_number_prefix)
+      setInvoiceNumberDigits(String(updated.invoice_number_digits))
+      setExpenseNumberPrefix(updated.expense_number_prefix)
+      setExpenseNumberDigits(String(updated.expense_number_digits))
       setAccentColor(updated.accent_color ?? '')
       setSaved(true)
     } catch (err) {
@@ -323,6 +341,24 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
           <fieldset className="form-subsection">
             <legend>Quotes</legend>
             <div className="form-section-fields">
+              <label>
+                Number prefix
+                <input
+                  value={quoteNumberPrefix}
+                  onChange={(event) => setQuoteNumberPrefix(event.target.value)}
+                />
+              </label>
+              <label>
+                Number digits
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={quoteNumberDigits}
+                  onChange={(event) => setQuoteNumberDigits(event.target.value)}
+                  required
+                />
+              </label>
               <label className="form-field-wide">
                 Quote header (optional)
                 <textarea
@@ -342,11 +378,30 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
                 />
               </label>
             </div>
+            <NextNumberAction label="quote" onSet={api.setNextQuoteNumber} />
           </fieldset>
 
           <fieldset className="form-subsection">
             <legend>Invoices</legend>
             <div className="form-section-fields">
+              <label>
+                Number prefix
+                <input
+                  value={invoiceNumberPrefix}
+                  onChange={(event) => setInvoiceNumberPrefix(event.target.value)}
+                />
+              </label>
+              <label>
+                Number digits
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={invoiceNumberDigits}
+                  onChange={(event) => setInvoiceNumberDigits(event.target.value)}
+                  required
+                />
+              </label>
               <label className="form-field-wide">
                 Invoice header (optional)
                 <textarea
@@ -366,11 +421,30 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
                 />
               </label>
             </div>
+            <NextNumberAction label="invoice" onSet={api.setNextInvoiceNumber} />
           </fieldset>
 
           <fieldset className="form-subsection">
             <legend>Expenses</legend>
             <div className="form-section-fields">
+              <label>
+                Number prefix
+                <input
+                  value={expenseNumberPrefix}
+                  onChange={(event) => setExpenseNumberPrefix(event.target.value)}
+                />
+              </label>
+              <label>
+                Number digits
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={expenseNumberDigits}
+                  onChange={(event) => setExpenseNumberDigits(event.target.value)}
+                  required
+                />
+              </label>
               <label className="form-field-wide">
                 Expense header (optional)
                 <textarea
@@ -390,6 +464,7 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
                 />
               </label>
             </div>
+            <NextNumberAction label="expense" onSet={api.setNextExpenseNumber} />
           </fieldset>
         </fieldset>
       </div>
@@ -404,6 +479,63 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
         {submitting ? 'Saving…' : 'Save settings'}
       </button>
     </form>
+  )
+}
+
+/** An immediate, one-time action - not a persisted field, so it's a plain
+ * `<div>` with an onClick handler rather than a nested `<form>` (this
+ * fieldset already sits inside BusinessProfileForm's own `<form>`, and a
+ * `<form>` can't nest inside another - same reasoning RegistrarsPanel is
+ * kept outside that form entirely). Jumps the counter so the *next*
+ * document of this type gets exactly the number entered, regardless of
+ * how many already exist (see CLAUDE.md). */
+function NextNumberAction({ label, onSet }: { label: string; onSet: (nextNumber: number) => Promise<void> }) {
+  const [value, setValue] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
+  async function handleSet() {
+    setError(null)
+    setSuccess(false)
+    setSubmitting(true)
+    try {
+      await onSet(Number(value))
+      setSuccess(true)
+      setValue('')
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="next-number-action">
+      <label>
+        {`Next ${label} number`}
+        <input
+          type="number"
+          min={1}
+          step={1}
+          value={value}
+          onChange={(event) => {
+            setValue(event.target.value)
+            setSuccess(false)
+          }}
+          placeholder="e.g. 67"
+        />
+      </label>
+      <button type="button" disabled={submitting || !value} onClick={handleSet}>
+        {submitting ? 'Setting…' : 'Set'}
+      </button>
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+      {success && <p className="form-success">Set.</p>}
+    </div>
   )
 }
 

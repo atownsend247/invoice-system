@@ -43,6 +43,7 @@ pipeline {
         stage('Prereq') {
             steps {
                 sh 'eval "$(nodenv init -)" && nodenv versions'
+                sh 'curl -LsSf https://astral.sh/uv/install.sh | sh'
             }
         }
 
@@ -52,12 +53,6 @@ pipeline {
                     def scmVars = checkout scm
                     echo "Branch: ${scmVars.GIT_BRANCH} (env.BRANCH_NAME: ${env.BRANCH_NAME})"
                 }
-            }
-        }
-
-        stage('Install uv') {
-            steps {
-                sh 'curl -LsSf https://astral.sh/uv/install.sh | sh'
             }
         }
 
