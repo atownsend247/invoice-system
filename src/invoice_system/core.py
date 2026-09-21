@@ -964,6 +964,46 @@ class ExpenseService:
         self._repository.add_expense_line_item(expense_id, item)
         return self._get_expense(organisation_id, expense_id)
 
+    def update_line_item(
+        self,
+        organisation_id: str,
+        expense_id: str,
+        item_id: str,
+        *,
+        description: str,
+        quantity: Decimal,
+        unit_price: Decimal,
+        tax_rate: Decimal = Decimal("0"),
+    ) -> Expense:
+        expense = self._get_expense(organisation_id, expense_id)
+        existing = self._get_line_item(expense, item_id)
+        if not description.strip():
+            raise ValidationFailed("description is required")
+        _validate_tax_rate(tax_rate)
+        item = LineItem(
+            id=existing.id,
+            description=description,
+            quantity=quantity,
+            unit_price=unit_price,
+            tax_rate=tax_rate,
+            position=existing.position,
+        )
+        self._repository.update_expense_line_item(expense_id, item)
+        return self._get_expense(organisation_id, expense_id)
+
+    def delete_line_item(self, organisation_id: str, expense_id: str, item_id: str) -> Expense:
+        expense = self._get_expense(organisation_id, expense_id)
+        self._get_line_item(expense, item_id)
+        self._repository.delete_expense_line_item(expense_id, item_id)
+        return self._get_expense(organisation_id, expense_id)
+
+    @staticmethod
+    def _get_line_item(expense: Expense, item_id: str) -> LineItem:
+        for item in expense.line_items:
+            if item.id == item_id:
+                return item
+        raise NotFound(f"line item {item_id} not found")
+
     def monthly_totals(
         self, organisation_id: str, currency: str, *, months: int = MONTHLY_TOTALS_MONTHS
     ) -> list[MonthlyExpenseTotals]:

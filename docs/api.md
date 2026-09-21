@@ -71,6 +71,8 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | GET | `/expenses/{id}` | required | Fetch one expense with its line items, `subtotal`, `tax_total`, and (gross) `total`. |
 | PUT | `/expenses/{id}/expense-date` | required | Update just `expense_date` (required) - the one `Expense` field editable after creation, unlike `account_id`/`currency`/`issue_date`. 404 if missing/wrong organisation. |
 | POST | `/expenses/{id}/line-items` | required | Add a line item (`description`, `quantity`, `unit_price` required; `tax_rate` defaults `"0"`, must be within `[0, 1]`) - not gated behind any status check, unlike `POST /quotes/{id}/line-items` (there's no draft/sent distinction to gate on). 422 on an out-of-range `tax_rate`. |
+| PUT | `/expenses/{id}/line-items/{item_id}` | required | Replace a line item's `description`/`quantity`/`unit_price`/`tax_rate` (same body/validation as create) - unlike `Quote`/`Invoice`, an `Expense`'s line items are editable, not frozen. 404 if the expense or the item doesn't resolve under the caller's organisation, 422 on an out-of-range `tax_rate`. |
+| DELETE | `/expenses/{id}/line-items/{item_id}` | required | Remove a line item. Returns the updated `ExpenseOut` (`200`, not `204`) so the caller gets recomputed totals without a second request. 404 if the expense or the item doesn't resolve under the caller's organisation. |
 | GET | `/expenses/{id}/pdf` | required | Render the expense as a PDF (`application/pdf`), same "View PDF"/"Download PDF" pattern as quotes/invoices - but with no "Status:" line and no due/expiry date, since an expense has neither. |
 | GET | `/expenses/monthly-totals` | required | Registered *before* `/expenses/{id}` (same route-ordering reasoning as `/invoices/monthly-totals`). `{currency, months: [{month, total}]}` for the trailing 12 months, scoped to the current user's organisation, in the current user's business profile `currency`. Bucketed by `expense_date` (when the money was actually spent), **not** `issue_date` (when it was recorded) - see Conventions below. Same aggregation as `/invoices/monthly-totals` but with no paid/unpaid split - an expense has no status. The web UI's home-dashboard chart renders this as a third (red) bar series alongside Paid/Outstanding. |
 | POST | `/expenses/{id}/attachments` | required | Upload a supplementary PDF (e.g. a scanned receipt) against an expense - `multipart/form-data`, one `file` field. Content-Type must be `application/pdf` or the filename must end `.pdf`; max 10MB (`core.py`'s `MAX_ATTACHMENT_SIZE`). 422 on anything else. Addable at any time - no status to gate on, same as line items. |
@@ -97,7 +99,7 @@ session to resolve either from, so **every** `account`/`quote`/`invoice`/
 command takes a **required** `--user-id` (`account create/list/update`,
 `quote create/add-item/send/convert/pdf`, `invoice
 list/send/void/pay/monthly-totals/pdf`, `expense
-create/list/add-item/monthly-totals/pdf`,
+create/list/add-item/update-item/delete-item/monthly-totals/pdf`,
 `expense attachment add/list/download/delete`,
 `stats`) purely to resolve
 `organisation_id` (`OrganisationService.get_or_create_for_user`, same
@@ -107,6 +109,10 @@ all. `account list`/`invoice list` additionally take `--page`/`--page-size`
 (default `1`/`100`) mirroring the API's own pagination, printing a
 trailing `Page X of Y (total N)` line - there is no `quote list` command
 at all, so quotes have nothing to paginate on the CLI side.
+`expense add-item` echoes the new line item's id (`Added line item
+<id>`) - the only `add-*` command that does, since `expense update-item`/
+`expense delete-item <expense_id> <item_id>` need it and there's no
+`expense get`/`show` command to look it up afterward otherwise.
 `quote pdf`/`invoice pdf`/`expense pdf --user-id` and `invoice send
 --user-id` also
 reuse that same user id for their pre-existing purpose (the PDF "From"

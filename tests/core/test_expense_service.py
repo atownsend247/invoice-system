@@ -148,6 +148,150 @@ def test_line_items_can_be_added_at_any_time_no_status_gate(application, organis
     assert [item.description for item in expense.line_items] == ["First", "Second"]
 
 
+def test_update_line_item_changes_fields_and_recomputes_totals(application, organisation_id, account):
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    expense = application.expenses.add_line_item(
+        organisation_id,
+        expense.id,
+        description="Domain renewal",
+        quantity=Decimal("1"),
+        unit_price=Decimal("12.00"),
+    )
+    item_id = expense.line_items[0].id
+
+    updated = application.expenses.update_line_item(
+        organisation_id,
+        expense.id,
+        item_id,
+        description="Domain renewal (2 years)",
+        quantity=Decimal("2"),
+        unit_price=Decimal("12.00"),
+        tax_rate=Decimal("0.20"),
+    )
+    assert [item.description for item in updated.line_items] == ["Domain renewal (2 years)"]
+    assert updated.line_items[0].id == item_id  # same row, not a new one
+    assert updated.subtotal == Decimal("24.00")
+    assert updated.tax_total == Decimal("4.80")
+    assert updated.total == Decimal("28.80")
+
+    fetched = application.expenses.get_expense(organisation_id, expense.id)
+    assert fetched.line_items[0].description == "Domain renewal (2 years)"
+
+
+def test_update_line_item_requires_a_description(application, organisation_id, account):
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    expense = application.expenses.add_line_item(
+        organisation_id, expense.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    with pytest.raises(ValidationFailed):
+        application.expenses.update_line_item(
+            organisation_id,
+            expense.id,
+            expense.line_items[0].id,
+            description="   ",
+            quantity=Decimal("1"),
+            unit_price=Decimal("1"),
+        )
+
+
+def test_update_line_item_rejects_an_out_of_range_tax_rate(application, organisation_id, account):
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    expense = application.expenses.add_line_item(
+        organisation_id, expense.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    with pytest.raises(ValidationFailed):
+        application.expenses.update_line_item(
+            organisation_id,
+            expense.id,
+            expense.line_items[0].id,
+            description="x",
+            quantity=Decimal("1"),
+            unit_price=Decimal("1"),
+            tax_rate=Decimal("1.5"),
+        )
+
+
+def test_update_line_item_requires_existing_expense(application, organisation_id):
+    with pytest.raises(NotFound):
+        application.expenses.update_line_item(
+            organisation_id,
+            "does-not-exist",
+            "also-does-not-exist",
+            description="x",
+            quantity=Decimal("1"),
+            unit_price=Decimal("1"),
+        )
+
+
+def test_update_line_item_requires_the_item_to_belong_to_the_expense(application, organisation_id, account):
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    with pytest.raises(NotFound):
+        application.expenses.update_line_item(
+            organisation_id,
+            expense.id,
+            "does-not-exist",
+            description="x",
+            quantity=Decimal("1"),
+            unit_price=Decimal("1"),
+        )
+
+
+def test_update_line_item_from_another_organisation_raises_not_found(application, organisation_id, account):
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    expense = application.expenses.add_line_item(
+        organisation_id, expense.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    other_organisation_id = application.organisations.get_or_create_for_user("user-2")
+    with pytest.raises(NotFound):
+        application.expenses.update_line_item(
+            other_organisation_id,
+            expense.id,
+            expense.line_items[0].id,
+            description="x",
+            quantity=Decimal("1"),
+            unit_price=Decimal("1"),
+        )
+
+
+def test_delete_line_item_removes_it_and_recomputes_totals(application, organisation_id, account):
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    expense = application.expenses.add_line_item(
+        organisation_id, expense.id, description="First", quantity=Decimal("1"), unit_price=Decimal("10.00")
+    )
+    expense = application.expenses.add_line_item(
+        organisation_id, expense.id, description="Second", quantity=Decimal("1"), unit_price=Decimal("5.00")
+    )
+    first_id = expense.line_items[0].id
+
+    updated = application.expenses.delete_line_item(organisation_id, expense.id, first_id)
+    assert [item.description for item in updated.line_items] == ["Second"]
+    assert updated.total == Decimal("5.00")
+
+    fetched = application.expenses.get_expense(organisation_id, expense.id)
+    assert [item.description for item in fetched.line_items] == ["Second"]
+
+
+def test_delete_line_item_requires_existing_expense(application, organisation_id):
+    with pytest.raises(NotFound):
+        application.expenses.delete_line_item(organisation_id, "does-not-exist", "also-does-not-exist")
+
+
+def test_delete_line_item_requires_the_item_to_belong_to_the_expense(application, organisation_id, account):
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    with pytest.raises(NotFound):
+        application.expenses.delete_line_item(organisation_id, expense.id, "does-not-exist")
+
+
+def test_delete_line_item_from_another_organisation_raises_not_found(application, organisation_id, account):
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    expense = application.expenses.add_line_item(
+        organisation_id, expense.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    other_organisation_id = application.organisations.get_or_create_for_user("user-2")
+    with pytest.raises(NotFound):
+        application.expenses.delete_line_item(other_organisation_id, expense.id, expense.line_items[0].id)
+
+
 def test_get_missing_expense_raises_not_found(application, organisation_id):
     with pytest.raises(NotFound):
         application.expenses.get_expense(organisation_id, "does-not-exist")

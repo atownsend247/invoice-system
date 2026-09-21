@@ -793,6 +793,98 @@ def test_expense_round_trip_with_line_items(repo, organisation_id):
     assert fetched.total == Decimal("14.40")
 
 
+def test_update_expense_line_item_changes_fields_in_place(repo, organisation_id):
+    account = repo.create_account(_account(organisation_id))
+    expense = repo.create_expense(
+        Expense(
+            id=new_id(),
+            organisation_id=organisation_id,
+            account_id=account.id,
+            number=repo.next_expense_number(organisation_id),
+            currency="GBP",
+            issue_date=date(2026, 1, 1),
+            expense_date=date(2026, 1, 1),
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+    item_id = new_id()
+    repo.add_expense_line_item(
+        expense.id,
+        LineItem(
+            id=item_id,
+            description="Domain renewal",
+            quantity=Decimal("1"),
+            unit_price=Decimal("12.00"),
+            tax_rate=Decimal("0"),
+            position=0,
+        ),
+    )
+
+    repo.update_expense_line_item(
+        expense.id,
+        LineItem(
+            id=item_id,
+            description="Domain renewal (2 years)",
+            quantity=Decimal("2"),
+            unit_price=Decimal("12.00"),
+            tax_rate=Decimal("0.20"),
+            position=0,
+        ),
+    )
+
+    fetched = repo.get_expense(organisation_id, expense.id)
+    assert len(fetched.line_items) == 1
+    assert fetched.line_items[0].id == item_id
+    assert fetched.line_items[0].description == "Domain renewal (2 years)"
+    assert fetched.line_items[0].quantity == Decimal("2")
+    assert fetched.line_items[0].tax_rate == Decimal("0.20")
+
+
+def test_delete_expense_line_item_removes_only_that_row(repo, organisation_id):
+    account = repo.create_account(_account(organisation_id))
+    expense = repo.create_expense(
+        Expense(
+            id=new_id(),
+            organisation_id=organisation_id,
+            account_id=account.id,
+            number=repo.next_expense_number(organisation_id),
+            currency="GBP",
+            issue_date=date(2026, 1, 1),
+            expense_date=date(2026, 1, 1),
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+    keep_id = new_id()
+    remove_id = new_id()
+    repo.add_expense_line_item(
+        expense.id,
+        LineItem(
+            id=keep_id,
+            description="Keep",
+            quantity=Decimal("1"),
+            unit_price=Decimal("1"),
+            tax_rate=Decimal("0"),
+            position=0,
+        ),
+    )
+    repo.add_expense_line_item(
+        expense.id,
+        LineItem(
+            id=remove_id,
+            description="Remove",
+            quantity=Decimal("1"),
+            unit_price=Decimal("1"),
+            tax_rate=Decimal("0"),
+            position=1,
+        ),
+    )
+
+    repo.delete_expense_line_item(expense.id, remove_id)
+
+    fetched = repo.get_expense(organisation_id, expense.id)
+    assert [item.id for item in fetched.line_items] == [keep_id]
+
+
 def test_get_missing_expense_returns_none(repo, organisation_id):
     assert repo.get_expense(organisation_id, "does-not-exist") is None
 

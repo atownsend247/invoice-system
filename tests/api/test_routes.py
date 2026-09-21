@@ -433,6 +433,31 @@ def test_account_expense_flow(client, auth_headers):
     response = client.get(f"/expenses/{expense_id}", headers=auth_headers)
     assert response.status_code == 200
     assert [item["description"] for item in response.json()["line_items"]] == ["Domain renewal"]
+    item_id = response.json()["line_items"][0]["id"]
+
+    response = client.put(
+        f"/expenses/{expense_id}/line-items/{item_id}",
+        json={
+            "description": "Domain renewal (2yr)",
+            "quantity": "2",
+            "unit_price": "12.00",
+            "tax_rate": "0.20",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["description"] for item in body["line_items"]] == ["Domain renewal (2yr)"]
+    assert body["total"] == "28.80"
+
+    response = client.delete(f"/expenses/{expense_id}/line-items/{item_id}", headers=auth_headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["line_items"] == []
+    assert body["total"] == "0"
+
+    response = client.get(f"/expenses/{expense_id}", headers=auth_headers)
+    assert response.json()["line_items"] == []
 
     response = client.get("/expenses", headers=auth_headers)
     assert response.status_code == 200
@@ -525,6 +550,51 @@ def test_expense_from_another_login_user_returns_404(client, auth_headers, other
     expense_id = client.post("/expenses", json={"account_id": account_id}, headers=auth_headers).json()["id"]
 
     response = client.get(f"/expenses/{expense_id}", headers=other_auth_headers)
+    assert response.status_code == 404
+
+
+def test_expense_line_item_update_and_delete_require_the_item_to_exist(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    expense_id = client.post("/expenses", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+
+    response = client.put(
+        f"/expenses/{expense_id}/line-items/does-not-exist",
+        json={"description": "x", "quantity": "1", "unit_price": "1"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+    response = client.delete(f"/expenses/{expense_id}/line-items/does-not-exist", headers=auth_headers)
+    assert response.status_code == 404
+
+
+def test_expense_line_item_update_and_delete_from_another_login_user_return_404(
+    client, auth_headers, other_auth_headers
+):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    expense_id = client.post("/expenses", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+    item_id = client.post(
+        f"/expenses/{expense_id}/line-items",
+        json={"description": "x", "quantity": "1", "unit_price": "1"},
+        headers=auth_headers,
+    ).json()["line_items"][0]["id"]
+
+    response = client.put(
+        f"/expenses/{expense_id}/line-items/{item_id}",
+        json={"description": "y", "quantity": "1", "unit_price": "1"},
+        headers=other_auth_headers,
+    )
+    assert response.status_code == 404
+
+    response = client.delete(f"/expenses/{expense_id}/line-items/{item_id}", headers=other_auth_headers)
     assert response.status_code == 404
 
 

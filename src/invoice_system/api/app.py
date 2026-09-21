@@ -589,6 +589,37 @@ def add_expense_line_item(
     return ExpenseOut.from_model(expense)
 
 
+@domain_router.put("/expenses/{expense_id}/line-items/{item_id}", response_model=ExpenseOut)
+def update_expense_line_item(
+    expense_id: str,
+    item_id: str,
+    body: LineItemIn,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> ExpenseOut:
+    expense = application.expenses.update_line_item(
+        organisation_id,
+        expense_id,
+        item_id,
+        description=body.description,
+        quantity=Decimal(body.quantity),
+        unit_price=Decimal(body.unit_price),
+        tax_rate=Decimal(body.tax_rate),
+    )
+    return ExpenseOut.from_model(expense)
+
+
+@domain_router.delete("/expenses/{expense_id}/line-items/{item_id}", response_model=ExpenseOut)
+def delete_expense_line_item(
+    expense_id: str,
+    item_id: str,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> ExpenseOut:
+    expense = application.expenses.delete_line_item(organisation_id, expense_id, item_id)
+    return ExpenseOut.from_model(expense)
+
+
 @domain_router.get("/expenses/{expense_id}/pdf")
 def get_expense_pdf(
     expense_id: str,

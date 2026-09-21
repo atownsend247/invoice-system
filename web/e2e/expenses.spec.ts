@@ -97,6 +97,81 @@ test('line items can be added more than once - there is no draft/sent lifecycle'
   await expect(page.locator('tfoot')).toContainText('15.00 USD')
 })
 
+test('editing a line item pre-fills the form, relabels the button, and updates the row', async ({
+  authenticatedPage: page,
+  expense,
+}) => {
+  await page.goto(`/expenses/${expense.id}`)
+  await page.getByLabel('Description').fill('Domain renewal')
+  await page.getByLabel('Qty').fill('1')
+  await page.getByLabel('Unit price').fill('12.00')
+  await page.getByRole('button', { name: 'Add item' }).click()
+  await expect(page.getByText('Domain renewal')).toBeVisible()
+
+  const row = page.locator('tbody tr', { hasText: 'Domain renewal' })
+  await row.getByRole('button', { name: 'Edit' }).click()
+
+  await expect(page.getByLabel('Description')).toHaveValue('Domain renewal')
+  await expect(page.getByLabel('Qty')).toHaveValue('1')
+  await expect(page.getByLabel('Unit price')).toHaveValue('12.00')
+  await expect(page.getByRole('button', { name: 'Add item' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Update item' })).toBeVisible()
+
+  await page.getByLabel('Description').fill('Domain renewal (2 years)')
+  await page.getByLabel('Qty').fill('2')
+  await page.getByRole('button', { name: 'Update item' }).click()
+
+  await expect(page.getByText('Domain renewal (2 years)')).toBeVisible()
+  await expect(page.getByText('Domain renewal', { exact: true })).toHaveCount(0)
+  await expect(page.locator('tfoot')).toContainText('24.00 USD')
+  // Back to add-mode afterward.
+  await expect(page.getByRole('button', { name: 'Add item' })).toBeVisible()
+})
+
+test('cancelling an edit discards changes and returns to add-mode', async ({
+  authenticatedPage: page,
+  expense,
+}) => {
+  await page.goto(`/expenses/${expense.id}`)
+  await page.getByLabel('Description').fill('Domain renewal')
+  await page.getByLabel('Qty').fill('1')
+  await page.getByLabel('Unit price').fill('12.00')
+  await page.getByRole('button', { name: 'Add item' }).click()
+  await expect(page.getByText('Domain renewal')).toBeVisible()
+
+  await page.locator('tbody tr', { hasText: 'Domain renewal' }).getByRole('button', { name: 'Edit' }).click()
+  await page.getByLabel('Description').fill('Something else entirely')
+  await page.getByRole('button', { name: 'Cancel' }).click()
+
+  await expect(page.getByRole('button', { name: 'Add item' })).toBeVisible()
+  await expect(page.getByText('Domain renewal')).toBeVisible()
+  await expect(page.getByText('Something else entirely')).toHaveCount(0)
+})
+
+test('deleting a line item removes it and updates the totals', async ({
+  authenticatedPage: page,
+  expense,
+}) => {
+  await page.goto(`/expenses/${expense.id}`)
+  await page.getByLabel('Description').fill('First charge')
+  await page.getByLabel('Qty').fill('1')
+  await page.getByLabel('Unit price').fill('10.00')
+  await page.getByRole('button', { name: 'Add item' }).click()
+  await expect(page.getByText('First charge')).toBeVisible()
+
+  await page.getByLabel('Description').fill('Second charge')
+  await page.getByLabel('Qty').fill('1')
+  await page.getByLabel('Unit price').fill('5.00')
+  await page.getByRole('button', { name: 'Add item' }).click()
+  await expect(page.getByText('Second charge')).toBeVisible()
+
+  await page.locator('tbody tr', { hasText: 'First charge' }).getByRole('button', { name: 'Delete' }).click()
+
+  await expect(page.getByText('First charge')).toHaveCount(0)
+  await expect(page.getByText('Second charge')).toBeVisible()
+  await expect(page.locator('tfoot')).toContainText('5.00 USD')
+})
+
 test('viewing the PDF opens an in-page preview instead of downloading it', async ({
   authenticatedPage: page,
   expense,

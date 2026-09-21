@@ -1126,5 +1126,63 @@ flow," not a restructuring, whenever it's actually needed.
       the issue-date field, the activity timeline, and backdated
       conversion) updated and passing.
 
+## Phase 35 — Mobile-friendly web client (done)
+
+- [x] `web/` had no responsive CSS at all before this - a single
+      `@media (max-width: 640px)` block added to `index.css` covers the
+      header/nav, every data table, forms/buttons, and the PDF modal.
+- [x] `components/Layout.tsx` gained a hamburger toggle (`MenuIcon`/
+      `CloseIcon`, new in `components/icons.tsx`) that collapses the nav
+      links + theme toggle + settings + email + log out into a dropdown
+      `.app-nav-drawer` below 640px - `display: contents` on desktop keeps
+      it invisible in the box tree, unchanged from before. Every nav
+      link/log-out action closes the drawer on click so it doesn't get
+      stuck open across navigation.
+- [x] Every `<table>` in the app (list pages, account-detail sub-lists,
+      home dashboard, line items, expense attachments, registrars) is now
+      wrapped in a new `.table-scroll` container - columns/markup
+      unchanged, the wrapper just lets a table overflow and scroll
+      horizontally instead of squashing or breaking the page layout.
+- [x] Found and fixed a real bug during manual mobile-viewport
+      verification: the Settings page's five-tab bar had no wrap/scroll
+      handling and was forcing the *entire page* to overflow horizontally
+      at phone widths - fixed by applying the same horizontal-scroll
+      pattern to `.settings-tabs`.
+- [x] Verified via `tsc`, lint, the full frontend unit/e2e suites (desktop
+      viewport, unchanged pass rate), and a manual Playwright screenshot
+      pass at a 390×844 viewport across Home/Accounts/Quote
+      detail/Settings/the PDF modal.
+
+## Phase 36 — Editable/removable expense line items (done)
+
+- [x] Unlike `Quote`/`Invoice` (line items add-only, frozen by `send()`),
+      an `Expense` has no draft/sent lifecycle to justify that freeze, so
+      a mis-entered line item can now be fixed or removed directly -
+      `ExpenseService.update_line_item`/`delete_line_item` (`core.py`),
+      each fetching the expense, resolving the target item via a new
+      private `_get_line_item` helper (`NotFound` if it isn't one of the
+      expense's own items), mutating, and re-fetching - the same shape
+      every other expense mutation here already uses.
+      `update_line_item` re-validates `description`/`tax_rate` exactly
+      like `add_line_item` and keeps the item's existing `id`/`position`.
+- [x] `PUT`/`DELETE /expenses/{id}/line-items/{item_id}` (the delete route
+      returns the updated `ExpenseOut`, not `204`, so the caller gets
+      recomputed totals without a second request); CLI `expense
+      update-item`/`delete-item`. `expense add-item` now echoes the new
+      item's id (`Added line item <id>`) - needed to target a later
+      update/delete, and the only expense `add-*` command that does.
+- [x] Web UI: `components/LineItemsTable.tsx` (shared by Quote/Invoice/
+      Expense detail pages) gained optional `onEdit`/`onDelete` props -
+      only `ExpenseDetailPage.tsx` passes them, so Quote/Invoice line
+      items keep rendering with no actions column at all. Its add-item
+      form (`LineItemForm`) now also edits: a row's "Edit" button sets an
+      `editingItem` state that pre-fills the form (via a `key` prop change
+      that remounts it) and relabels the submit button "Update item"; a
+      "Cancel" button (visible only while editing) discards the in-
+      progress edit.
+- [x] Full backend suite (390 tests, 98%+ coverage) and full e2e suite (66
+      tests, including new expenses.spec.ts coverage for editing,
+      cancelling an edit, and deleting a line item) updated and passing.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

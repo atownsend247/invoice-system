@@ -140,6 +140,14 @@ export function ExpenseDetailPage() {
           await api.addExpenseLineItem(expense.id, input)
           refetch()
         }}
+        onEdit={async (itemId, input) => {
+          await api.updateExpenseLineItem(expense.id, itemId, input)
+          refetch()
+        }}
+        onDelete={async (itemId) => {
+          await api.deleteExpenseLineItem(expense.id, itemId)
+          refetch()
+        }}
       />
 
       {actionError && (

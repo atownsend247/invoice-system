@@ -915,6 +915,30 @@ class SqliteRepository:
             self._conn.commit()
             return item
 
+    def update_expense_line_item(self, expense_id: str, item: LineItem) -> LineItem:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE expense_line_items SET description = ?, quantity = ?, unit_price = ?, "
+                "tax_rate = ? WHERE id = ? AND expense_id = ?",
+                (
+                    item.description,
+                    str(item.quantity),
+                    str(item.unit_price),
+                    str(item.tax_rate),
+                    item.id,
+                    expense_id,
+                ),
+            )
+            self._conn.commit()
+            return item
+
+    def delete_expense_line_item(self, expense_id: str, item_id: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM expense_line_items WHERE id = ? AND expense_id = ?", (item_id, expense_id)
+            )
+            self._conn.commit()
+
     def next_expense_number(self, organisation_id: str) -> str:
         return self._next_number(f"{organisation_id}:expense", "EXP-")
 

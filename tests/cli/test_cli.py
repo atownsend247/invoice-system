@@ -669,6 +669,84 @@ def test_full_expense_attachment_cli_flow(tmp_path):
     assert "receipt.pdf" not in result.output
 
 
+def test_expense_update_item_and_delete_item(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "account",
+            "create",
+            "--user-id",
+            "1",
+            "--business-name",
+            "Acme",
+            "--email",
+            "a@b.test",
+            "--address-line1",
+            "1 Main St",
+        ],
+    )
+    account_id = _id_from(result.output, r"Created account (\S+):")
+
+    result = runner.invoke(
+        cli, [*_base_args(db_path), "expense", "create", "--user-id", "1", "--account-id", account_id]
+    )
+    expense_id = _id_from(result.output, r"Created expense (\S+) \(")
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "expense",
+            "add-item",
+            expense_id,
+            "--user-id",
+            "1",
+            "--description",
+            "Domain renewal",
+            "--quantity",
+            "1",
+            "--unit-price",
+            "12.00",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    item_id = _id_from(result.output, r"Added line item (\S+)")
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "expense",
+            "update-item",
+            expense_id,
+            item_id,
+            "--user-id",
+            "1",
+            "--description",
+            "Domain renewal (2yr)",
+            "--quantity",
+            "2",
+            "--unit-price",
+            "12.00",
+            "--tax-rate",
+            "0.20",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Updated line item" in result.output
+
+    result = runner.invoke(
+        cli, [*_base_args(db_path), "expense", "delete-item", expense_id, item_id, "--user-id", "1"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Deleted line item" in result.output
+
+
 def test_expense_attachment_add_rejects_a_non_pdf(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()

@@ -573,7 +573,16 @@ Four separate things are easy to conflate here — don't:
   counter pattern as `Quote.number`/`Invoice.number`) immediately rather
   than deferring that to a later `send()`, and `add_line_item` isn't
   gated behind a status check the way `QuoteService.add_line_item`
-  requires `draft` - a line item can be added at any time. Line items
+  requires `draft` - a line item can be added, edited
+  (`ExpenseService.update_line_item`), or removed
+  (`ExpenseService.delete_line_item`) at any time - unlike
+  `Quote`/`Invoice`, where a line item is add-only and frozen by `send()`.
+  Both new methods share the "fetch, 404 via a private `_get_line_item`
+  helper if `item_id` isn't one of the expense's own items, mutate,
+  re-fetch" shape every other expense mutation here already uses;
+  `update_line_item` re-validates `description`/`tax_rate` exactly like
+  `add_line_item` and keeps the item's existing `id`/`position` (editing
+  never reorders). Line items
   share the same shape as Quote/Invoice's (`LineItem`, including a
   per-line `tax_rate`) rather than a simpler description+amount shape,
   since VAT paid on a business expense may be separately reclaimable.
@@ -586,20 +595,36 @@ Four separate things are easy to conflate here — don't:
   `GET /expenses/{id}/pdf` uses the same `render_expense_pdf` pattern as
   quotes/invoices in `pdf.py`, but with no "Status:" line - `_render`'s
   `status` param is `None`-able specifically for this case - and no due/
-  expiry date. CLI: `expense create/list/add-item/pdf/set-date`, same
-  `--user-id`-resolves-organisation pattern as `quote`/`invoice`. Web UI:
+  expiry date. CLI: `expense
+  create/list/add-item/update-item/delete-item/pdf/set-date`, same
+  `--user-id`-resolves-organisation pattern as `quote`/`invoice`
+  (`add-item` echoes the new item's id, needed to target a later
+  `update-item`/`delete-item` call - the only expense `add-*` command
+  that does, since it's the only line-item-bearing entity with a way to
+  mutate one afterward). Web UI:
   listed at the bottom of `AccountDetailPage.tsx` with a "New expense"
   link to `ExpenseNewPage.tsx` (same create-form pattern as
   `QuoteNewPage.tsx`, plus an "Expense date" field pre-filled with today's
   *local* date - deliberately not `toISOString()`, which is UTC and can
   show the wrong calendar date near midnight);
-  `ExpenseDetailPage.tsx` (`/expenses/:id`) reuses
-  `LineItemsTable`/`PdfViewerModal` unchanged but has no status badge or
-  send/convert actions, since there's no lifecycle to show one for - it
-  does have a small inline "Edit" toggle next to the expense date (a
-  lightweight toggle, not the heavier `initial`/`onSubmit`/`onDone`
-  form-component pattern `DomainForm`/`RegistrarForm` use, since this is
-  the one editable field on the whole page).
+  `ExpenseDetailPage.tsx` (`/expenses/:id`) reuses `PdfViewerModal`
+  unchanged but has no status badge or send/convert actions, since
+  there's no lifecycle to show one for - it does have a small inline
+  "Edit" toggle next to the expense date (a lightweight toggle, not the
+  heavier `initial`/`onSubmit`/`onDone` form-component pattern
+  `DomainForm`/`RegistrarForm` use, since this is the one editable field
+  on the whole page other than line items). `LineItemsTable.tsx` (shared
+  with `QuoteDetailPage.tsx`/`InvoiceDetailPage.tsx`) gains `onEdit`/
+  `onDelete` props that only `ExpenseDetailPage.tsx` passes - Quote/
+  Invoice keep rendering with no actions column at all, since those stay
+  add-only. Its `AddLineItemForm` (now the dual-purpose `LineItemForm`)
+  owns an `editingItem: LineItem | null` piece of state itself, keyed via
+  React's `key` prop (`key={editingItem?.id ?? 'add'}`) so switching which
+  item (or back to add-mode) remounts the form and re-initialises its
+  fields from `editingItem` - a row's "Edit" button sets it, relabelling
+  the submit button "Update item" and routing submission through `onEdit`
+  instead of `onAdd` while set; a "Cancel" button (visible only while
+  editing) clears it without submitting.
 - **Expense attachments** (`ExpenseAttachment` in models.py) are
   supplementary PDFs (e.g. a scanned receipt) uploaded against an expense
   — addable at any time, same no-lifecycle reasoning as expense line

@@ -414,6 +414,21 @@ export function addExpenseLineItem(
   return request(`/expenses/${expenseId}/line-items`, { method: 'POST', body: JSON.stringify(input) })
 }
 
+export function updateExpenseLineItem(
+  expenseId: string,
+  itemId: string,
+  input: { description: string; quantity: string; unit_price: string; tax_rate?: string },
+): Promise<Expense> {
+  return request(`/expenses/${expenseId}/line-items/${itemId}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  })
+}
+
+export function deleteExpenseLineItem(expenseId: string, itemId: string): Promise<Expense> {
+  return request(`/expenses/${expenseId}/line-items/${itemId}`, { method: 'DELETE' })
+}
+
 export function downloadExpensePdf(expense: Expense): Promise<void> {
   return downloadPdf(`/expenses/${expense.id}/pdf`, `${expense.number}.pdf`)
 }

@@ -628,7 +628,7 @@ def expense_add_item(
     unit_price: Decimal,
     tax_rate: Decimal,
 ) -> None:
-    application.expenses.add_line_item(
+    expense = application.expenses.add_line_item(
         _organisation_id(application, user_id),
         expense_id,
         description=description,
@@ -636,7 +636,54 @@ def expense_add_item(
         unit_price=unit_price,
         tax_rate=tax_rate,
     )
-    click.echo("Added line item")
+    click.echo(f"Added line item {expense.line_items[-1].id}")
+
+
+@expense.command("update-item")
+@click.argument("expense_id")
+@click.argument("item_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option("--description", required=True)
+@click.option("--quantity", required=True, type=Decimal)
+@click.option("--unit-price", required=True, type=Decimal)
+@click.option(
+    "--tax-rate",
+    default="0",
+    type=Decimal,
+    show_default=True,
+    help="VAT/tax rate as a fraction, e.g. 0.20 for 20%.",
+)
+@click.pass_obj
+def expense_update_item(
+    application: Application,
+    expense_id: str,
+    item_id: str,
+    user_id: str,
+    description: str,
+    quantity: Decimal,
+    unit_price: Decimal,
+    tax_rate: Decimal,
+) -> None:
+    application.expenses.update_line_item(
+        _organisation_id(application, user_id),
+        expense_id,
+        item_id,
+        description=description,
+        quantity=quantity,
+        unit_price=unit_price,
+        tax_rate=tax_rate,
+    )
+    click.echo("Updated line item")
+
+
+@expense.command("delete-item")
+@click.argument("expense_id")
+@click.argument("item_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.pass_obj
+def expense_delete_item(application: Application, expense_id: str, item_id: str, user_id: str) -> None:
+    application.expenses.delete_line_item(_organisation_id(application, user_id), expense_id, item_id)
+    click.echo("Deleted line item")
 
 
 @expense.command("pdf")
