@@ -606,9 +606,13 @@ Four separate things are easy to conflate here — don't:
   "Saved."/error message from one tab kept showing after switching to an
   unrelated one (found from a real bug report: it looked like the
   message was about whatever tab was now on screen, since there's no
-  visual link to which tab it actually came from). See the `Registrar`
-  Convention below for the related fix hiding this trailing block
-  entirely on the Registrars tab.
+  visual link to which tab it actually came from). This page used to have
+  a fifth "Registrars" tab too, rendered outside `BusinessProfileForm`'s
+  own `<form>` with its own extra guard to keep that form's trailing Save
+  button/message from also showing on it - Registrars moved to the
+  standalone Domains page (see the `Domain`/`Registrar` Convention below),
+  so that guard was removed as dead weight: every tab here is genuinely
+  part of the shared form again.
 - `AccountService.update_account(account_id, ...)` is a full replace, not a
   partial patch — same required fields (`business_name`/`email`/
   `address_line1`) and validation as `create_account`, mirroring
@@ -624,9 +628,11 @@ Four separate things are easy to conflate here — don't:
   the account's own fields (an inline "Edit" toggle reveals the same
   `AccountForm` used for "New account" on `AccountsPage.tsx`, extracted to
   `components/AccountForm.tsx` so both pages share it) plus that account's
-  quotes, invoices, expenses, and domains (see below), each listed
-  newest-issued-first - domains are the one exception, listed
-  soonest-expiry-first instead (see the `Domain` bullet below). `AccountsPage.tsx`
+  quotes, invoices, and expenses, each listed newest-issued-first, plus
+  whichever domains are currently *linked* to it (see the `Domain` bullet
+  below - domains are organisation-wide now, not created through an
+  account, so this section only shows the link/unlink relationship, not
+  full domain management), listed soonest-expiry-first instead. `AccountsPage.tsx`
   also has a search box (`accountMatchesQuery` in that file, unit-tested
   in `AccountsPage.test.ts`) that filters client-side against every shown
   field, and each row is clickable (`role="link"`, keyboard-operable via
@@ -635,78 +641,97 @@ Four separate things are easy to conflate here — don't:
   it doesn't also trigger the row's own navigation. Creating a new account
   navigates straight to its detail page on success, rather than staying on
   the list.
-- `Domain` (`core.py`'s `DomainService`) - see `docs/api.md`'s `Domain`
-  Convention for the field/route shape (required fields, no format
-  validation, plain-string `registrar` not a FK). Implementation notes
-  that convention doesn't cover: structurally closest to
-  `ExpenseAttachment`, not `Expense` - **no `organisation_id` column of
-  its own**, tenant ownership resolved via
-  `AccountService`/`self._repository.get_account(...)` first (`NotFound`
-  if missing/wrong organisation), same reasoning as `ExpenseAttachment`'s
-  docstring. `DomainService.update_domain` is a full replace mirroring
-  `AccountService.update_account`'s PUT semantics, unlike an attachment's
-  add-only shape. `SqliteRepository.list_domains` orders
-  **soonest-expiry-first**, not this app's usual newest-created-first -
-  "what needs attention soonest" is the useful default here. Web UI: a
-  "Domains" section on `AccountDetailPage.tsx` (no separate route/page - a
-  domain has no sub-resources or PDF to justify one), an inline "Add
-  domain" toggle revealing `components/DomainForm.tsx` (same
-  `initial`/`submitLabel`/`onSubmit`/`onDone`/`onCancel` prop shape as
-  `AccountForm.tsx`, reused for add and per-row edit).
-- `Registrar` (`core.py`'s `RegistrarService`) - see `docs/api.md`'s
-  `Registrar` Convention for the field/route shape (organisation-scoped
-  full CRUD). `SqliteRepository.list_registrars` orders
-  **alphabetically** (`ORDER BY name COLLATE NOCASE`), the useful default
-  for a dropdown - yet another `list_*` method with its own non-default
-  ordering, see `Domain`'s soonest-expiry-first choice above.
-  **`RegistrarUsage`** (models.py) - a `Registrar` alongside how many
-  `Domain`s currently name it and how many distinct `Account`s those
-  domains belong to, computed at request time
-  (`RegistrarService.list_registrars_with_usage`/`get_registrar_usage`,
-  backed by `SqliteRepository.count_domains_by_registrar` - one `GROUP
-  BY domains.registrar` query joined to `accounts` for organisation
-  scoping, since `Domain` has no `organisation_id` of its own) - matched
-  by the registrar's *current* `name` against `Domain.registrar` (a
-  plain string, not a FK), so a domain still naming an old registrar
-  name from before a rename doesn't count towards the renamed
-  registrar's usage, same name-drift tradeoff `DomainForm.tsx` already
-  handles at the UI layer (see below). `delete_registrar` refuses
-  (`Conflict`, 409, `errors.py`) to delete a registrar with
-  `domain_count > 0` - an application-level guard, not a database
-  constraint (still no FK, no cascade to worry about at that level) -
-  the web UI additionally disables the row's "Delete" button client-side
-  once `domain_count > 0` (with a `title` explaining why), rather than
-  only surfacing the server's rejection after a click. `GET /registrars`
-  always includes `domain_count`/`account_count` in `RegistrarOut` (0/0
-  for a just-created registrar) - the same response also backs
-  `DomainForm.tsx`'s dropdown, which just ignores those two fields.
-  Web UI: a fifth Settings tab, "Registrars" - deliberately **not** a fifth
-  `BusinessProfileForm` tabpanel (`SettingsPage.tsx`): it's a
-  self-contained list with its own immediate add/edit/delete actions,
-  each backed by its own `<form>` (`components/RegistrarForm.tsx`, same
-  reusable prop shape as `AccountForm.tsx`/`DomainForm.tsx`) - nesting
-  those inside the profile tabs' own shared `<form>`/"Save settings"
-  button would be invalid HTML (a `<form>` can't nest inside another) and
-  semantically wrong (this tab's actions are immediate, not deferred to a
-  save button) - `BusinessProfileForm`'s own trailing error/"Saved."
-  message and "Save settings" button are explicitly hidden while this
-  tab is active (`activeTab !== 'Registrars'`), since they'd otherwise
-  still render below the Registrars panel (that trailing block sits
-  outside all five tabpanels, so no individual tabpanel's own `hidden`
-  covers it - found the hard way, from a real bug report: it was visible
-  right below the registrars table, implying this were also a save-button
-  tab). The shared tab bar/`activeTab` state now lives in
-  `SettingsPage` itself, not inside `BusinessProfileForm` - the Registrars
-  panel renders as `BusinessProfileForm`'s sibling, outside its `<form>`,
-  switched by the same tab bar. `DomainForm.tsx` takes the registrar list
-  as a `registrars` prop (fetched once by `AccountDetailPage.tsx`, not
-  per form instance) - if a domain's already-recorded `registrar` string
-  isn't in the current list (predates this feature, or its matching
-  `Registrar` was since renamed/deleted), that value is prepended as an
-  extra `<option>` so opening "Edit" never silently changes it; if the
-  list is empty (and there's no such value to fall back to), the field
-  and submit button are disabled with a hint pointing at Settings, rather
-  than presenting a dead-end empty `<select>`.
+- **`Domain`/`Registrar`** (`core.py`'s `DomainService`/`RegistrarService`)
+  are the standalone "Domains" page (`web/src/pages/DomainsPage.tsx`, nav
+  link between Accounts and Quotes) - the central place to manage both,
+  moved out of being scattered across `AccountDetailPage.tsx` (domains)
+  and a Settings tab (registrars). See `docs/api.md`'s `Domain`/
+  `Registrar` Conventions for the field/route shape (required fields, no
+  format validation, plain-string `Domain.registrar` not a FK to
+  `Registrar`).
+  - `Domain` is organisation-scoped directly (its own `organisation_id`,
+    migration 21) and structurally close to `Registrar` now, **not**
+    resolved through a parent `Account` the way it used to be - a domain
+    is created independently on the Domains page and *optionally* linked
+    to one `Account` at a time (`account_id` nullable). Linking/unlinking
+    is a dedicated action (`DomainService.link_domain`/`unlink_domain`,
+    `POST /domains/{id}/link|unlink`), kept deliberately separate from
+    `update_domain` (a full replace of the domain's own fields only,
+    mirroring `AccountService.update_account`'s PUT semantics, but never
+    touches `account_id`) - same "dedicated action, not bundled into a
+    general update" shape as `InvoiceService.pay`/`void` or
+    `BusinessProfileService`'s `set_next_number` actions elsewhere in this
+    app. Re-linking an already-linked domain to a *different* account is
+    allowed directly (no forced unlink-first step) - matches a domain
+    being transferred to a different client, confirmed with the user
+    before building this (also confirmed: a domain existing unlinked, with
+    no account at all, is a valid, expected state - e.g. bought
+    speculatively). `SqliteRepository.list_domains` orders
+    **soonest-expiry-first**, not this app's usual newest-created-first -
+    "what needs attention soonest" is the useful default here.
+  - **`DomainWithAccount`** (models.py) - a `Domain` alongside the linked
+    `Account`'s `business_name` (`None` if unlinked), computed at request
+    time (every `DomainService` mutating method returns this, not a bare
+    `Domain`, via a shared private `_with_account_name` helper - one
+    consistent return shape) so the Domains page can show at a glance
+    which account (if any) a domain belongs to without an N+1 lookup per
+    row. `GET /domains` supports an optional `?account_id=` filter, same
+    "optional filter on an organisation-scoped list" shape
+    `QuoteService.list_quotes`'s own `account_id` filter already
+    established - `AccountDetailPage.tsx` uses it for "this account's own
+    linked domains", and the Domains page's "link" picker fetches the
+    unfiltered list and filters client-side to `account_id === null` for
+    "available to link".
+  - **`RegistrarUsage`** (models.py) - a `Registrar` alongside how many
+    `Domain`s currently name it and how many distinct `Account`s those
+    domains belong to, computed at request time
+    (`RegistrarService.list_registrars_with_usage`/`get_registrar_usage`,
+    backed by `SqliteRepository.count_domains_by_registrar` - one `GROUP
+    BY registrar` query filtered directly by `domains.organisation_id`,
+    no join needed now that `Domain` carries its own) - matched by the
+    registrar's *current* `name` against `Domain.registrar` (a plain
+    string, not a FK), so a domain still naming an old registrar name
+    from before a rename doesn't count towards the renamed registrar's
+    usage, same name-drift tradeoff `DomainForm.tsx` already handles at
+    the UI layer (see below). `delete_registrar` refuses (`Conflict`,
+    409, `errors.py`) to delete a registrar with `domain_count > 0` - an
+    application-level guard, not a database constraint (still no FK, no
+    cascade to worry about at that level) - the web UI additionally
+    disables the row's "Delete" button client-side once `domain_count >
+    0` (with a `title` explaining why), rather than only surfacing the
+    server's rejection after a click. `GET /registrars` always includes
+    `domain_count`/`account_count` in `RegistrarOut` (0/0 for a
+    just-created registrar).
+  - Web UI: `DomainsPage.tsx` is two stacked sections on one page (no
+    sub-tabs - deliberately avoids reintroducing the shared-tab-state
+    issues just fixed on Settings, see above) - a "Domains" section (full
+    CRUD: "Add domain" reveals `components/DomainForm.tsx`, same
+    `initial`/`submitLabel`/`onSubmit`/`onDone`/`onCancel` prop shape as
+    `AccountForm.tsx`, reused for add and per-row edit; the table's
+    "Linked account" column links to that account's own page, or shows
+    "Unlinked") and a "Registrars" section (self-contained list with its
+    own immediate add/edit/delete actions, each backed by its own
+    `<form>` - `components/RegistrarForm.tsx`, same reusable prop shape
+    as `AccountForm.tsx`/`DomainForm.tsx`). `DomainForm.tsx` takes the
+    registrar list as a `registrars` prop (fetched once by the caller,
+    not per form instance) - if a domain's already-recorded `registrar`
+    string isn't in the current list (predates this feature, or its
+    matching `Registrar` was since renamed/deleted), that value is
+    prepended as an extra `<option>` so opening "Edit" never silently
+    changes it; if the list is empty (and there's no such value to fall
+    back to), the field and submit button are disabled with a hint
+    pointing at the Domains page's own Registrars section, rather than
+    presenting a dead-end empty `<select>`.
+  - `AccountDetailPage.tsx`'s own "Domains" section is link/unlink only,
+    not create/edit/delete - fetches this account's linked domains
+    (`api.listDomains({ accountId })`) and, separately, every
+    organisation domain (to derive the unlinked ones for the "Link
+    domain" picker - a self-contained immediate action, same shape as
+    `SettingsPage.tsx`'s `NextNumberAction`). Each row's only action is
+    "Unlink" (`api.unlinkDomain`) - it clears the link, it doesn't delete
+    the domain, so it stays available to link elsewhere; full domain
+    management (editing its own fields, deleting it outright) only lives
+    on the Domains page now.
 - `ExpenseService` (`core.py`) tracks costs incurred against an `Account` -
   e.g. a domain renewal paid on a client's behalf. Deliberately no draft/
   sent status field, unlike `Quote`/`Invoice`: an expense is a record of
@@ -955,7 +980,7 @@ Four separate things are easy to conflate here — don't:
   flatten it again once a real database exists somewhere; that's exactly
   the scenario forward-only migrations exist to handle instead. Migration 7
   is the UUID reset (see `docs/data-model.md`'s "Opaque ids"). **The full
-  migration-by-migration history (what each of the current twenty
+  migration-by-migration history (what each of the current twenty-one
   actually did) lives in `docs/data-model.md`'s opening paragraph, not
   here** — update that list, not this one, when you add a new migration.
 - Storage is a single shared SQLite connection/file — **serialise every

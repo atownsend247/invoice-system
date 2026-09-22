@@ -604,4 +604,37 @@ MIGRATIONS: list[str] = [
     ALTER TABLE business_profiles ADD COLUMN expense_number_prefix TEXT NOT NULL DEFAULT 'EXP-';
     ALTER TABLE business_profiles ADD COLUMN expense_number_digits INTEGER NOT NULL DEFAULT 4;
     """,
+    """
+    -- Domains become a first-class, organisation-scoped resource instead
+    -- of always being created through a parent Account (see models.Domain,
+    -- core.py's DomainService) - a domain can now exist unlinked, later
+    -- linked to an Account via DomainService.link_domain. Needs a
+    -- rebuild-and-swap, not a plain ADD COLUMN: account_id relaxes from
+    -- NOT NULL to nullable, which SQLite can't ALTER COLUMN in place (see
+    -- CLAUDE.md's migrations gotcha - same shape as migration 4).
+    -- organisation_id (a new column - domains never had one, tenant
+    -- ownership was resolved through the parent account) is backfilled via
+    -- a join to each domain's current account - every existing row already
+    -- has a non-null account_id today, so this can't produce an orphan.
+    CREATE TABLE domains_new (
+        id TEXT PRIMARY KEY,
+        organisation_id TEXT NOT NULL REFERENCES organisations(id),
+        account_id TEXT REFERENCES accounts(id),
+        domain_name TEXT NOT NULL,
+        expiry_date TEXT NOT NULL,
+        registrar TEXT NOT NULL,
+        auto_renew INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    INSERT INTO domains_new (id, organisation_id, account_id, domain_name, expiry_date,
+        registrar, auto_renew, created_at, updated_at)
+    SELECT d.id, a.organisation_id, d.account_id, d.domain_name, d.expiry_date,
+        d.registrar, d.auto_renew, d.created_at, d.updated_at
+    FROM domains d JOIN accounts a ON a.id = d.account_id;
+    DROP TABLE domains;
+    ALTER TABLE domains_new RENAME TO domains;
+    CREATE INDEX idx_domains_organisation ON domains (organisation_id);
+    CREATE INDEX idx_domains_account ON domains (account_id);
+    """,
 ]

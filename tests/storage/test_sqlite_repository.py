@@ -327,6 +327,71 @@ def test_migration_17_adds_expense_date_and_backfills_from_issue_date(tmp_path):
     repository.close()
 
 
+def test_migration_21_makes_domains_organisation_scoped_and_preserves_data(tmp_path):
+    # Freeze a database at migration 20 (before domains.organisation_id
+    # existed and before account_id was nullable - see schema.py) with an
+    # existing domain in the old account-required shape, then confirm
+    # migration 21 backfills organisation_id from that domain's own
+    # account and preserves every other field. Only migration 21's own
+    # script is applied - see the migration 5 test above for why not
+    # repository.migrate().
+    db_path = tmp_path / "frozen.db"
+    conn = sqlite3.connect(str(db_path))
+    for version, script in enumerate(MIGRATIONS[:20], start=1):
+        conn.executescript(script)
+        conn.execute(f"PRAGMA user_version = {version}")
+    conn.commit()
+
+    org_id = new_id()
+    account_id = new_id()
+    domain_id = new_id()
+    now = datetime(2026, 1, 1, tzinfo=UTC).isoformat()
+    conn.execute("INSERT INTO organisations (id, name, created_at) VALUES (?, 'Org A', ?)", (org_id, now))
+    conn.execute(
+        "INSERT INTO accounts (id, organisation_id, business_name, email, address_line1, created_at) "
+        "VALUES (?, ?, 'Acme', 'a@b.test', '1 Main St', ?)",
+        (account_id, org_id, now),
+    )
+    conn.execute(
+        "INSERT INTO domains (id, account_id, domain_name, expiry_date, registrar, auto_renew, "
+        "created_at, updated_at) VALUES (?, ?, 'acme.test', '2027-01-01', '123-Reg', 1, ?, ?)",
+        (domain_id, account_id, now, now),
+    )
+    conn.commit()
+
+    conn.executescript(MIGRATIONS[20])
+    conn.execute("PRAGMA user_version = 21")
+    conn.commit()
+    conn.close()
+
+    repository = SqliteRepository(db_path)
+    fetched = repository.get_domain(org_id, domain_id)
+    assert fetched is not None
+    assert fetched.organisation_id == org_id
+    assert fetched.account_id == account_id
+    assert fetched.domain_name == "acme.test"
+    assert fetched.registrar == "123-Reg"
+    assert fetched.auto_renew is True
+
+    # The new nullable account_id actually works post-migration, not just
+    # the backfilled column - the whole point of this rebuild.
+    unlinked = repository.create_domain(
+        Domain(
+            id=new_id(),
+            organisation_id=org_id,
+            account_id=None,
+            domain_name="unlinked.test",
+            expiry_date=date(2027, 6, 1),
+            registrar="GoDaddy",
+            auto_renew=False,
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+            updated_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+    assert unlinked.account_id is None
+    repository.close()
+
+
 def test_get_organisation_id_for_user_returns_none_when_unset(repo):
     assert repo.get_organisation_id_for_user("user-1") is None
 
@@ -991,10 +1056,11 @@ def test_list_expenses_filters_by_account(repo, organisation_id):
     assert len(repo.list_expenses(organisation_id, account_id=account.id)) == 1
 
 
-def _domain(account_id: str, **overrides: object) -> Domain:
+def _domain(organisation_id: str, **overrides: object) -> Domain:
     defaults: dict = {
         "id": new_id(),
-        "account_id": account_id,
+        "organisation_id": organisation_id,
+        "account_id": None,
         "domain_name": "acme.test",
         "expiry_date": date(2027, 1, 1),
         "registrar": "123-Reg",
@@ -1007,37 +1073,61 @@ def _domain(account_id: str, **overrides: object) -> Domain:
 
 
 def test_domain_crud_and_tenant_scoping(repo, organisation_id):
+    other_organisation = repo.create_organisation(
+        Organisation(id=new_id(), name="Other Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
+    )
     account = repo.create_account(_account(organisation_id))
     other_account = repo.create_account(_account(organisation_id, business_name="Other"))
 
-    sooner = repo.create_domain(_domain(account.id, domain_name="sooner.test", expiry_date=date(2027, 1, 1)))
-    repo.create_domain(_domain(account.id, domain_name="later.test", expiry_date=date(2027, 6, 1)))
-    repo.create_domain(_domain(other_account.id, domain_name="unrelated.test"))
+    sooner = repo.create_domain(
+        _domain(
+            organisation_id, account_id=account.id, domain_name="sooner.test", expiry_date=date(2027, 1, 1)
+        )
+    )
+    repo.create_domain(
+        _domain(
+            organisation_id, account_id=account.id, domain_name="later.test", expiry_date=date(2027, 6, 1)
+        )
+    )
+    repo.create_domain(_domain(organisation_id, domain_name="unlinked.test", expiry_date=date(2027, 9, 1)))
+    repo.create_domain(_domain(other_organisation.id, domain_name="unrelated.test"))
 
-    # account_id-scoped, and ordered soonest-expiry-first (see
+    # organisation_id-scoped, and ordered soonest-expiry-first (see
     # models.Domain) - not the newest-created-first convention every other
-    # list_* method in this file uses.
-    domains = repo.list_domains(account.id)
-    assert [d.domain_name for d in domains] == ["sooner.test", "later.test"]
+    # list_* method in this file uses. Includes the unlinked domain (no
+    # account_id), with a null account_business_name.
+    domains = repo.list_domains(organisation_id)
+    assert [d.domain.domain_name for d in domains] == ["sooner.test", "later.test", "unlinked.test"]
+    unlinked = next(d for d in domains if d.domain.domain_name == "unlinked.test")
+    assert unlinked.account_name is None
+    linked = next(d for d in domains if d.domain.domain_name == "sooner.test")
+    assert linked.account_name == account.business_name
 
-    fetched = repo.get_domain(account.id, sooner.id)
+    # account_id filter narrows to just that account's own domains.
+    filtered = repo.list_domains(organisation_id, account_id=account.id)
+    assert [d.domain.domain_name for d in filtered] == ["sooner.test", "later.test"]
+
+    fetched = repo.get_domain(organisation_id, sooner.id)
     assert fetched is not None
     assert fetched.domain_name == "sooner.test"
 
-    # Scoped by account_id - another account (even in the same
-    # organisation) can't fetch this one's domain by id.
-    assert repo.get_domain(other_account.id, sooner.id) is None
+    # Scoped by organisation_id - another organisation can't fetch this
+    # one's domain by id, even though tenant ownership used to be resolved
+    # through the (same-organisation) account instead.
+    assert repo.get_domain(other_organisation.id, sooner.id) is None
 
     sooner.domain_name = "renamed.test"
     sooner.registrar = "GoDaddy"
     sooner.auto_renew = True
+    sooner.account_id = other_account.id
     updated = repo.update_domain(sooner)
     assert updated.domain_name == "renamed.test"
-    assert repo.get_domain(account.id, sooner.id).registrar == "GoDaddy"
-    assert repo.get_domain(account.id, sooner.id).auto_renew is True
+    assert repo.get_domain(organisation_id, sooner.id).registrar == "GoDaddy"
+    assert repo.get_domain(organisation_id, sooner.id).auto_renew is True
+    assert repo.get_domain(organisation_id, sooner.id).account_id == other_account.id
 
-    repo.delete_domain(account.id, sooner.id)
-    assert repo.get_domain(account.id, sooner.id) is None
+    repo.delete_domain(organisation_id, sooner.id)
+    assert repo.get_domain(organisation_id, sooner.id) is None
 
 
 def _registrar(organisation_id: str, **overrides: object) -> Registrar:
@@ -1092,25 +1182,37 @@ def test_count_domains_by_registrar_groups_by_name_and_scopes_by_organisation(re
     )
     account = repo.create_account(_account(organisation_id))
     other_account = repo.create_account(_account(organisation_id, business_name="Other"))
-    unrelated_account = repo.create_account(_account(other_organisation.id, business_name="Elsewhere"))
+    repo.create_account(_account(other_organisation.id, business_name="Elsewhere"))
 
-    repo.create_domain(_domain(account.id, domain_name="a.test", registrar="GoDaddy"))
-    repo.create_domain(_domain(account.id, domain_name="b.test", registrar="GoDaddy"))
-    repo.create_domain(_domain(other_account.id, domain_name="c.test", registrar="GoDaddy"))
-    repo.create_domain(_domain(account.id, domain_name="d.test", registrar="123-Reg"))
+    repo.create_domain(
+        _domain(organisation_id, account_id=account.id, domain_name="a.test", registrar="GoDaddy")
+    )
+    repo.create_domain(
+        _domain(organisation_id, account_id=account.id, domain_name="b.test", registrar="GoDaddy")
+    )
+    repo.create_domain(
+        _domain(organisation_id, account_id=other_account.id, domain_name="c.test", registrar="GoDaddy")
+    )
+    repo.create_domain(
+        _domain(organisation_id, account_id=account.id, domain_name="d.test", registrar="123-Reg")
+    )
+    # An unlinked domain (no account_id) still counts towards
+    # domain_count, just not account_count - COUNT(DISTINCT account_id)
+    # ignores the NULL on its own (see count_domains_by_registrar).
+    repo.create_domain(_domain(organisation_id, domain_name="e.test", registrar="GoDaddy"))
     # A domain in a *different* organisation naming the same registrar
-    # string must not be counted against this organisation's total -
-    # Domain has no organisation_id of its own (see models.Domain), so
-    # this is the scoping the join has to get right.
-    repo.create_domain(_domain(unrelated_account.id, domain_name="e.test", registrar="GoDaddy"))
+    # string must not be counted against this organisation's total - this
+    # is the scoping the WHERE clause has to get right now that
+    # domains.organisation_id is a real column (migration 21).
+    repo.create_domain(_domain(other_organisation.id, domain_name="f.test", registrar="GoDaddy"))
 
     counts = repo.count_domains_by_registrar(organisation_id)
-    assert counts["GoDaddy"] == (3, 2)
+    assert counts["GoDaddy"] == (4, 2)
     assert counts["123-Reg"] == (1, 1)
-    # The fifth "GoDaddy" domain belongs to a different organisation
+    # The sixth "GoDaddy" domain belongs to a different organisation
     # entirely - it must land in *that* organisation's own count, not
     # inflate this one's.
-    assert repo.count_domains_by_registrar(other_organisation.id) == {"GoDaddy": (1, 1)}
+    assert repo.count_domains_by_registrar(other_organisation.id) == {"GoDaddy": (1, 0)}
 
 
 def test_count_domains_by_registrar_omits_registrars_with_no_domains(repo, organisation_id):

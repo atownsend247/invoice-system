@@ -32,7 +32,9 @@ from .schemas import (
     AccountOut,
     BusinessProfileIn,
     BusinessProfileOut,
+    DomainCreateIn,
     DomainIn,
+    DomainLinkIn,
     DomainOut,
     ExpenseAttachmentOut,
     ExpenseCreateIn,
@@ -224,37 +226,35 @@ def update_account(
     return AccountOut.from_model(account)
 
 
-@domain_router.post("/accounts/{account_id}/domains", response_model=DomainOut, status_code=201)
+@domain_router.post("/domains", response_model=DomainOut, status_code=201)
 def create_domain(
-    account_id: str,
-    body: DomainIn,
+    body: DomainCreateIn,
     application: Application = Depends(get_application),
     organisation_id: str = Depends(get_organisation_id),
 ) -> DomainOut:
     domain = application.domains.create_domain(
         organisation_id,
-        account_id,
         domain_name=body.domain_name,
         expiry_date=body.expiry_date,
         registrar=body.registrar,
         auto_renew=body.auto_renew,
+        account_id=body.account_id,
     )
-    return DomainOut.from_model(domain)
+    return DomainOut.from_with_account(domain)
 
 
-@domain_router.get("/accounts/{account_id}/domains", response_model=list[DomainOut])
+@domain_router.get("/domains", response_model=list[DomainOut])
 def list_domains(
-    account_id: str,
+    account_id: str | None = None,
     application: Application = Depends(get_application),
     organisation_id: str = Depends(get_organisation_id),
 ) -> list[DomainOut]:
-    domains = application.domains.list_domains(organisation_id, account_id)
-    return [DomainOut.from_model(d) for d in domains]
+    domains = application.domains.list_domains(organisation_id, account_id=account_id)
+    return [DomainOut.from_with_account(d) for d in domains]
 
 
-@domain_router.put("/accounts/{account_id}/domains/{domain_id}", response_model=DomainOut)
+@domain_router.put("/domains/{domain_id}", response_model=DomainOut)
 def update_domain(
-    account_id: str,
     domain_id: str,
     body: DomainIn,
     application: Application = Depends(get_application),
@@ -262,24 +262,43 @@ def update_domain(
 ) -> DomainOut:
     domain = application.domains.update_domain(
         organisation_id,
-        account_id,
         domain_id,
         domain_name=body.domain_name,
         expiry_date=body.expiry_date,
         registrar=body.registrar,
         auto_renew=body.auto_renew,
     )
-    return DomainOut.from_model(domain)
+    return DomainOut.from_with_account(domain)
 
 
-@domain_router.delete("/accounts/{account_id}/domains/{domain_id}", status_code=204)
+@domain_router.delete("/domains/{domain_id}", status_code=204)
 def delete_domain(
-    account_id: str,
     domain_id: str,
     application: Application = Depends(get_application),
     organisation_id: str = Depends(get_organisation_id),
 ) -> None:
-    application.domains.delete_domain(organisation_id, account_id, domain_id)
+    application.domains.delete_domain(organisation_id, domain_id)
+
+
+@domain_router.post("/domains/{domain_id}/link", response_model=DomainOut)
+def link_domain(
+    domain_id: str,
+    body: DomainLinkIn,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> DomainOut:
+    domain = application.domains.link_domain(organisation_id, domain_id, body.account_id)
+    return DomainOut.from_with_account(domain)
+
+
+@domain_router.post("/domains/{domain_id}/unlink", response_model=DomainOut)
+def unlink_domain(
+    domain_id: str,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> DomainOut:
+    domain = application.domains.unlink_domain(organisation_id, domain_id)
+    return DomainOut.from_with_account(domain)
 
 
 @domain_router.post("/registrars", response_model=RegistrarOut, status_code=201)

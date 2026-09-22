@@ -39,6 +39,7 @@ from .core import (
     InvoiceService,
     OrganisationService,
     QuoteService,
+    RegistrarService,
 )
 from .factory import Application
 
@@ -486,28 +487,44 @@ def seed_demo_data(application: Application, auth: Auth, *, now: datetime | None
         for a in _ACCOUNTS
     ]
 
+    # The managed registrar list the domains below pick from - shown on
+    # the standalone Domains page (see CLAUDE.md).
+    registrars = RegistrarService(application.repository, clock=lambda: now)
+    registrars.create_registrar(organisation_id, name="123-Reg", notes="https://www.123-reg.co.uk")
+    registrars.create_registrar(organisation_id, name="GoDaddy")
+
     # A couple of domains, on a couple of accounts - not every account has
     # one, same "not every account needs every kind of child record" spirit
     # as expenses/attachments below. One expiring soon (auto-renew on, so
     # nothing to actually do) and one already lapsed (auto-renew off - the
     # case actually worth flagging), rather than only ever showing
-    # comfortably-far-off dates.
+    # comfortably-far-off dates. Domains are organisation-scoped and only
+    # optionally linked to an account now (see CLAUDE.md) - a third,
+    # deliberately unlinked domain shows off that a domain can exist
+    # before it's ever tied to a client.
     domains = DomainService(application.repository, clock=lambda: now)
     domains.create_domain(
         organisation_id,
-        account_ids[0],
         domain_name="northwindtraders.test",
         expiry_date=(now + timedelta(days=18)).date(),
         registrar="123-Reg",
         auto_renew=True,
+        account_id=account_ids[0],
     )
     domains.create_domain(
         organisation_id,
-        account_ids[1],
         domain_name="blueharbourconsulting.test",
         expiry_date=(now - timedelta(days=9)).date(),
         registrar="GoDaddy",
         auto_renew=False,
+        account_id=account_ids[1],
+    )
+    domains.create_domain(
+        organisation_id,
+        domain_name="future-project.test",
+        expiry_date=(now + timedelta(days=300)).date(),
+        registrar="123-Reg",
+        auto_renew=True,
     )
 
     for scenario in _SCENARIOS:

@@ -65,15 +65,30 @@ class AccountListOut(BaseModel):
 
 
 class DomainIn(BaseModel):
+    """PUT /domains/{id} - editing a domain's own fields only, never its
+    account link (deliberately no account_id here at all - see
+    DomainCreateIn/DomainLinkIn below and CLAUDE.md)."""
+
     domain_name: str
     expiry_date: date
     registrar: str
     auto_renew: bool = False
 
 
+class DomainCreateIn(DomainIn):
+    # Optional - a domain can be created unlinked and linked later (see
+    # DomainService.create_domain).
+    account_id: str | None = None
+
+
+class DomainLinkIn(BaseModel):
+    account_id: str
+
+
 class DomainOut(BaseModel):
     id: str
-    account_id: str
+    account_id: str | None
+    account_name: str | None
     domain_name: str
     expiry_date: date
     registrar: str
@@ -82,10 +97,12 @@ class DomainOut(BaseModel):
     updated_at: datetime
 
     @classmethod
-    def from_model(cls, domain) -> "DomainOut":
+    def from_with_account(cls, dwa) -> "DomainOut":
+        domain = dwa.domain
         return cls(
             id=domain.id,
             account_id=domain.account_id,
+            account_name=dwa.account_name,
             domain_name=domain.domain_name,
             expiry_date=domain.expiry_date,
             registrar=domain.registrar,

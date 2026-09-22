@@ -227,23 +227,39 @@ export interface SaveDomainInput {
   auto_renew: boolean
 }
 
-export function listDomains(accountId: string): Promise<Domain[]> {
-  return request(`/accounts/${accountId}/domains`)
+// Only meaningful on create - a domain can be created unlinked (omit this)
+// and linked later via linkDomain. Editing (updateDomain) never touches
+// the link - see CLAUDE.md.
+export interface CreateDomainInput extends SaveDomainInput {
+  account_id?: string
 }
 
-export function createDomain(accountId: string, input: SaveDomainInput): Promise<Domain> {
-  return request(`/accounts/${accountId}/domains`, { method: 'POST', body: JSON.stringify(input) })
+export function listDomains(params?: { accountId?: string }): Promise<Domain[]> {
+  const query = params?.accountId ? `?account_id=${params.accountId}` : ''
+  return request(`/domains${query}`)
 }
 
-export function updateDomain(accountId: string, domainId: string, input: SaveDomainInput): Promise<Domain> {
-  return request(`/accounts/${accountId}/domains/${domainId}`, {
-    method: 'PUT',
-    body: JSON.stringify(input),
+export function createDomain(input: CreateDomainInput): Promise<Domain> {
+  return request('/domains', { method: 'POST', body: JSON.stringify(input) })
+}
+
+export function updateDomain(domainId: string, input: SaveDomainInput): Promise<Domain> {
+  return request(`/domains/${domainId}`, { method: 'PUT', body: JSON.stringify(input) })
+}
+
+export function deleteDomain(domainId: string): Promise<void> {
+  return request(`/domains/${domainId}`, { method: 'DELETE' })
+}
+
+export function linkDomain(domainId: string, accountId: string): Promise<Domain> {
+  return request(`/domains/${domainId}/link`, {
+    method: 'POST',
+    body: JSON.stringify({ account_id: accountId }),
   })
 }
 
-export function deleteDomain(accountId: string, domainId: string): Promise<void> {
-  return request(`/accounts/${accountId}/domains/${domainId}`, { method: 'DELETE' })
+export function unlinkDomain(domainId: string): Promise<Domain> {
+  return request(`/domains/${domainId}/unlink`, { method: 'POST' })
 }
 
 // -- registrars ----------------------------------------------------------------

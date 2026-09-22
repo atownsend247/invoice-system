@@ -3,10 +3,9 @@ import { Link, useParams } from 'react-router-dom'
 import { accountAddressLines } from '../accountAddress'
 import * as api from '../api'
 import { AccountForm } from '../components/AccountForm'
-import { DomainForm } from '../components/DomainForm'
 import { StatusBadge } from '../components/StatusBadge'
 import { errorMessage, useAsync } from '../hooks/useAsync'
-import type { Domain, Expense, Invoice, Quote, Registrar } from '../types'
+import type { Domain, Expense, Invoice, Quote } from '../types'
 
 /** Newest first by issue_date (the "when this was created" convention used
  * throughout - see CLAUDE.md). Ids are random UUID4s now (see CLAUDE.md),
@@ -43,16 +42,21 @@ export function AccountDetailPage() {
   const quotes = quotesResult?.items
   const invoices = invoicesResult?.items
   const { data: expenses } = useAsync(() => api.listExpenses(accountId), [accountId])
+  // This account's own linked domains, plus every organisation domain (to
+  // find which ones are currently unlinked and available to link - see
+  // LinkDomainAction below). Full CRUD on a domain's own fields now lives
+  // on the standalone Domains page, not here - see CLAUDE.md.
   const { data: domains, refetch: refetchDomains } = useAsync(
-    () => api.listDomains(accountId ?? ''),
+    () => api.listDomains({ accountId }),
     [accountId],
   )
-  // Fetched once here, not per DomainForm instance - see DomainForm.tsx's
-  // own comment on why it takes this as a prop instead of fetching it
-  // itself.
-  const { data: registrars } = useAsync(() => api.listRegistrars(), [])
+  const { data: allDomains, refetch: refetchAllDomains } = useAsync(() => api.listDomains(), [])
   const [editing, setEditing] = useState(false)
-  const [addingDomain, setAddingDomain] = useState(false)
+
+  function refetchBothDomainLists() {
+    refetchDomains()
+    refetchAllDomains()
+  }
 
   if (loading) return <p>Loading…</p>
   if (error)
@@ -150,37 +154,96 @@ export function AccountDetailPage() {
       <div className="dashboard-section">
         <div className="page-header">
           <h2>Domains</h2>
-          {!addingDomain && (
-            <button type="button" onClick={() => setAddingDomain(true)}>
-              Add domain
-            </button>
-          )}
         </div>
-        {addingDomain && (
-          <DomainForm
-            registrars={registrars ?? []}
-            submitLabel="Add"
-            submittingLabel="Adding…"
-            onSubmit={(input) => api.createDomain(account.id, input)}
-            onDone={() => {
-              setAddingDomain(false)
-              refetchDomains()
-            }}
-            onCancel={() => setAddingDomain(false)}
-          />
-        )}
+        <p className="meta">
+          Link a domain already set up in the <Link to="/domains">Domains</Link> section - full domain/registrar
+          management lives there now.
+        </p>
+        <LinkDomainAction
+          unlinkedDomains={(allDomains ?? []).filter((d) => d.account_id === null)}
+          loading={!allDomains}
+          onLink={(domainId) => api.linkDomain(domainId, account.id)}
+          onLinked={refetchBothDomainLists}
+        />
         {!domains && <p>Loading…</p>}
-        {domains && domains.length === 0 && <p className="meta">No domains recorded yet.</p>}
+        {domains && domains.length === 0 && <p className="meta">No domains linked yet.</p>}
         {domains && domains.length > 0 && (
-          <DomainsTable
-            accountId={account.id}
-            domains={domains}
-            registrars={registrars ?? []}
-            onChanged={refetchDomains}
-          />
+          <DomainsTable domains={domains} onUnlinked={refetchBothDomainLists} />
         )}
       </div>
     </section>
+  )
+}
+
+/** An immediate, one-time action - not a persisted field, so a plain
+ * self-contained control with its own busy/error/success state, same
+ * shape as SettingsPage.tsx's NextNumberAction. Only unlinked domains are
+ * offered (see AccountDetailPage's own filter) - a domain already linked
+ * elsewhere is re-linked from the Domains page instead, where its current
+ * link is visible. */
+function LinkDomainAction({
+  unlinkedDomains,
+  loading,
+  onLink,
+  onLinked,
+}: {
+  unlinkedDomains: Domain[]
+  loading: boolean
+  onLink: (domainId: string) => Promise<Domain>
+  onLinked: () => void
+}) {
+  const [domainId, setDomainId] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const noDomainsAvailable = !loading && unlinkedDomains.length === 0
+
+  async function handleLink() {
+    setError(null)
+    setSubmitting(true)
+    try {
+      await onLink(domainId)
+      setDomainId('')
+      onLinked()
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="next-number-action">
+      <label>
+        Link domain
+        <select
+          value={domainId}
+          onChange={(event) => setDomainId(event.target.value)}
+          disabled={loading || noDomainsAvailable}
+        >
+          <option value="" disabled>
+            {loading ? 'Loading…' : noDomainsAvailable ? 'No unlinked domains available' : 'Select a domain'}
+          </option>
+          {unlinkedDomains.map((domain) => (
+            <option key={domain.id} value={domain.id}>
+              {domain.domain_name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button type="button" disabled={submitting || !domainId} onClick={handleLink}>
+        {submitting ? 'Linking…' : 'Link'}
+      </button>
+      {noDomainsAvailable && (
+        <p className="meta">
+          No unlinked domains available - add one in <Link to="/domains">Domains</Link> first.
+        </p>
+      )}
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -250,31 +313,25 @@ function ExpensesTable({ expenses }: { expenses: Expense[] }) {
   )
 }
 
-function DomainsTable({
-  accountId,
-  domains,
-  registrars,
-  onChanged,
-}: {
-  accountId: string
-  domains: Domain[]
-  registrars: Registrar[]
-  onChanged: () => void
-}) {
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
+/** Read-only-ish list of this account's own linked domains - just an
+ * "Unlink" action per row, not Edit/Delete (full domain management lives
+ * on the standalone Domains page now - see CLAUDE.md). Unlinking never
+ * deletes the domain itself, just clears its account_id, so it stays
+ * available to link elsewhere. */
+function DomainsTable({ domains, onUnlinked }: { domains: Domain[]; onUnlinked: () => void }) {
+  const [unlinkingId, setUnlinkingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  async function handleDelete(domain: Domain) {
+  async function handleUnlink(domain: Domain) {
     setError(null)
-    setDeletingId(domain.id)
+    setUnlinkingId(domain.id)
     try {
-      await api.deleteDomain(accountId, domain.id)
-      onChanged()
+      await api.unlinkDomain(domain.id)
+      onUnlinked()
     } catch (err) {
       setError(errorMessage(err))
     } finally {
-      setDeletingId(null)
+      setUnlinkingId(null)
     }
   }
 
@@ -297,46 +354,24 @@ function DomainsTable({
             </tr>
           </thead>
           <tbody>
-            {domains.map((domain) =>
-              editingId === domain.id ? (
-                <tr key={domain.id}>
-                  <td colSpan={5}>
-                    <DomainForm
-                      initial={domain}
-                      registrars={registrars}
-                      submitLabel="Save"
-                      submittingLabel="Saving…"
-                      onSubmit={(input) => api.updateDomain(accountId, domain.id, input)}
-                      onDone={() => {
-                        setEditingId(null)
-                        onChanged()
-                      }}
-                      onCancel={() => setEditingId(null)}
-                    />
-                  </td>
-                </tr>
-              ) : (
-                <tr key={domain.id}>
-                  <td>{domain.domain_name}</td>
-                  <td>{domain.expiry_date}</td>
-                  <td>{domain.registrar}</td>
-                  <td>{domain.auto_renew ? 'Yes' : 'No'}</td>
-                  <td>
-                    <button type="button" onClick={() => setEditingId(domain.id)}>
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => handleDelete(domain)}
-                      disabled={deletingId === domain.id}
-                    >
-                      {deletingId === domain.id ? 'Deleting…' : 'Delete'}
-                    </button>
-                  </td>
-                </tr>
-              ),
-            )}
+            {domains.map((domain) => (
+              <tr key={domain.id}>
+                <td>{domain.domain_name}</td>
+                <td>{domain.expiry_date}</td>
+                <td>{domain.registrar}</td>
+                <td>{domain.auto_renew ? 'Yes' : 'No'}</td>
+                <td>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => handleUnlink(domain)}
+                    disabled={unlinkingId === domain.id}
+                  >
+                    {unlinkingId === domain.id ? 'Unlinking…' : 'Unlink'}
+                  </button>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
