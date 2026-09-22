@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useState } from 'react'
 import * as api from '../api'
 import { RegistrarForm } from '../components/RegistrarForm'
 import { errorMessage, useAsync } from '../hooks/useAsync'
@@ -14,6 +14,13 @@ type Tab = (typeof TABS)[number]
 // lookups) stays exactly as written above.
 function tabSlug(tab: Tab): string {
   return tab.toLowerCase().replace(/\s+/g, '-')
+}
+
+function registrarUsageLabel(registrar: Registrar): string {
+  if (registrar.domain_count === 0) return 'No domains'
+  const domains = `${registrar.domain_count} domain${registrar.domain_count === 1 ? '' : 's'}`
+  const accounts = `${registrar.account_count} account${registrar.account_count === 1 ? '' : 's'}`
+  return `${domains} (${accounts})`
 }
 
 export function SettingsPage() {
@@ -98,6 +105,16 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+
+  // One shared <form>/Save button covers every tab (see the class comment
+  // below), so a "Saved."/error message from one tab would otherwise
+  // still be showing after switching to a completely different tab -
+  // confusing, since it looks like it's about whatever's now on screen.
+  // Clear it on every tab change instead of leaving it to linger.
+  useEffect(() => {
+    setError(null)
+    setSaved(false)
+  }, [activeTab])
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -463,15 +480,25 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
         </fieldset>
       </div>
 
-      {error && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
+      {/* Registrars is its own self-contained tab with immediate
+       * add/edit/delete actions (see RegistrarsPanel below), not one of
+       * this form's own fields - its own tabpanel is hidden above like
+       * the other four, but this trailing block sits *outside* all five
+       * tabpanels (so it isn't hidden by any of them individually), so
+       * it needs its own explicit check to stay hidden on that tab too. */}
+      {activeTab !== 'Registrars' && (
+        <>
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+          {saved && !error && <p className="form-success">Saved.</p>}
+          <button type="submit" disabled={submitting}>
+            {submitting ? 'Saving…' : 'Save settings'}
+          </button>
+        </>
       )}
-      {saved && !error && <p className="form-success">Saved.</p>}
-      <button type="submit" disabled={submitting}>
-        {submitting ? 'Saving…' : 'Save settings'}
-      </button>
     </form>
   )
 }
@@ -596,6 +623,7 @@ function RegistrarsPanel({ active }: { active: boolean }) {
               <tr>
                 <th>Name</th>
                 <th>Notes</th>
+                <th>Domains</th>
                 <th />
               </tr>
             </thead>
@@ -603,7 +631,7 @@ function RegistrarsPanel({ active }: { active: boolean }) {
               {registrars.map((registrar) =>
                 editingId === registrar.id ? (
                   <tr key={registrar.id}>
-                    <td colSpan={3}>
+                    <td colSpan={4}>
                       <RegistrarForm
                         initial={registrar}
                         submitLabel="Save"
@@ -621,6 +649,7 @@ function RegistrarsPanel({ active }: { active: boolean }) {
                   <tr key={registrar.id}>
                     <td>{registrar.name}</td>
                     <td>{registrar.notes ?? '—'}</td>
+                    <td>{registrarUsageLabel(registrar)}</td>
                     <td>
                       <button type="button" onClick={() => setEditingId(registrar.id)}>
                         Edit
@@ -629,7 +658,12 @@ function RegistrarsPanel({ active }: { active: boolean }) {
                         type="button"
                         className="secondary"
                         onClick={() => handleDelete(registrar)}
-                        disabled={deletingId === registrar.id}
+                        disabled={deletingId === registrar.id || registrar.domain_count > 0}
+                        title={
+                          registrar.domain_count > 0
+                            ? `Still used by ${registrarUsageLabel(registrar)} - remove or reassign them first`
+                            : undefined
+                        }
                       >
                         {deletingId === registrar.id ? 'Deleting…' : 'Delete'}
                       </button>

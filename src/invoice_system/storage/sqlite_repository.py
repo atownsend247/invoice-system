@@ -344,6 +344,22 @@ class SqliteRepository:
             )
             self._conn.commit()
 
+    def count_domains_by_registrar(self, organisation_id: str) -> dict[str, tuple[int, int]]:
+        # Domain has no organisation_id of its own (see its docstring) -
+        # scoped via a join to accounts instead, same as every other
+        # organisation-scoped domain query. Only registrar names actually
+        # used by at least one domain appear in the result - callers treat
+        # a missing key as (0, 0), not an error.
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT domains.registrar AS registrar, COUNT(*) AS domain_count, "
+                "COUNT(DISTINCT domains.account_id) AS account_count "
+                "FROM domains JOIN accounts ON accounts.id = domains.account_id "
+                "WHERE accounts.organisation_id = ? GROUP BY domains.registrar",
+                (organisation_id,),
+            ).fetchall()
+        return {row["registrar"]: (row["domain_count"], row["account_count"]) for row in rows}
+
     @staticmethod
     def _row_to_registrar(row: sqlite3.Row) -> Registrar:
         return Registrar(

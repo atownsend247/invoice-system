@@ -601,7 +601,14 @@ Four separate things are easy to conflate here — don't:
   `<textarea>` (the only multi-line fields in this form) with a
   `.form-field-wide` class (`flex-basis: 100%`) so they span the full tab
   width rather than squeezing into the same narrow column as the
-  single-line inputs around them.
+  single-line inputs around them. `BusinessProfileForm`'s `error`/`saved`
+  state is reset in a `useEffect` keyed on `activeTab` - without it, a
+  "Saved."/error message from one tab kept showing after switching to an
+  unrelated one (found from a real bug report: it looked like the
+  message was about whatever tab was now on screen, since there's no
+  visual link to which tab it actually came from). See the `Registrar`
+  Convention below for the related fix hiding this trailing block
+  entirely on the Registrars tab.
 - `AccountService.update_account(account_id, ...)` is a full replace, not a
   partial patch — same required fields (`business_name`/`email`/
   `address_line1`) and validation as `create_account`, mirroring
@@ -648,12 +655,32 @@ Four separate things are easy to conflate here — don't:
   `AccountForm.tsx`, reused for add and per-row edit).
 - `Registrar` (`core.py`'s `RegistrarService`) - see `docs/api.md`'s
   `Registrar` Convention for the field/route shape (organisation-scoped
-  full CRUD, delete has no cascade since `Domain.registrar` stores a
-  plain string not a FK). `SqliteRepository.list_registrars` orders
+  full CRUD). `SqliteRepository.list_registrars` orders
   **alphabetically** (`ORDER BY name COLLATE NOCASE`), the useful default
   for a dropdown - yet another `list_*` method with its own non-default
-  ordering, see `Domain`'s soonest-expiry-first choice above. Web UI:
-  a fifth Settings tab, "Registrars" - deliberately **not** a fifth
+  ordering, see `Domain`'s soonest-expiry-first choice above.
+  **`RegistrarUsage`** (models.py) - a `Registrar` alongside how many
+  `Domain`s currently name it and how many distinct `Account`s those
+  domains belong to, computed at request time
+  (`RegistrarService.list_registrars_with_usage`/`get_registrar_usage`,
+  backed by `SqliteRepository.count_domains_by_registrar` - one `GROUP
+  BY domains.registrar` query joined to `accounts` for organisation
+  scoping, since `Domain` has no `organisation_id` of its own) - matched
+  by the registrar's *current* `name` against `Domain.registrar` (a
+  plain string, not a FK), so a domain still naming an old registrar
+  name from before a rename doesn't count towards the renamed
+  registrar's usage, same name-drift tradeoff `DomainForm.tsx` already
+  handles at the UI layer (see below). `delete_registrar` refuses
+  (`Conflict`, 409, `errors.py`) to delete a registrar with
+  `domain_count > 0` - an application-level guard, not a database
+  constraint (still no FK, no cascade to worry about at that level) -
+  the web UI additionally disables the row's "Delete" button client-side
+  once `domain_count > 0` (with a `title` explaining why), rather than
+  only surfacing the server's rejection after a click. `GET /registrars`
+  always includes `domain_count`/`account_count` in `RegistrarOut` (0/0
+  for a just-created registrar) - the same response also backs
+  `DomainForm.tsx`'s dropdown, which just ignores those two fields.
+  Web UI: a fifth Settings tab, "Registrars" - deliberately **not** a fifth
   `BusinessProfileForm` tabpanel (`SettingsPage.tsx`): it's a
   self-contained list with its own immediate add/edit/delete actions,
   each backed by its own `<form>` (`components/RegistrarForm.tsx`, same
@@ -661,7 +688,14 @@ Four separate things are easy to conflate here — don't:
   those inside the profile tabs' own shared `<form>`/"Save settings"
   button would be invalid HTML (a `<form>` can't nest inside another) and
   semantically wrong (this tab's actions are immediate, not deferred to a
-  save button). The shared tab bar/`activeTab` state now lives in
+  save button) - `BusinessProfileForm`'s own trailing error/"Saved."
+  message and "Save settings" button are explicitly hidden while this
+  tab is active (`activeTab !== 'Registrars'`), since they'd otherwise
+  still render below the Registrars panel (that trailing block sits
+  outside all five tabpanels, so no individual tabpanel's own `hidden`
+  covers it - found the hard way, from a real bug report: it was visible
+  right below the registrars table, implying this were also a save-button
+  tab). The shared tab bar/`activeTab` state now lives in
   `SettingsPage` itself, not inside `BusinessProfileForm` - the Registrars
   panel renders as `BusinessProfileForm`'s sibling, outside its `<form>`,
   switched by the same tab bar. `DomainForm.tsx` takes the registrar list

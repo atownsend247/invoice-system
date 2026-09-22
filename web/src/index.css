@@ -522,6 +522,15 @@ button.secondary {
   margin-bottom: 1rem;
 }
 
+/* The error/success message sits directly above the Save button (see
+   SettingsPage.tsx) - .form-error/.form-success have no margin by
+   default (other places using them, e.g. .next-number-action, want that),
+   so without this the message visually touches the button below it. */
+.settings-form > .form-error,
+.settings-form > .form-success {
+  margin-bottom: 0.8rem;
+}
+
 .form-section {
   border: none;
   padding: 0;

@@ -63,6 +63,38 @@ test('shows the five settings tabs and loads the current profile on visit', asyn
   await expect(page.getByLabel('Currency')).not.toHaveValue('')
 })
 
+test('the saved message clears when switching to a different tab', async ({ authenticatedPage: page }) => {
+  // One shared <form>/Save button covers every tab (see CLAUDE.md) - a
+  // "Saved." message from one tab used to keep showing after switching to
+  // an unrelated one, looking like it was about whatever's now on screen.
+  await page.goto('/settings')
+  await page.getByRole('tab', { name: 'Payment and tax' }).click()
+  await page.getByLabel('Payment terms (days)').fill('21')
+  await page.getByRole('button', { name: 'Save settings' }).click()
+  await expect(page.getByText('Saved.')).toBeVisible()
+
+  await page.getByRole('tab', { name: 'User' }).click()
+  await expect(page.getByText('Saved.')).toHaveCount(0)
+})
+
+test('the Registrars tab never shows the profile Save button or its messages', async ({
+  authenticatedPage: page,
+}) => {
+  // Registrars is a separate, self-contained form with its own immediate
+  // add/edit/delete actions (see RegistrarForm) - the profile form's own
+  // "Save settings" button and any leftover "Saved."/error message from
+  // another tab shouldn't appear here at all.
+  await page.goto('/settings')
+  await page.getByRole('tab', { name: 'Payment and tax' }).click()
+  await page.getByLabel('Payment terms (days)').fill('22')
+  await page.getByRole('button', { name: 'Save settings' }).click()
+  await expect(page.getByText('Saved.')).toBeVisible()
+
+  await page.getByRole('tab', { name: 'Registrars' }).click()
+  await expect(page.getByRole('button', { name: 'Save settings' })).toHaveCount(0)
+  await expect(page.getByText('Saved.')).toHaveCount(0)
+})
+
 test('adding, editing, and deleting a registrar', async ({ authenticatedPage: page }, testInfo) => {
   // Unique per test (same reasoning as testAccount's own business_name in
   // fixtures.ts) - registrars are a shared organisation-wide list, so a
@@ -97,6 +129,43 @@ test('adding, editing, and deleting a registrar', async ({ authenticatedPage: pa
 
   await updatedRow.getByRole('button', { name: 'Delete' }).click()
   await expect(page.getByText(renamed)).toHaveCount(0)
+})
+
+test('registrar list shows domain/account counts and blocks deleting one still in use', async ({
+  authenticatedPage: page,
+  testAccount,
+  apiToken,
+}, testInfo) => {
+  const name = `${testInfo.testId} GoDaddy`
+
+  await page.goto('/settings')
+  await page.getByRole('tab', { name: 'Registrars' }).click()
+  await page.getByRole('button', { name: 'Add registrar' }).click()
+  await page.getByLabel('Name', { exact: true }).fill(name)
+  await page.getByRole('button', { name: 'Add', exact: true }).click()
+
+  const row = page.locator('tbody tr', { hasText: name })
+  await expect(row).toContainText('No domains')
+  await expect(row.getByRole('button', { name: 'Delete' })).toBeEnabled()
+
+  // Domains are added from the account detail page, not Settings - the
+  // API directly is the fastest way to get one in place referencing this
+  // registrar's exact name for this test.
+  await apiFetch(`/accounts/${testAccount.id}/domains`, apiToken, {
+    method: 'POST',
+    body: JSON.stringify({ domain_name: 'example.test', expiry_date: '2027-01-01', registrar: name }),
+  })
+
+  await page.reload()
+  await page.getByRole('tab', { name: 'Registrars' }).click()
+  const rowAfter = page.locator('tbody tr', { hasText: name })
+  await expect(rowAfter).toContainText('1 domain (1 account)')
+
+  // Blocked client-side (a disabled button with an explanatory title),
+  // not just server-side - see CLAUDE.md's RegistrarService.delete_registrar.
+  const deleteButton = rowAfter.getByRole('button', { name: 'Delete' })
+  await expect(deleteButton).toBeDisabled()
+  await expect(deleteButton).toHaveAttribute('title', /still used by 1 domain/i)
 })
 
 test('saving all fields persists them across a reload', async ({ authenticatedPage: page }) => {

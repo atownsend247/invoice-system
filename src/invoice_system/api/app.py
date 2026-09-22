@@ -12,7 +12,7 @@ from sessionkit import UserNotFound as AuthUserNotFound
 from sessionkit import ValidationError as AuthValidationError
 
 from ..auth import build_auth
-from ..errors import AppError, Duplicate, InvalidTransition, NotFound, ValidationFailed
+from ..errors import AppError, Conflict, Duplicate, InvalidTransition, NotFound, ValidationFailed
 from ..factory import Application, build_application
 from ..models import InvoiceStatus, QuoteStatus
 from ..paths import DEFAULT_STORAGE_DIR, StoragePaths
@@ -57,6 +57,7 @@ _STATUS_BY_ERROR: list[tuple[type[AppError], int]] = [
     (NotFound, 404),
     (Duplicate, 409),
     (InvalidTransition, 409),
+    (Conflict, 409),
     (ValidationFailed, 422),
 ]
 
@@ -296,8 +297,8 @@ def list_registrars(
     application: Application = Depends(get_application),
     organisation_id: str = Depends(get_organisation_id),
 ) -> list[RegistrarOut]:
-    registrars = application.registrars.list_registrars(organisation_id)
-    return [RegistrarOut.from_model(r) for r in registrars]
+    usages = application.registrars.list_registrars_with_usage(organisation_id)
+    return [RegistrarOut.from_usage(u) for u in usages]
 
 
 @domain_router.put("/registrars/{registrar_id}", response_model=RegistrarOut)
@@ -307,10 +308,11 @@ def update_registrar(
     application: Application = Depends(get_application),
     organisation_id: str = Depends(get_organisation_id),
 ) -> RegistrarOut:
-    registrar = application.registrars.update_registrar(
-        organisation_id, registrar_id, name=body.name, notes=body.notes
-    )
-    return RegistrarOut.from_model(registrar)
+    application.registrars.update_registrar(organisation_id, registrar_id, name=body.name, notes=body.notes)
+    # Re-fetch usage against the (possibly renamed) current name, not the
+    # pre-update one - a rename can change which domains actually match.
+    usage = application.registrars.get_registrar_usage(organisation_id, registrar_id)
+    return RegistrarOut.from_usage(usage)
 
 
 @domain_router.delete("/registrars/{registrar_id}", status_code=204)

@@ -64,6 +64,11 @@ export interface Registrar {
   id: string
   name: string
   notes: string | null
+  // How many domains (and, in turn, distinct accounts) currently name
+  // this registrar - see RegistrarUsage in models.py. Computed, not
+  // stored - always present.
+  domain_count: number
+  account_count: number
   created_at: string
   updated_at: string
 }

@@ -357,8 +357,13 @@ def registrar_create(application: Application, user_id: str, name: str, notes: s
 @click.option("--user-id", required=True, help=_USER_ID_HELP)
 @click.pass_obj
 def registrar_list(application: Application, user_id: str) -> None:
-    for r in application.registrars.list_registrars(_organisation_id(application, user_id)):
-        click.echo(f"{r.id}\t{r.name}\t{r.notes or '-'}")
+    usages = application.registrars.list_registrars_with_usage(_organisation_id(application, user_id))
+    for usage in usages:
+        r = usage.registrar
+        click.echo(
+            f"{r.id}\t{r.name}\t{r.notes or '-'}\t"
+            f"{usage.domain_count} domain(s), {usage.account_count} account(s)"
+        )
 
 
 @registrar.command("update")

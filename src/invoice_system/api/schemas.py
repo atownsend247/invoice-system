@@ -104,17 +104,31 @@ class RegistrarOut(BaseModel):
     id: str
     name: str
     notes: str | None
+    # How many domains (and, in turn, distinct accounts) currently name
+    # this registrar - see models.RegistrarUsage. Always present, not
+    # optional - every route that returns a RegistrarOut computes it
+    # (0/0 for a just-created registrar, in practice).
+    domain_count: int
+    account_count: int
     created_at: datetime
     updated_at: datetime
 
     @classmethod
-    def from_model(cls, registrar) -> "RegistrarOut":
+    def from_model(cls, registrar, *, domain_count: int = 0, account_count: int = 0) -> "RegistrarOut":
         return cls(
             id=registrar.id,
             name=registrar.name,
             notes=registrar.notes,
+            domain_count=domain_count,
+            account_count=account_count,
             created_at=registrar.created_at,
             updated_at=registrar.updated_at,
+        )
+
+    @classmethod
+    def from_usage(cls, usage) -> "RegistrarOut":
+        return cls.from_model(
+            usage.registrar, domain_count=usage.domain_count, account_count=usage.account_count
         )
 
 

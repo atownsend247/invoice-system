@@ -148,9 +148,15 @@ class Registrar:
     closest to `Account`: full CRUD, tenant ownership checked directly
     rather than through a parent. Unlike `Account` though, it supports
     delete - nothing holds a foreign key to a `Registrar` (see `Domain`'s
-    docstring above), so removing one has no cascade to worry about,
-    unlike an `Account` with `Quote`/`Invoice`/`Expense`/`Domain` rows
-    depending on it.
+    docstring above), so there's no *database-level* cascade to worry
+    about, unlike an `Account` with `Quote`/`Invoice`/`Expense`/`Domain`
+    rows depending on it. `RegistrarService.delete_registrar` still
+    refuses to delete one that at least one `Domain` currently names
+    (`Conflict`, see `RegistrarUsage` below) - an *application-level*
+    guard, not a database constraint, since silently leaving domains
+    pointing at a no-longer-listed registrar name would be confusing even
+    though nothing would actually break (`Domain.registrar` stores the
+    name as a plain string either way).
 
     `name` is required (non-blank, enforced in `RegistrarService`, never
     in storage); `notes` is optional free text (e.g. a support URL or
@@ -164,6 +170,23 @@ class Registrar:
     notes: str | None
     created_at: datetime
     updated_at: datetime
+
+
+@dataclass
+class RegistrarUsage:
+    """A `Registrar` alongside how many `Domain`s currently name it (and,
+    in turn, how many distinct `Account`s those domains belong to) -
+    computed at request time by `RegistrarService.list_registrars_with_usage`/
+    `get_registrar_usage`, never persisted. Matched by the registrar's
+    current `name` against `Domain.registrar` (a plain string, not a
+    foreign key - see `Registrar` above), so a domain still naming an
+    *old* registrar name from before a rename won't count towards the
+    renamed registrar's usage - the same name-drift tradeoff
+    `DomainForm.tsx` already handles at the UI layer."""
+
+    registrar: Registrar
+    domain_count: int
+    account_count: int
 
 
 @dataclass

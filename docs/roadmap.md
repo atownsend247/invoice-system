@@ -1365,5 +1365,58 @@ flow," not a restructuring, whenever it's actually needed.
       itself (this project's own established way to shake out
       shared-singleton-profile races - see `CLAUDE.md`).
 
+## Fixed — settings page polish + registrar usage/delete-safety (Phase 39)
+
+- [x] The "Saved."/error message on the Settings page (one shared `<form>`
+      across all four profile tabs) touched the "Save settings" button
+      directly below it with no spacing - `.settings-form > .form-error,
+      .settings-form > .form-success { margin-bottom: 0.8rem }` added to
+      `index.css` (scoped to direct children of `.settings-form` only, not
+      the global `.form-error`/`.form-success` classes used elsewhere).
+- [x] That same message used to keep showing after switching to a
+      completely different tab, looking like it was about whatever's now
+      on screen - `BusinessProfileForm` now clears it in a `useEffect`
+      keyed on `activeTab`.
+- [x] The Registrars tab - a separate, self-contained list with its own
+      immediate add/edit/delete actions, not one of `BusinessProfileForm`'s
+      own fields - was still showing that form's trailing "Save settings"
+      button and any leftover message below the registrars table, since
+      that trailing block sits outside all five tabpanels (so no
+      individual tabpanel's own `hidden` attribute covered it). Now
+      explicitly hidden while `activeTab === 'Registrars'`.
+- [x] Registrars now show how many domains (and, in turn, how many
+      distinct accounts) currently name them - `RegistrarUsage`
+      (models.py), `RegistrarService.list_registrars_with_usage`/
+      `get_registrar_usage`, `SqliteRepository.count_domains_by_registrar`
+      (one `GROUP BY domains.registrar` query, joined to `accounts` for
+      organisation scoping since `Domain` has no `organisation_id` of its
+      own). `GET /registrars` (and the create/update responses) now
+      include `domain_count`/`account_count` on every `RegistrarOut`.
+      Matched by the registrar's *current* name, so a renamed registrar's
+      usage count doesn't include domains that still record its old name
+      - a deliberate, accepted tradeoff matching how `DomainForm.tsx`
+      already handles registrar-name drift at the UI layer, not a new bug.
+- [x] Deleting a registrar that's still in use is now blocked - a new
+      `Conflict` exception (`errors.py`, 409) raised by
+      `RegistrarService.delete_registrar` when `domain_count > 0`, and the
+      web UI disables that row's "Delete" button client-side too (with a
+      `title` explaining why) rather than only surfacing the server's
+      rejection after a click - both layers guard this independently, the
+      same "don't only rely on one" pattern already used for the settings
+      page's required-field validation above.
+- [x] New tests throughout: `tests/core/test_registrar_service.py`
+      (usage counts, per-organisation isolation, name-drift-on-rename,
+      delete blocked/then-succeeds-once-clear), `tests/storage/
+      test_sqlite_repository.py` (the counting query itself),
+      `tests/api/test_routes.py` (counts on every registrar response,
+      409 on a blocked delete), `tests/cli/test_cli.py` (`registrar list`
+      shows counts too, for CLI/API parity; delete blocked). New
+      `web/e2e/settings.spec.ts` tests for the message-clearing fix, the
+      Registrars-tab-has-no-Save-button fix, and the domain-count/
+      delete-blocked UI behaviour. Full backend suite (430 tests, 98.6%+
+      coverage), full frontend checks, and full e2e suite (70 tests) all
+      pass, including a `--repeat-each=3 --workers=1` stress run of
+      `settings.spec.ts` itself.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

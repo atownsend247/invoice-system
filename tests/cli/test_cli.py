@@ -1667,6 +1667,7 @@ def test_registrar_create_list_update_delete(tmp_path):
     assert result.exit_code == 0, result.output
     # Alphabetical, not creation order (see models.Registrar).
     assert result.output.index("123-Reg") < result.output.index("GoDaddy")
+    assert "0 domain(s), 0 account(s)" in result.output
 
     result = runner.invoke(
         cli,
@@ -1690,6 +1691,64 @@ def test_registrar_create_list_update_delete(tmp_path):
 
     result = runner.invoke(cli, [*_base_args(db_path), "registrar", "list", "--user-id", "1"])
     assert "123 Reg Ltd" not in result.output
+    assert "GoDaddy" in result.output
+
+
+def test_registrar_delete_blocked_while_a_domain_still_names_it(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
+
+    result = runner.invoke(
+        cli, [*_base_args(db_path), "registrar", "create", "--user-id", "1", "--name", "GoDaddy"]
+    )
+    registrar_id = _id_from(result.output, r"Created registrar (\S+):")
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "account",
+            "create",
+            "--user-id",
+            "1",
+            "--business-name",
+            "Acme",
+            "--email",
+            "a@b.test",
+            "--address-line1",
+            "1 Main St",
+        ],
+    )
+    account_id = _id_from(result.output, r"Created account (\S+):")
+
+    runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "domain",
+            "create",
+            account_id,
+            "--user-id",
+            "1",
+            "--domain-name",
+            "acme.test",
+            "--expiry-date",
+            "2027-01-01",
+            "--registrar",
+            "GoDaddy",
+        ],
+    )
+
+    # Raw CliRunner().invoke(cli, ...) calls the Click group directly, not
+    # the main() wrapper that catches AppError and prints "Error: ..." -
+    # the exception ends up on result.exception instead of result.output
+    # (same reasoning as this file's other exit_code != 0 assertions).
+    result = runner.invoke(cli, [*_base_args(db_path), "registrar", "delete", registrar_id, "--user-id", "1"])
+    assert result.exit_code != 0
+    assert "still used by 1 domain(s)" in str(result.exception)
+
+    result = runner.invoke(cli, [*_base_args(db_path), "registrar", "list", "--user-id", "1"])
     assert "GoDaddy" in result.output
 
 

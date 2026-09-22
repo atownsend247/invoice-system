@@ -1,6 +1,18 @@
+from datetime import date
+
 import pytest
 
-from invoice_system.errors import NotFound, ValidationFailed
+from invoice_system.errors import Conflict, NotFound, ValidationFailed
+
+
+@pytest.fixture
+def account(application, organisation_id):
+    return application.accounts.create_account(
+        organisation_id=organisation_id,
+        business_name="Acme Co",
+        email="jane@acme.test",
+        address_line1="1 Main St",
+    )
 
 
 def test_create_and_get_registrar(application, organisation_id):
@@ -91,3 +103,90 @@ def test_delete_registrar(application, organisation_id):
 def test_delete_missing_registrar_raises_not_found(application, organisation_id):
     with pytest.raises(NotFound):
         application.registrars.delete_registrar(organisation_id, "does-not-exist")
+
+
+def test_list_registrars_with_usage_reports_zero_for_an_unused_registrar(application, organisation_id):
+    application.registrars.create_registrar(organisation_id, name="123-Reg")
+    [usage] = application.registrars.list_registrars_with_usage(organisation_id)
+    assert usage.domain_count == 0
+    assert usage.account_count == 0
+
+
+def test_list_registrars_with_usage_counts_domains_and_distinct_accounts(
+    application, organisation_id, account
+):
+    application.registrars.create_registrar(organisation_id, name="123-Reg")
+    other_account = application.accounts.create_account(
+        organisation_id=organisation_id,
+        business_name="Other Co",
+        email="pat@other.test",
+        address_line1="2 High St",
+    )
+    application.domains.create_domain(
+        organisation_id, account.id, domain_name="a.test", expiry_date=date(2027, 1, 1), registrar="123-Reg"
+    )
+    application.domains.create_domain(
+        organisation_id, account.id, domain_name="b.test", expiry_date=date(2027, 1, 1), registrar="123-Reg"
+    )
+    application.domains.create_domain(
+        organisation_id,
+        other_account.id,
+        domain_name="c.test",
+        expiry_date=date(2027, 1, 1),
+        registrar="123-Reg",
+    )
+
+    [usage] = application.registrars.list_registrars_with_usage(organisation_id)
+    assert usage.domain_count == 3
+    assert usage.account_count == 2
+
+
+def test_list_registrars_with_usage_is_isolated_per_organisation(application, organisation_id, account):
+    application.registrars.create_registrar(organisation_id, name="123-Reg")
+    application.domains.create_domain(
+        organisation_id, account.id, domain_name="a.test", expiry_date=date(2027, 1, 1), registrar="123-Reg"
+    )
+
+    other_organisation_id = application.organisations.get_or_create_for_user("user-2")
+    application.registrars.create_registrar(other_organisation_id, name="123-Reg")
+    [other_usage] = application.registrars.list_registrars_with_usage(other_organisation_id)
+    assert other_usage.domain_count == 0
+
+
+def test_get_registrar_usage_matches_by_current_name_not_a_stale_one(application, organisation_id, account):
+    registrar = application.registrars.create_registrar(organisation_id, name="123-Reg")
+    application.domains.create_domain(
+        organisation_id, account.id, domain_name="a.test", expiry_date=date(2027, 1, 1), registrar="123-Reg"
+    )
+
+    # A domain recorded the old name as a plain string (see models.Domain) -
+    # renaming the registrar doesn't retroactively update it, so usage
+    # under the *new* name is genuinely zero even though one domain still
+    # exists that used to match.
+    application.registrars.update_registrar(organisation_id, registrar.id, name="GoDaddy")
+    usage = application.registrars.get_registrar_usage(organisation_id, registrar.id)
+    assert usage.domain_count == 0
+
+
+def test_delete_registrar_still_used_by_a_domain_raises_conflict(application, organisation_id, account):
+    registrar = application.registrars.create_registrar(organisation_id, name="123-Reg")
+    application.domains.create_domain(
+        organisation_id, account.id, domain_name="a.test", expiry_date=date(2027, 1, 1), registrar="123-Reg"
+    )
+    with pytest.raises(Conflict):
+        application.registrars.delete_registrar(organisation_id, registrar.id)
+
+    # Not actually deleted - the guard ran before the delete.
+    assert application.registrars.get_registrar(organisation_id, registrar.id) is not None
+
+
+def test_delete_registrar_succeeds_once_its_domains_are_gone(application, organisation_id, account):
+    registrar = application.registrars.create_registrar(organisation_id, name="123-Reg")
+    domain = application.domains.create_domain(
+        organisation_id, account.id, domain_name="a.test", expiry_date=date(2027, 1, 1), registrar="123-Reg"
+    )
+    application.domains.delete_domain(organisation_id, account.id, domain.id)
+
+    application.registrars.delete_registrar(organisation_id, registrar.id)
+    with pytest.raises(NotFound):
+        application.registrars.get_registrar(organisation_id, registrar.id)

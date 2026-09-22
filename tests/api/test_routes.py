@@ -696,6 +696,9 @@ def test_registrar_create_list_update_delete_flow(client, auth_headers):
     registrar_id = body["id"]
     assert body["name"] == "123-Reg"
     assert body["notes"] == "https://123-reg.co.uk"
+    # A just-created registrar has no domains yet.
+    assert body["domain_count"] == 0
+    assert body["account_count"] == 0
 
     client.post("/registrars", json={"name": "GoDaddy"}, headers=auth_headers)
 
@@ -703,6 +706,7 @@ def test_registrar_create_list_update_delete_flow(client, auth_headers):
     assert response.status_code == 200
     # Alphabetical, not creation order (see models.Registrar).
     assert [r["name"] for r in response.json()] == ["123-Reg", "GoDaddy"]
+    assert all(r["domain_count"] == 0 for r in response.json())
 
     response = client.put(
         f"/registrars/{registrar_id}",
@@ -712,6 +716,7 @@ def test_registrar_create_list_update_delete_flow(client, auth_headers):
     assert response.status_code == 200
     assert response.json()["name"] == "123 Reg Ltd"
     assert response.json()["notes"] is None
+    assert response.json()["domain_count"] == 0
 
     response = client.delete(f"/registrars/{registrar_id}", headers=auth_headers)
     assert response.status_code == 204
@@ -721,6 +726,51 @@ def test_registrar_create_list_update_delete_flow(client, auth_headers):
 def test_registrar_requires_non_blank_name(client, auth_headers):
     response = client.post("/registrars", json={"name": "   "}, headers=auth_headers)
     assert response.status_code == 422
+
+
+def test_registrar_list_reports_domain_and_account_counts(client, auth_headers):
+    registrar_id = client.post("/registrars", json={"name": "GoDaddy"}, headers=auth_headers).json()["id"]
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    other_account_id = client.post(
+        "/accounts",
+        json={"business_name": "Other", "email": "o@b.test", "address_line1": "2 High St"},
+        headers=auth_headers,
+    ).json()["id"]
+    for acc_id, name in [(account_id, "a.test"), (account_id, "b.test"), (other_account_id, "c.test")]:
+        client.post(
+            f"/accounts/{acc_id}/domains",
+            json={"domain_name": name, "expiry_date": "2027-01-01", "registrar": "GoDaddy"},
+            headers=auth_headers,
+        )
+
+    response = client.get("/registrars", headers=auth_headers)
+    [registrar] = [r for r in response.json() if r["id"] == registrar_id]
+    assert registrar["domain_count"] == 3
+    assert registrar["account_count"] == 2
+
+
+def test_deleting_a_registrar_still_used_by_a_domain_returns_409(client, auth_headers):
+    registrar_id = client.post("/registrars", json={"name": "GoDaddy"}, headers=auth_headers).json()["id"]
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    client.post(
+        f"/accounts/{account_id}/domains",
+        json={"domain_name": "acme.test", "expiry_date": "2027-01-01", "registrar": "GoDaddy"},
+        headers=auth_headers,
+    )
+
+    response = client.delete(f"/registrars/{registrar_id}", headers=auth_headers)
+    assert response.status_code == 409
+
+    # Not actually deleted.
+    assert any(r["id"] == registrar_id for r in client.get("/registrars", headers=auth_headers).json())
 
 
 def test_registrar_from_another_login_user_is_isolated(client, auth_headers, other_auth_headers):

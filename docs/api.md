@@ -48,10 +48,10 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | GET | `/accounts/{id}/domains` | required | List this account's domains, soonest-expiry-first (not the newest-first convention every other list here uses) - a plain array, not paginated (see Conventions below). No single-domain `GET` route - the list is the only read path. |
 | PUT | `/accounts/{id}/domains/{domain_id}` | required | Replace a domain (same fields as create - a full replace). 404 if missing/wrong account, 422 on a blank `domain_name`/`registrar`. |
 | DELETE | `/accounts/{id}/domains/{domain_id}` | required | Delete it. 204, 404 if missing/wrong account. |
-| POST | `/registrars` | required | Add a registrar to the current user's organisation (`name` required; `notes` optional). 422 on a blank `name`. |
-| GET | `/registrars` | required | List the organisation's registrars, alphabetically by name (not the newest-first convention most lists here use) - a plain array, not paginated (see Conventions below). Populates the Domain form's registrar `<select>`. |
-| PUT | `/registrars/{id}` | required | Replace a registrar (same fields as create - a full replace). 404 if missing/wrong organisation, 422 on a blank `name`. |
-| DELETE | `/registrars/{id}` | required | Delete it. 204, 404 if missing/wrong organisation. Safe with no cascade - `Domain.registrar` stores the chosen name as a plain string, not a reference to this row (see Conventions below). |
+| POST | `/registrars` | required | Add a registrar to the current user's organisation (`name` required; `notes` optional). 422 on a blank `name`. Response includes `domain_count`/`account_count` (both `0` for a just-created registrar - see Conventions below). |
+| GET | `/registrars` | required | List the organisation's registrars, alphabetically by name (not the newest-first convention most lists here use) - a plain array, not paginated (see Conventions below). Populates the Domain form's registrar `<select>`, which ignores the `domain_count`/`account_count` fields this same response carries. |
+| PUT | `/registrars/{id}` | required | Replace a registrar (same fields as create - a full replace). 404 if missing/wrong organisation, 422 on a blank `name`. Response's `domain_count`/`account_count` reflect usage under the (possibly just-renamed) current name. |
+| DELETE | `/registrars/{id}` | required | Delete it. 204, 404 if missing/wrong organisation. **409** if at least one domain still names it (`domain_count > 0`) - see Conventions below; no database-level cascade either way, since `Domain.registrar` stores the chosen name as a plain string, not a reference to this row. |
 | POST | `/quotes` | required | Create a draft quote (`account_id` required; `currency` defaults `USD`; `issue_date` optional, defaults to today). `expiry_date` is computed server-side as `issue_date + ` the caller's `BusinessProfile.quote_validity_days` - not a request field. |
 | GET | `/quotes` | required | Paginated list of quotes - `{items, total}`. Optionally filtered by `?account_id=` (exact), `?account_name=` (matches the linked account's business_name, case-insensitively), and/or `?status=` (`draft`/`sent`/`accepted`/`rejected`/`expired`/`converted`). `?page=`/`?page_size=`, same as `/accounts` - see Conventions below. |
 | GET | `/quotes/{id}` | required | Fetch one quote with its line items, `events` (its audit trail, newest-first - see Conventions below), `subtotal`, `tax_total`, and (gross) `total`. |
@@ -223,11 +223,21 @@ See `docs/data-model.md`'s "Demo data" section and `CLAUDE.md`.
   list, no free-text option). Top-level (`/registrars`), not nested under
   `/accounts` like `Domain` - a registrar has no parent, it's
   organisation-wide. `name` required, `notes` optional free text (e.g. a
-  support URL). Editable in place and deletable - unlike `Account`,
-  deleting a `Registrar` has no cascade to worry about, since
-  `Domain.registrar` stores the chosen name as a plain string rather than
-  referencing this row's id (renaming or deleting a registrar later never
-  needs to touch domains that already recorded its name).
+  support URL). Editable in place - no *database-level* cascade to worry
+  about on a rename, since `Domain.registrar` stores the chosen name as a
+  plain string rather than referencing this row's id (renaming a
+  registrar never needs to touch domains that already recorded its old
+  name - though it does mean those domains no longer count towards the
+  renamed registrar's own usage, see `domain_count` below).
+  **`domain_count`/`account_count`**: every `RegistrarOut` (create,
+  list, update) includes how many domains currently name this registrar
+  (by its *current* name) and how many distinct accounts those domains
+  belong to - computed at request time, not stored. `DELETE
+  /registrars/{id}` is blocked (`409`) while `domain_count > 0` - unlike
+  `Registrar` itself, which has no foreign key pointing at it and so
+  could always be deleted with nothing breaking, leaving domains pointing
+  at a no-longer-listed name would be confusing, so this is an
+  application-level guard, not a constraint the database enforces.
 - **`Expense.issue_date` vs `expense_date`**: `issue_date` is when the
   record was created (a system timestamp, never editable); `expense_date`
   is when the money was actually spent (defaults to today at creation,
@@ -277,7 +287,11 @@ See `docs/data-model.md`'s "Demo data" section and `CLAUDE.md`.
   `due_date`, `expiry_date` are plain `YYYY-MM-DD` dates.
 - Errors map from two exception hierarchies, each in its own handler in
   `api/app.py`: this app's own (`handle_app_error`) — `NotFound → 404`,
-  `ValidationFailed → 422`, `Duplicate → 409`, `InvalidTransition → 409` —
+  `ValidationFailed → 422`, `Duplicate → 409`, `InvalidTransition → 409`,
+  `Conflict → 409` (distinct from `InvalidTransition` - that one's
+  specifically a `Quote`/`Invoice` status-field rejection; `Conflict` is
+  everything else that can't proceed given the resource's current state,
+  e.g. `DELETE /registrars/{id}` while a domain still names it) —
   and sessionkit's `AuthError` (`handle_auth_error`) — `AuthenticationError
   → 401` (covers `OtpRequired`/`OtpLocked`), `UserNotFound → 404`,
   `DuplicateUser → 409`, `ValidationError → 422`. `OtpInvalid` is `422`

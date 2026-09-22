@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from .attachments import AttachmentStore
 from .clock import Clock, system_clock
-from .errors import InvalidTransition, NotFound, ValidationFailed
+from .errors import Conflict, InvalidTransition, NotFound, ValidationFailed
 from .ids import IdGenerator
 from .ids import new_id as default_new_id
 from .models import (
@@ -26,6 +26,7 @@ from .models import (
     Quote,
     QuoteStatus,
     Registrar,
+    RegistrarUsage,
     RegistrationInvite,
     Stats,
 )
@@ -298,7 +299,11 @@ class RegistrarService:
     Unlike AccountService though, this supports delete - nothing holds a
     foreign key to a Registrar (Domain.registrar stores the chosen name
     as a plain string, not a reference - see models.Domain), so there's
-    no cascade to worry about."""
+    no database-level cascade to worry about. delete_registrar still
+    refuses (Conflict) to delete one that at least one Domain currently
+    names - an application-level guard, not a constraint the database
+    enforces - see get_registrar_usage/list_registrars_with_usage and
+    models.RegistrarUsage."""
 
     def __init__(
         self, repository: Repository, clock: Clock = system_clock, new_id: IdGenerator = default_new_id
@@ -327,6 +332,21 @@ class RegistrarService:
     def list_registrars(self, organisation_id: str) -> list[Registrar]:
         return self._repository.list_registrars(organisation_id)
 
+    def list_registrars_with_usage(self, organisation_id: str) -> list[RegistrarUsage]:
+        registrars = self._repository.list_registrars(organisation_id)
+        counts = self._repository.count_domains_by_registrar(organisation_id)
+        return [self._usage(registrar, counts) for registrar in registrars]
+
+    def get_registrar_usage(self, organisation_id: str, registrar_id: str) -> RegistrarUsage:
+        registrar = self._get_registrar(organisation_id, registrar_id)
+        counts = self._repository.count_domains_by_registrar(organisation_id)
+        return self._usage(registrar, counts)
+
+    @staticmethod
+    def _usage(registrar: Registrar, counts: dict[str, tuple[int, int]]) -> RegistrarUsage:
+        domain_count, account_count = counts.get(registrar.name, (0, 0))
+        return RegistrarUsage(registrar=registrar, domain_count=domain_count, account_count=account_count)
+
     def update_registrar(
         self, organisation_id: str, registrar_id: str, *, name: str, notes: str | None = None
     ) -> Registrar:
@@ -339,7 +359,12 @@ class RegistrarService:
         return self._repository.update_registrar(existing)
 
     def delete_registrar(self, organisation_id: str, registrar_id: str) -> None:
-        self._get_registrar(organisation_id, registrar_id)  # 404s if missing/wrong organisation
+        usage = self.get_registrar_usage(organisation_id, registrar_id)  # 404s if missing/wrong organisation
+        if usage.domain_count > 0:
+            raise Conflict(
+                f"registrar {registrar_id} is still used by {usage.domain_count} domain(s) across "
+                f"{usage.account_count} account(s) - remove or reassign them first"
+            )
         self._repository.delete_registrar(organisation_id, registrar_id)
 
     def _get_registrar(self, organisation_id: str, registrar_id: str) -> Registrar:

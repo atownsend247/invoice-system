@@ -1086,6 +1086,37 @@ def test_registrar_crud_and_tenant_scoping(repo, organisation_id):
     assert repo.get_registrar(organisation_id, godaddy.id) is None
 
 
+def test_count_domains_by_registrar_groups_by_name_and_scopes_by_organisation(repo, organisation_id):
+    other_organisation = repo.create_organisation(
+        Organisation(id=new_id(), name="Other Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
+    )
+    account = repo.create_account(_account(organisation_id))
+    other_account = repo.create_account(_account(organisation_id, business_name="Other"))
+    unrelated_account = repo.create_account(_account(other_organisation.id, business_name="Elsewhere"))
+
+    repo.create_domain(_domain(account.id, domain_name="a.test", registrar="GoDaddy"))
+    repo.create_domain(_domain(account.id, domain_name="b.test", registrar="GoDaddy"))
+    repo.create_domain(_domain(other_account.id, domain_name="c.test", registrar="GoDaddy"))
+    repo.create_domain(_domain(account.id, domain_name="d.test", registrar="123-Reg"))
+    # A domain in a *different* organisation naming the same registrar
+    # string must not be counted against this organisation's total -
+    # Domain has no organisation_id of its own (see models.Domain), so
+    # this is the scoping the join has to get right.
+    repo.create_domain(_domain(unrelated_account.id, domain_name="e.test", registrar="GoDaddy"))
+
+    counts = repo.count_domains_by_registrar(organisation_id)
+    assert counts["GoDaddy"] == (3, 2)
+    assert counts["123-Reg"] == (1, 1)
+    # The fifth "GoDaddy" domain belongs to a different organisation
+    # entirely - it must land in *that* organisation's own count, not
+    # inflate this one's.
+    assert repo.count_domains_by_registrar(other_organisation.id) == {"GoDaddy": (1, 1)}
+
+
+def test_count_domains_by_registrar_omits_registrars_with_no_domains(repo, organisation_id):
+    assert repo.count_domains_by_registrar(organisation_id) == {}
+
+
 def test_next_expense_number_increments_and_is_scoped_per_organisation(repo, organisation_id):
     other = repo.create_organisation(
         Organisation(id=new_id(), name="Other Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
