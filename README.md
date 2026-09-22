@@ -15,6 +15,7 @@ mirrored CLI) and a React/Vite SPA (`web/`). See
 [`docs/roadmap.md`](docs/roadmap.md) for phase-by-phase status and what's
 still ahead (partial payments, TOTP/2FA, email delivery).
 
+
 ## Features
 
 - **Accounts** — create, edit, and search the businesses you invoice, each
