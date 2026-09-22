@@ -50,6 +50,7 @@ from .schemas import (
     QuoteCreateIn,
     QuoteListOut,
     QuoteOut,
+    QuoteUpdateIn,
     RegistrarIn,
     RegistrarOut,
     StatsOut,
@@ -391,6 +392,25 @@ def get_quote(
     return QuoteOut.from_model(application.quotes.get_quote(organisation_id, quote_id))
 
 
+@domain_router.put("/quotes/{quote_id}", response_model=QuoteOut)
+def update_quote(
+    quote_id: str,
+    body: QuoteUpdateIn,
+    application: Application = Depends(get_application),
+    user: SessionUser = Depends(get_current_user),
+    organisation_id: str = Depends(get_organisation_id),
+) -> QuoteOut:
+    profile = application.business_profiles.get_profile(user.id)
+    quote = application.quotes.update_quote(
+        organisation_id,
+        quote_id,
+        currency=body.currency,
+        issue_date=body.issue_date,
+        quote_validity_days=profile.quote_validity_days,
+    )
+    return QuoteOut.from_model(quote)
+
+
 @domain_router.post("/quotes/{quote_id}/line-items", response_model=QuoteOut, status_code=201)
 def add_quote_line_item(
     quote_id: str,
@@ -406,6 +426,37 @@ def add_quote_line_item(
         unit_price=Decimal(body.unit_price),
         tax_rate=Decimal(body.tax_rate),
     )
+    return QuoteOut.from_model(quote)
+
+
+@domain_router.put("/quotes/{quote_id}/line-items/{item_id}", response_model=QuoteOut)
+def update_quote_line_item(
+    quote_id: str,
+    item_id: str,
+    body: LineItemIn,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> QuoteOut:
+    quote = application.quotes.update_line_item(
+        organisation_id,
+        quote_id,
+        item_id,
+        description=body.description,
+        quantity=Decimal(body.quantity),
+        unit_price=Decimal(body.unit_price),
+        tax_rate=Decimal(body.tax_rate),
+    )
+    return QuoteOut.from_model(quote)
+
+
+@domain_router.delete("/quotes/{quote_id}/line-items/{item_id}", response_model=QuoteOut)
+def delete_quote_line_item(
+    quote_id: str,
+    item_id: str,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> QuoteOut:
+    quote = application.quotes.delete_line_item(organisation_id, quote_id, item_id)
     return QuoteOut.from_model(quote)
 
 

@@ -444,6 +444,32 @@ def quote_create(
     click.echo(f"Created quote {created.id} (draft)")
 
 
+@quote.command("update")
+@click.argument("quote_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option("--currency", default="USD", show_default=True)
+@click.option(
+    "--issue-date",
+    required=True,
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Recomputes the expiry date (see 'settings show'). Draft only.",
+)
+@click.pass_obj
+def quote_update(
+    application: Application, quote_id: str, user_id: str, currency: str, issue_date: datetime
+) -> None:
+    organisation_id = _organisation_id(application, user_id)
+    quote_validity_days = application.business_profiles.get_profile(user_id).quote_validity_days
+    application.quotes.update_quote(
+        organisation_id,
+        quote_id,
+        currency=currency,
+        issue_date=issue_date.date(),
+        quote_validity_days=quote_validity_days,
+    )
+    click.echo(f"Updated quote {quote_id}")
+
+
 @quote.command("add-item")
 @click.argument("quote_id")
 @click.option("--user-id", required=True, help=_USER_ID_HELP)
@@ -467,7 +493,7 @@ def quote_add_item(
     unit_price: Decimal,
     tax_rate: Decimal,
 ) -> None:
-    application.quotes.add_line_item(
+    quote = application.quotes.add_line_item(
         _organisation_id(application, user_id),
         quote_id,
         description=description,
@@ -475,7 +501,54 @@ def quote_add_item(
         unit_price=unit_price,
         tax_rate=tax_rate,
     )
-    click.echo("Added line item")
+    click.echo(f"Added line item {quote.line_items[-1].id}")
+
+
+@quote.command("update-item")
+@click.argument("quote_id")
+@click.argument("item_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option("--description", required=True)
+@click.option("--quantity", required=True, type=Decimal)
+@click.option("--unit-price", required=True, type=Decimal)
+@click.option(
+    "--tax-rate",
+    default="0",
+    type=Decimal,
+    show_default=True,
+    help="VAT/tax rate as a fraction, e.g. 0.20 for 20%.",
+)
+@click.pass_obj
+def quote_update_item(
+    application: Application,
+    quote_id: str,
+    item_id: str,
+    user_id: str,
+    description: str,
+    quantity: Decimal,
+    unit_price: Decimal,
+    tax_rate: Decimal,
+) -> None:
+    application.quotes.update_line_item(
+        _organisation_id(application, user_id),
+        quote_id,
+        item_id,
+        description=description,
+        quantity=quantity,
+        unit_price=unit_price,
+        tax_rate=tax_rate,
+    )
+    click.echo("Updated line item")
+
+
+@quote.command("delete-item")
+@click.argument("quote_id")
+@click.argument("item_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.pass_obj
+def quote_delete_item(application: Application, quote_id: str, item_id: str, user_id: str) -> None:
+    application.quotes.delete_line_item(_organisation_id(application, user_id), quote_id, item_id)
+    click.echo("Deleted line item")
 
 
 @quote.command("send")

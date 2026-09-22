@@ -190,6 +190,15 @@ class QuoteCreateIn(BaseModel):
     issue_date: date | None = None
 
 
+class QuoteUpdateIn(BaseModel):
+    """Draft only - see QuoteService.update_quote. No `account_id` field, same
+    reasoning as DomainIn not carrying one - editing a quote's own fields is
+    kept deliberately separate from re-pointing it at a different account."""
+
+    currency: str = "USD"
+    issue_date: date
+
+
 class QuoteConvertIn(BaseModel):
     issue_date: date | None = None
 

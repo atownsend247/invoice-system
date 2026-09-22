@@ -658,6 +658,30 @@ class SqliteRepository:
             self._conn.commit()
             return item
 
+    def update_quote_line_item(self, quote_id: str, item: LineItem) -> LineItem:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE quote_line_items SET description = ?, quantity = ?, unit_price = ?, "
+                "tax_rate = ? WHERE id = ? AND quote_id = ?",
+                (
+                    item.description,
+                    str(item.quantity),
+                    str(item.unit_price),
+                    str(item.tax_rate),
+                    item.id,
+                    quote_id,
+                ),
+            )
+            self._conn.commit()
+            return item
+
+    def delete_quote_line_item(self, quote_id: str, item_id: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM quote_line_items WHERE id = ? AND quote_id = ?", (item_id, quote_id)
+            )
+            self._conn.commit()
+
     def add_quote_event(self, quote_id: str, event: ActivityEvent) -> ActivityEvent:
         with self._lock:
             self._conn.execute(

@@ -57,7 +57,10 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | POST | `/quotes` | required | Create a draft quote (`account_id` required; `currency` defaults `USD`; `issue_date` optional, defaults to today). `expiry_date` is computed server-side as `issue_date + ` the caller's `BusinessProfile.quote_validity_days` - not a request field. |
 | GET | `/quotes` | required | Paginated list of quotes - `{items, total}`. Optionally filtered by `?account_id=` (exact), `?account_name=` (matches the linked account's business_name, case-insensitively), and/or `?status=` (`draft`/`sent`/`accepted`/`rejected`/`expired`/`converted`). `?page=`/`?page_size=`, same as `/accounts` - see Conventions below. |
 | GET | `/quotes/{id}` | required | Fetch one quote with its line items, `events` (its audit trail, newest-first - see Conventions below), `subtotal`, `tax_total`, and (gross) `total`. |
+| PUT | `/quotes/{id}` | required | Replace a draft quote's `currency`/`issue_date` only - **not** `account_id` (a quote stays pointed at the account it was created for). `expiry_date` is recomputed from the new `issue_date` + the caller's `BusinessProfile.quote_validity_days`, same as `POST /quotes`. 409 if not draft, 422 on a blank `currency`. |
 | POST | `/quotes/{id}/line-items` | required | Add a line item to a draft quote (`description`, `quantity`, `unit_price` required; `tax_rate` defaults `"0"`, must be within `[0, 1]`). 409 if not draft, 422 on an out-of-range `tax_rate`. |
+| PUT | `/quotes/{id}/line-items/{item_id}` | required | Replace a line item's `description`/`quantity`/`unit_price`/`tax_rate` (same body/validation as create) - draft only, same gate as adding one. 409 if not draft, 404 if the quote or the item doesn't resolve under the caller's organisation, 422 on an out-of-range `tax_rate`. |
+| DELETE | `/quotes/{id}/line-items/{item_id}` | required | Remove a line item. Returns the updated `QuoteOut` (`200`, not `204`), same pattern as the expense line-item delete route below. 409 if not draft, 404 if the quote or the item doesn't resolve under the caller's organisation. |
 | POST | `/quotes/{id}/send` | required | Assign a quote number (using the caller's own `quote_number_prefix`/`quote_number_digits`, e.g. `Q-0001` by default - see Conventions below), transition `draft → sent`. 422 if no line items. |
 | POST | `/quotes/next-number` | required | `{next_number}` - jump the organisation's quote counter so the *next* quote sent gets exactly this number, regardless of how many quotes already exist (see Conventions below). `204`, `422` if `next_number < 1`. |
 | POST | `/quotes/{id}/convert` | required | Convert a `sent`/`accepted` quote into a new draft invoice, copying line items (`issue_date` optional in the request body, defaults to today - lets the caller backdate the resulting invoice). 409 otherwise. |
@@ -102,7 +105,7 @@ user" and "which organisation" from the Bearer token, the CLI has no
 session to resolve either from, so **every** `account`/`quote`/`invoice`/
 `expense`/`domain`/`registrar`
 command takes a **required** `--user-id` (`account create/list/update`,
-`quote create/add-item/send/convert/pdf`, `invoice
+`quote create/update/add-item/update-item/delete-item/send/convert/pdf`, `invoice
 list/send/void/pay/monthly-totals/pdf`, `expense
 create/list/add-item/update-item/delete-item/monthly-totals/pdf`,
 `expense attachment add/list/download/delete`, `domain
@@ -121,10 +124,15 @@ than the required positional argument they used to - a domain is created
 independently now, same as the API (see the `Domain` Convention below);
 `domain link <domain_id> --account-id`/`domain unlink <domain_id>` are new,
 mirroring `POST /domains/{id}/link|unlink`.
-`expense add-item` echoes the new line item's id (`Added line item
-<id>`) - the only `add-*` command that does, since `expense update-item`/
-`expense delete-item <expense_id> <item_id>` need it and there's no
-`expense get`/`show` command to look it up afterward otherwise.
+`expense add-item`/`quote add-item` both echo the new line item's id
+(`Added line item <id>`) - the two `add-*` commands that do, since their
+matching `update-item`/`delete-item <parent_id> <item_id>` commands need
+it and there's no `expense get`/`quote get`/`show` command to look it up
+afterward otherwise. `quote update <quote_id> --currency --issue-date` and
+`quote update-item`/`quote delete-item` mirror `PUT /quotes/{id}` and
+`PUT`/`DELETE /quotes/{id}/line-items/{item_id}` - draft only, same gate
+`quote add-item` already has (a non-zero exit with an error message if
+the quote isn't draft).
 `quote pdf`/`invoice pdf`/`expense pdf --user-id` and `invoice send
 --user-id` also
 reuse that same user id for their pre-existing purpose (the PDF "From"

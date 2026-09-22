@@ -317,11 +317,30 @@ export function createQuote(accountId: string, currency = 'USD', issueDate?: str
   })
 }
 
+export function updateQuote(
+  quoteId: string,
+  input: { currency: string; issue_date: string },
+): Promise<Quote> {
+  return request(`/quotes/${quoteId}`, { method: 'PUT', body: JSON.stringify(input) })
+}
+
 export function addQuoteLineItem(
   quoteId: string,
   input: { description: string; quantity: string; unit_price: string; tax_rate?: string },
 ): Promise<Quote> {
   return request(`/quotes/${quoteId}/line-items`, { method: 'POST', body: JSON.stringify(input) })
+}
+
+export function updateQuoteLineItem(
+  quoteId: string,
+  itemId: string,
+  input: { description: string; quantity: string; unit_price: string; tax_rate?: string },
+): Promise<Quote> {
+  return request(`/quotes/${quoteId}/line-items/${itemId}`, { method: 'PUT', body: JSON.stringify(input) })
+}
+
+export function deleteQuoteLineItem(quoteId: string, itemId: string): Promise<Quote> {
+  return request(`/quotes/${quoteId}/line-items/${itemId}`, { method: 'DELETE' })
 }
 
 export function sendQuote(id: string): Promise<Quote> {

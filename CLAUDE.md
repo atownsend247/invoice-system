@@ -153,7 +153,7 @@ Four separate things are easy to conflate here — don't:
   explicit `--user-id` instead — **required** on every
   account/quote/invoice/expense
   command (`account create/list/update`, `quote
-  create/add-item/send/convert/pdf`, `invoice
+  create/update/add-item/update-item/delete-item/send/convert/pdf`, `invoice
   list/send/void/pay/monthly-totals/pdf`, `expense
   create/list/add-item/pdf`, `expense attachment
   add/list/download/delete`, `stats`), since there's no session
@@ -259,9 +259,25 @@ Four separate things are easy to conflate here — don't:
   wire. `issue_date`/`due_date`/`expiry_date` are calendar dates (`date`, no
   timezone), not timestamps.
 - A new Quote/Invoice defaults to status `draft`; line items can only be
-  added while draft. `send()` assigns the number (`Q-0001`/`INV-0001`, a
-  per-entity counter in the `counters` table) and freezes line items — issue
-  a new quote/invoice rather than editing history afterwards. A Quote can
+  added while draft. Unlike `Invoice` (whose line items are only ever
+  populated once, at conversion time - there's no `add_line_item` for it at
+  all), a draft `Quote`'s own line items can also be edited
+  (`QuoteService.update_line_item`) or removed (`delete_line_item`) while
+  still draft, not just added - same "fetch, 404 via a private
+  `_get_line_item` helper if `item_id` isn't one of the entity's own items,
+  mutate, re-fetch" shape `ExpenseService`'s own line-item mutators already
+  established (see below), gated the same way `add_line_item` already is
+  (`_get_draft_quote` raises `InvalidTransition` once sent). A draft
+  `Quote`'s own top-level fields are similarly editable via
+  `QuoteService.update_quote` (`PUT /quotes/{id}`, CLI `quote update`) -
+  `currency` and `issue_date` only, **not** `account_id` (a quote stays
+  pointed at the account it was created for - re-pointing one at a
+  different client isn't supported); `expiry_date` is recomputed from the
+  new `issue_date` the same way `create_quote` computes it initially, not
+  left stale. `send()` assigns the number (`Q-0001`/`INV-0001`, a
+  per-entity counter in the `counters` table) and freezes everything -
+  line items, currency, issue date - issue a new quote/invoice rather
+  than editing history afterwards. A Quote can
   only convert to an Invoice once, from `sent`/`accepted`, copying its line
   items; converting flips the Quote to `converted`. There's no reverse
   `invoice_id` stored on `Quote` (that would be a redundant, dual-write
@@ -273,7 +289,13 @@ Four separate things are easy to conflate here — don't:
   invoice" action already navigates straight to the new invoice at
   conversion time; the `quote_id` filter is what lets a *converted* quote
   show a "View invoice" button that still works after navigating away and
-  back later, once that one-time redirect is long past.
+  back later, once that one-time redirect is long past. Web UI:
+  `QuoteDetailPage.tsx`'s meta line (`.quote-details-row`) grows an inline
+  "Edit" toggle, shown only while `quote.status === 'draft'`, same
+  lightweight pattern as `ExpenseDetailPage.tsx`'s expense-date toggle
+  (its own local busy/error state, not the heavier `initial`/`onSubmit`/
+  `onDone` form-component shape `DomainForm`/`RegistrarForm` use) - fields
+  for `currency`/`issue_date` only, calling `api.updateQuote`.
 - **Audit trail** (`ActivityEvent` in models.py, `quote_events`/
   `invoice_events` tables) - creation and status changes only, not every
   field edit (e.g. adding a line item isn't recorded). Same "one shared
@@ -742,11 +764,16 @@ Four separate things are easy to conflate here — don't:
   gated behind a status check the way `QuoteService.add_line_item`
   requires `draft` - a line item can be added, edited
   (`ExpenseService.update_line_item`), or removed
-  (`ExpenseService.delete_line_item`) at any time - unlike
-  `Quote`/`Invoice`, where a line item is add-only and frozen by `send()`.
-  Both new methods share the "fetch, 404 via a private `_get_line_item`
-  helper if `item_id` isn't one of the expense's own items, mutate,
-  re-fetch" shape every other expense mutation here already uses;
+  (`ExpenseService.delete_line_item`) at any time, with no status gate at
+  all - unlike `Quote` (editable/removable the same way, via
+  `QuoteService.update_line_item`/`delete_line_item`, but only while
+  `draft` - frozen by `send()`, see above) and `Invoice` (never editable
+  at all - its line items are only ever populated once, at conversion
+  time). Both new methods share the "fetch, 404 via a private
+  `_get_line_item` helper if `item_id` isn't one of the expense's own
+  items, mutate, re-fetch" shape every other expense mutation here
+  already uses - the same shape `QuoteService`'s own
+  `update_line_item`/`delete_line_item` use too;
   `update_line_item` re-validates `description`/`tax_rate` exactly like
   `add_line_item` and keeps the item's existing `id`/`position` (editing
   never reorders). Line items
@@ -782,9 +809,13 @@ Four separate things are easy to conflate here — don't:
   `DomainForm`/`RegistrarForm` use, since this is the one editable field
   on the whole page other than line items). `LineItemsTable.tsx` (shared
   with `QuoteDetailPage.tsx`/`InvoiceDetailPage.tsx`) gains `onEdit`/
-  `onDelete` props that only `ExpenseDetailPage.tsx` passes - Quote/
-  Invoice keep rendering with no actions column at all, since those stay
-  add-only. Its `AddLineItemForm` (now the dual-purpose `LineItemForm`)
+  `onDelete` props - `ExpenseDetailPage.tsx` always passes both (no status
+  gate), `QuoteDetailPage.tsx` passes both only while `quote.status ===
+  'draft'` (same condition it already used for `onAdd`, see above) so the
+  actions column disappears the moment a quote is sent, and
+  `InvoiceDetailPage.tsx` passes neither at all, since an `Invoice`'s line
+  items are never editable (only ever populated once, at conversion
+  time). Its `AddLineItemForm` (now the dual-purpose `LineItemForm`)
   owns an `editingItem: LineItem | null` piece of state itself, keyed via
   React's `key` prop (`key={editingItem?.id ?? 'add'}`) so switching which
   item (or back to add-mode) remounts the form and re-initialises its

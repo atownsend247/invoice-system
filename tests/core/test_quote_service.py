@@ -401,3 +401,180 @@ def test_set_next_number_jumps_the_counter_regardless_of_existing_quotes(
 def test_set_next_number_rejects_a_value_below_one(application, organisation_id):
     with pytest.raises(ValidationFailed):
         application.quotes.set_next_number(organisation_id, 0)
+
+
+def test_update_quote_changes_currency_and_recomputes_expiry(application, organisation_id, account):
+    quote = application.quotes.create_quote(
+        organisation_id=organisation_id, account_id=account.id, issue_date=date(2026, 1, 1)
+    )
+
+    updated = application.quotes.update_quote(
+        organisation_id,
+        quote.id,
+        currency="EUR",
+        issue_date=date(2026, 2, 1),
+        quote_validity_days=10,
+    )
+
+    assert updated.currency == "EUR"
+    assert updated.issue_date == date(2026, 2, 1)
+    assert updated.expiry_date == date(2026, 2, 11)
+    assert updated.account_id == account.id
+
+
+def test_update_quote_requires_a_currency(application, organisation_id, account):
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    with pytest.raises(ValidationFailed):
+        application.quotes.update_quote(organisation_id, quote.id, currency="  ", issue_date=date(2026, 1, 1))
+
+
+def test_cannot_update_a_sent_quote(application, organisation_id, account):
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    quote = application.quotes.add_line_item(
+        organisation_id, quote.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    quote = application.quotes.send(organisation_id, quote.id)
+
+    with pytest.raises(InvalidTransition):
+        application.quotes.update_quote(
+            organisation_id, quote.id, currency="EUR", issue_date=date(2026, 1, 1)
+        )
+
+
+def test_update_quote_requires_existing_quote(application, organisation_id):
+    with pytest.raises(NotFound):
+        application.quotes.update_quote(
+            organisation_id, "does-not-exist", currency="USD", issue_date=date(2026, 1, 1)
+        )
+
+
+def test_update_line_item_changes_fields_and_recomputes_totals(application, organisation_id, account):
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    quote = application.quotes.add_line_item(
+        organisation_id,
+        quote.id,
+        description="Design work",
+        quantity=Decimal("1"),
+        unit_price=Decimal("50.00"),
+    )
+    item_id = quote.line_items[0].id
+
+    updated = application.quotes.update_line_item(
+        organisation_id,
+        quote.id,
+        item_id,
+        description="Design work (revised)",
+        quantity=Decimal("2"),
+        unit_price=Decimal("60.00"),
+        tax_rate=Decimal("0.20"),
+    )
+
+    assert len(updated.line_items) == 1
+    item = updated.line_items[0]
+    assert item.id == item_id
+    assert item.description == "Design work (revised)"
+    assert item.quantity == Decimal("2")
+    assert item.unit_price == Decimal("60.00")
+    assert item.tax_rate == Decimal("0.20")
+    assert updated.total == Decimal("144.00")
+
+
+def test_update_line_item_requires_a_description(application, organisation_id, account):
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    quote = application.quotes.add_line_item(
+        organisation_id, quote.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    with pytest.raises(ValidationFailed):
+        application.quotes.update_line_item(
+            organisation_id,
+            quote.id,
+            quote.line_items[0].id,
+            description="   ",
+            quantity=Decimal("1"),
+            unit_price=Decimal("1"),
+        )
+
+
+def test_update_line_item_rejects_an_out_of_range_tax_rate(application, organisation_id, account):
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    quote = application.quotes.add_line_item(
+        organisation_id, quote.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    with pytest.raises(ValidationFailed):
+        application.quotes.update_line_item(
+            organisation_id,
+            quote.id,
+            quote.line_items[0].id,
+            description="x",
+            quantity=Decimal("1"),
+            unit_price=Decimal("1"),
+            tax_rate=Decimal("1.5"),
+        )
+
+
+def test_update_line_item_requires_the_item_to_belong_to_the_quote(application, organisation_id, account):
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    with pytest.raises(NotFound):
+        application.quotes.update_line_item(
+            organisation_id,
+            quote.id,
+            "does-not-exist",
+            description="x",
+            quantity=Decimal("1"),
+            unit_price=Decimal("1"),
+        )
+
+
+def test_cannot_update_a_line_item_on_a_sent_quote(application, organisation_id, account):
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    quote = application.quotes.add_line_item(
+        organisation_id, quote.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    item_id = quote.line_items[0].id
+    quote = application.quotes.send(organisation_id, quote.id)
+
+    with pytest.raises(InvalidTransition):
+        application.quotes.update_line_item(
+            organisation_id,
+            quote.id,
+            item_id,
+            description="y",
+            quantity=Decimal("1"),
+            unit_price=Decimal("1"),
+        )
+
+
+def test_delete_line_item_removes_it_and_recomputes_totals(application, organisation_id, account):
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    quote = application.quotes.add_line_item(
+        organisation_id, quote.id, description="First", quantity=Decimal("1"), unit_price=Decimal("10.00")
+    )
+    quote = application.quotes.add_line_item(
+        organisation_id, quote.id, description="Second", quantity=Decimal("1"), unit_price=Decimal("5.00")
+    )
+    first_id = quote.line_items[0].id
+
+    updated = application.quotes.delete_line_item(organisation_id, quote.id, first_id)
+    assert [item.description for item in updated.line_items] == ["Second"]
+    assert updated.total == Decimal("5.00")
+
+    fetched = application.quotes.get_quote(organisation_id, quote.id)
+    assert [item.description for item in fetched.line_items] == ["Second"]
+
+
+def test_delete_line_item_requires_the_item_to_belong_to_the_quote(application, organisation_id, account):
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    with pytest.raises(NotFound):
+        application.quotes.delete_line_item(organisation_id, quote.id, "does-not-exist")
+
+
+def test_cannot_delete_a_line_item_on_a_sent_quote(application, organisation_id, account):
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    quote = application.quotes.add_line_item(
+        organisation_id, quote.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    item_id = quote.line_items[0].id
+    quote = application.quotes.send(organisation_id, quote.id)
+
+    with pytest.raises(InvalidTransition):
+        application.quotes.delete_line_item(organisation_id, quote.id, item_id)
