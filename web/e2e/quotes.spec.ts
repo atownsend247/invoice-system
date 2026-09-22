@@ -1,4 +1,10 @@
-import { expect, test } from './fixtures'
+import { apiFetch, expect, test } from './fixtures'
+
+function addDays(isoDate: string, days: number): string {
+  const date = new Date(`${isoDate}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
 
 test('creating a draft quote and adding a line item', async ({ authenticatedPage: page, testAccount }) => {
   await page.goto(`/quotes/new?accountId=${testAccount.id}`)
@@ -176,6 +182,60 @@ test('viewing the PDF opens an in-page preview instead of downloading it', async
 
   await page.getByRole('button', { name: 'Close' }).click()
   await expect(frame).toHaveCount(0)
+})
+
+test('editing a draft quote changes its currency and issue date, and recomputes the expiry date', async ({
+  authenticatedPage: page,
+  draftQuote,
+  apiToken,
+}) => {
+  await page.goto(`/quotes/${draftQuote.id}`)
+  await page.getByText(`issued ${draftQuote.issue_date}`).getByRole('button', { name: 'Edit' }).click()
+
+  await page.getByLabel('Currency').fill('EUR')
+  await page.getByLabel('Issue date').fill('2026-01-01')
+  await page.getByRole('button', { name: 'Save' }).click()
+
+  await expect(page.getByText('issued 2026-01-01')).toBeVisible()
+  // quote_validity_days is a shared BusinessProfile field a concurrent
+  // settings.spec.ts run can change mid-test (see CLAUDE.md's "Deliberately
+  // not exact" note on the shared-profile race) - read it right before
+  // computing the expected expiry, rather than assuming the default.
+  const profile = await apiFetch<{ quote_validity_days: number }>('/settings/business-profile', apiToken)
+  const expectedExpiry = addDays('2026-01-01', profile.quote_validity_days)
+  await expect(page.getByText(`expires ${expectedExpiry}`)).toBeVisible()
+  // Scoped to the details paragraph - "EUR" alone would also match the
+  // (empty) line-items table's currency cells.
+  await expect(page.locator('.quote-details-row')).toContainText('EUR')
+})
+
+test('a sent quote has no Edit action for its own details', async ({ authenticatedPage: page, sentQuote }) => {
+  await page.goto(`/quotes/${sentQuote.id}`)
+  await expect(page.getByText(`issued ${sentQuote.issue_date}`).getByRole('button')).toHaveCount(0)
+})
+
+test('editing and deleting an existing line item on a draft quote', async ({
+  authenticatedPage: page,
+  draftQuote,
+}) => {
+  await page.goto(`/quotes/${draftQuote.id}`)
+  await page.getByLabel('Description').fill('Design work')
+  await page.getByLabel('Qty').fill('1')
+  await page.getByLabel('Unit price').fill('50.00')
+  await page.getByRole('button', { name: 'Add item' }).click()
+
+  const row = page.locator('tbody tr', { hasText: 'Design work' })
+  await row.getByRole('button', { name: 'Edit' }).click()
+  await page.getByLabel('Description').fill('Design work (revised)')
+  await page.getByLabel('Unit price').fill('75.00')
+  await page.getByRole('button', { name: 'Update item' }).click()
+
+  const updatedRow = page.locator('tbody tr', { hasText: 'Design work (revised)' })
+  await expect(updatedRow).toContainText('75.00 USD')
+  await expect(page.locator('tfoot tr', { hasText: /^Total/ })).toContainText('75.00 USD')
+
+  await updatedRow.getByRole('button', { name: 'Delete' }).click()
+  await expect(page.getByText('No line items yet.')).toBeVisible()
 })
 
 test('filtering the quotes list by account name and status', async ({

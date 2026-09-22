@@ -747,6 +747,102 @@ def test_expense_update_item_and_delete_item(tmp_path):
     assert "Deleted line item" in result.output
 
 
+def test_quote_update_and_update_item_and_delete_item(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "account",
+            "create",
+            "--user-id",
+            "1",
+            "--business-name",
+            "Acme",
+            "--email",
+            "a@b.test",
+            "--address-line1",
+            "1 Main St",
+        ],
+    )
+    account_id = _id_from(result.output, r"Created account (\S+):")
+
+    result = runner.invoke(
+        cli, [*_base_args(db_path), "quote", "create", "--user-id", "1", "--account-id", account_id]
+    )
+    quote_id = _id_from(result.output, r"Created quote (\S+) \(draft\)")
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "quote",
+            "update",
+            quote_id,
+            "--user-id",
+            "1",
+            "--currency",
+            "EUR",
+            "--issue-date",
+            "2026-03-01",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Updated quote" in result.output
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "quote",
+            "add-item",
+            quote_id,
+            "--user-id",
+            "1",
+            "--description",
+            "Design work",
+            "--quantity",
+            "1",
+            "--unit-price",
+            "100.00",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    item_id = _id_from(result.output, r"Added line item (\S+)")
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "quote",
+            "update-item",
+            quote_id,
+            item_id,
+            "--user-id",
+            "1",
+            "--description",
+            "Design work (revised)",
+            "--quantity",
+            "2",
+            "--unit-price",
+            "100.00",
+            "--tax-rate",
+            "0.20",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Updated line item" in result.output
+
+    result = runner.invoke(
+        cli, [*_base_args(db_path), "quote", "delete-item", quote_id, item_id, "--user-id", "1"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Deleted line item" in result.output
+
+
 def test_expense_attachment_add_rejects_a_non_pdf(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()

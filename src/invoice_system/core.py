@@ -648,6 +648,31 @@ class QuoteService:
         )
         return Page(items=items, total=total)
 
+    def update_quote(
+        self,
+        organisation_id: str,
+        quote_id: str,
+        *,
+        currency: str,
+        issue_date: date_,
+        quote_validity_days: int | None = None,
+    ) -> Quote:
+        """Draft only (see `_get_draft_quote`) - a sent quote is frozen, same
+        reasoning as line items being add-only once sent. `account_id` is
+        deliberately not editable here (a quote stays pointed at the
+        account it was created for); `expiry_date` is recomputed from the
+        new `issue_date` the same way `create_quote` computes it initially,
+        not left stale."""
+        quote = self._get_draft_quote(organisation_id, quote_id)
+        if not currency.strip():
+            raise ValidationFailed("currency is required")
+        days = quote_validity_days if quote_validity_days is not None else DEFAULT_QUOTE_VALIDITY_DAYS
+        quote.currency = currency
+        quote.issue_date = issue_date
+        quote.expiry_date = issue_date + timedelta(days=days)
+        self._repository.update_quote(quote)
+        return self._get_quote(organisation_id, quote_id)
+
     def add_line_item(
         self,
         organisation_id: str,
@@ -672,6 +697,46 @@ class QuoteService:
         )
         self._repository.add_quote_line_item(quote_id, item)
         return self._get_quote(organisation_id, quote_id)
+
+    def update_line_item(
+        self,
+        organisation_id: str,
+        quote_id: str,
+        item_id: str,
+        *,
+        description: str,
+        quantity: Decimal,
+        unit_price: Decimal,
+        tax_rate: Decimal = Decimal("0"),
+    ) -> Quote:
+        quote = self._get_draft_quote(organisation_id, quote_id)
+        existing = self._get_line_item(quote, item_id)
+        if not description.strip():
+            raise ValidationFailed("description is required")
+        _validate_tax_rate(tax_rate)
+        item = LineItem(
+            id=existing.id,
+            description=description,
+            quantity=quantity,
+            unit_price=unit_price,
+            tax_rate=tax_rate,
+            position=existing.position,
+        )
+        self._repository.update_quote_line_item(quote_id, item)
+        return self._get_quote(organisation_id, quote_id)
+
+    def delete_line_item(self, organisation_id: str, quote_id: str, item_id: str) -> Quote:
+        quote = self._get_draft_quote(organisation_id, quote_id)
+        self._get_line_item(quote, item_id)
+        self._repository.delete_quote_line_item(quote_id, item_id)
+        return self._get_quote(organisation_id, quote_id)
+
+    @staticmethod
+    def _get_line_item(quote: Quote, item_id: str) -> LineItem:
+        for item in quote.line_items:
+            if item.id == item_id:
+                return item
+        raise NotFound(f"line item {item_id} not found")
 
     def send(
         self,

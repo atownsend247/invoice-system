@@ -306,6 +306,160 @@ def test_convert_quote_accepts_a_backdated_issue_date(client, auth_headers):
     assert response.json()["issue_date"] == "2025-11-01"
 
 
+def test_update_quote_changes_currency_and_issue_date(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+
+    response = client.put(
+        f"/quotes/{quote_id}", json={"currency": "EUR", "issue_date": "2026-03-01"}, headers=auth_headers
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["currency"] == "EUR"
+    assert body["issue_date"] == "2026-03-01"
+
+    response = client.get(f"/quotes/{quote_id}", headers=auth_headers)
+    assert response.json()["currency"] == "EUR"
+
+
+def test_update_a_sent_quote_returns_409(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+    client.post(
+        f"/quotes/{quote_id}/line-items",
+        json={"description": "Work", "quantity": "1", "unit_price": "100.00"},
+        headers=auth_headers,
+    )
+    client.post(f"/quotes/{quote_id}/send", headers=auth_headers)
+
+    response = client.put(
+        f"/quotes/{quote_id}", json={"currency": "EUR", "issue_date": "2026-03-01"}, headers=auth_headers
+    )
+    assert response.status_code == 409
+
+
+def test_update_quote_from_another_login_user_returns_404(client, auth_headers, other_auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Owner's Client", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+
+    response = client.put(
+        f"/quotes/{quote_id}",
+        json={"currency": "EUR", "issue_date": "2026-03-01"},
+        headers=other_auth_headers,
+    )
+    assert response.status_code == 404
+
+
+def test_quote_line_item_update_and_delete(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+    item_id = client.post(
+        f"/quotes/{quote_id}/line-items",
+        json={"description": "Work", "quantity": "1", "unit_price": "100.00"},
+        headers=auth_headers,
+    ).json()["line_items"][0]["id"]
+
+    response = client.put(
+        f"/quotes/{quote_id}/line-items/{item_id}",
+        json={"description": "Work (revised)", "quantity": "2", "unit_price": "50.00"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["line_items"][0]["description"] == "Work (revised)"
+    assert body["total"] == "100.00"
+
+    response = client.delete(f"/quotes/{quote_id}/line-items/{item_id}", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json()["line_items"] == []
+
+
+def test_quote_line_item_update_and_delete_require_the_item_to_exist(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+
+    response = client.put(
+        f"/quotes/{quote_id}/line-items/does-not-exist",
+        json={"description": "x", "quantity": "1", "unit_price": "1"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+    response = client.delete(f"/quotes/{quote_id}/line-items/does-not-exist", headers=auth_headers)
+    assert response.status_code == 404
+
+
+def test_quote_line_item_update_and_delete_from_another_login_user_return_404(
+    client, auth_headers, other_auth_headers
+):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+    item_id = client.post(
+        f"/quotes/{quote_id}/line-items",
+        json={"description": "x", "quantity": "1", "unit_price": "1"},
+        headers=auth_headers,
+    ).json()["line_items"][0]["id"]
+
+    response = client.put(
+        f"/quotes/{quote_id}/line-items/{item_id}",
+        json={"description": "y", "quantity": "1", "unit_price": "1"},
+        headers=other_auth_headers,
+    )
+    assert response.status_code == 404
+
+    response = client.delete(f"/quotes/{quote_id}/line-items/{item_id}", headers=other_auth_headers)
+    assert response.status_code == 404
+
+
+def test_cannot_update_or_delete_a_line_item_on_a_sent_quote(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+    item_id = client.post(
+        f"/quotes/{quote_id}/line-items",
+        json={"description": "Work", "quantity": "1", "unit_price": "100.00"},
+        headers=auth_headers,
+    ).json()["line_items"][0]["id"]
+    client.post(f"/quotes/{quote_id}/send", headers=auth_headers)
+
+    response = client.put(
+        f"/quotes/{quote_id}/line-items/{item_id}",
+        json={"description": "y", "quantity": "1", "unit_price": "1"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 409
+
+    response = client.delete(f"/quotes/{quote_id}/line-items/{item_id}", headers=auth_headers)
+    assert response.status_code == 409
+
+
 def test_list_accounts_paginates_and_filters_by_query(client, auth_headers):
     for name, email in [("Northwind Traders", "billing@northwind.test"), ("Acme Ltd", "a@acme.test")]:
         client.post(

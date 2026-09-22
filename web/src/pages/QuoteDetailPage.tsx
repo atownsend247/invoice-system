@@ -35,6 +35,11 @@ export function QuoteDetailPage() {
   // Optional backdating for the resulting invoice - blank means "today"
   // (see CLAUDE.md/QuoteService.convert_to_invoice).
   const [convertIssueDate, setConvertIssueDate] = useState('')
+  const [editingDetails, setEditingDetails] = useState(false)
+  const [currencyInput, setCurrencyInput] = useState('')
+  const [issueDateInput, setIssueDateInput] = useState('')
+  const [detailsError, setDetailsError] = useState<string | null>(null)
+  const [savingDetails, setSavingDetails] = useState(false)
 
   function closePdfPreview() {
     if (pdfUrl) URL.revokeObjectURL(pdfUrl)
@@ -62,6 +67,21 @@ export function QuoteDetailPage() {
     }
   }
 
+  async function handleSaveDetails() {
+    if (!quote) return
+    setDetailsError(null)
+    setSavingDetails(true)
+    try {
+      await api.updateQuote(quote.id, { currency: currencyInput, issue_date: issueDateInput })
+      setEditingDetails(false)
+      refetch()
+    } catch (err) {
+      setDetailsError(errorMessage(err))
+    } finally {
+      setSavingDetails(false)
+    }
+  }
+
   return (
     <section>
       <Link to={`/accounts/${quote.account_id}`} className="back-link">
@@ -71,10 +91,63 @@ export function QuoteDetailPage() {
         <h1>{quote.number ?? `Draft quote #${quote.id}`}</h1>
         <StatusBadge status={quote.status} />
       </div>
-      <p className="meta">
-        {account?.business_name ?? `Account #${quote.account_id}`} · issued {quote.issue_date}
-        {quote.expiry_date && <> · expires {quote.expiry_date}</>}
+      <p className="meta quote-details-row">
+        {account?.business_name ?? `Account #${quote.account_id}`} ·{' '}
+        {editingDetails ? (
+          <>
+            <label>
+              Currency
+              <input
+                value={currencyInput}
+                onChange={(event) => setCurrencyInput(event.target.value.toUpperCase())}
+                maxLength={3}
+              />
+            </label>
+            <label>
+              Issue date
+              <input
+                type="date"
+                value={issueDateInput}
+                onChange={(event) => setIssueDateInput(event.target.value)}
+              />
+            </label>
+            <button type="button" onClick={handleSaveDetails} disabled={savingDetails}>
+              {savingDetails ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setEditingDetails(false)}
+              disabled={savingDetails}
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <>
+            issued {quote.issue_date}
+            {quote.expiry_date && <> · expires {quote.expiry_date}</>} · {quote.currency}{' '}
+            {quote.status === 'draft' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrencyInput(quote.currency)
+                  setIssueDateInput(quote.issue_date)
+                  setDetailsError(null)
+                  setEditingDetails(true)
+                }}
+              >
+                Edit
+              </button>
+            )}
+          </>
+        )}
       </p>
+      {detailsError && (
+        <p className="form-error" role="alert">
+          {detailsError}
+        </p>
+      )}
 
       <LineItemsTable
         lineItems={quote.line_items}
@@ -86,6 +159,22 @@ export function QuoteDetailPage() {
           quote.status === 'draft'
             ? async (input) => {
                 await api.addQuoteLineItem(quote.id, input)
+                refetch()
+              }
+            : undefined
+        }
+        onEdit={
+          quote.status === 'draft'
+            ? async (itemId, input) => {
+                await api.updateQuoteLineItem(quote.id, itemId, input)
+                refetch()
+              }
+            : undefined
+        }
+        onDelete={
+          quote.status === 'draft'
+            ? async (itemId) => {
+                await api.deleteQuoteLineItem(quote.id, itemId)
                 refetch()
               }
             : undefined

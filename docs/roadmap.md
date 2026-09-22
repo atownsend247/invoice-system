@@ -1493,5 +1493,60 @@ flow," not a restructuring, whenever it's actually needed.
       future fix, same as the pre-existing `quote_validity_days` cross-test
       leak noted in an earlier phase.
 
+## Phase 41 — Editable/removable draft quote line items + quote details (done)
+
+- [x] Reported as a bug ("can't update quotes that are in a draft
+      state") - turned out to be a real gap, not a misunderstanding: a
+      draft `Quote`'s line items could only ever be added, never edited
+      or removed, and none of the quote's own fields (`currency`/
+      `issue_date`) could be changed after creation at all. Confirmed
+      scope with the user before building: quote-field editing limited to
+      `currency`/`issue_date` (not `account_id` - a quote stays pointed at
+      the account it was created for), and line-item edit/delete
+      restricted to `draft` only, matching the existing add-line-item
+      gate (not extended to `sent`/`accepted` - those stay frozen).
+- [x] `QuoteService.update_line_item`/`delete_line_item` (`core.py`) -
+      the same "fetch, 404 via a private `_get_line_item` helper if
+      `item_id` isn't one of the quote's own items, mutate, re-fetch"
+      shape `ExpenseService`'s own line-item mutators already established
+      (Phase 36), but gated behind `_get_draft_quote` (the same guard
+      `add_line_item` already uses) rather than being unconditional -
+      `InvalidTransition` (409) once the quote is no longer `draft`.
+      `QuoteService.update_quote(organisation_id, quote_id, *, currency,
+      issue_date, quote_validity_days=None)` - also draft-only, full
+      replace of just those two fields; `expiry_date` is recomputed from
+      the new `issue_date` the same way `create_quote` computes it
+      initially, not left stale.
+- [x] `PUT /quotes/{id}` and `PUT`/`DELETE /quotes/{id}/line-items/
+      {item_id}` (the delete route returns the updated `QuoteOut`, not
+      `204`, same pattern as the expense line-item delete route); CLI
+      `quote update --currency --issue-date`, `quote update-item`/
+      `quote delete-item`. `quote add-item` now also echoes the new
+      item's id (`Added line item <id>`) - needed to target a later
+      `update-item`/`delete-item`, matching `expense add-item`'s existing
+      behaviour (which is no longer the only `add-*` command that does).
+- [x] Web UI: `QuoteDetailPage.tsx`'s meta line grows an inline "Edit"
+      toggle (shown only while draft) for `currency`/`issue_date`, same
+      lightweight local-state pattern as `ExpenseDetailPage.tsx`'s
+      expense-date toggle. `LineItemsTable.tsx`'s existing `onEdit`/
+      `onDelete` props (added in Phase 36 for `ExpenseDetailPage.tsx`) are
+      now also passed by `QuoteDetailPage.tsx`, conditionally on
+      `quote.status === 'draft'` (the same condition already gating
+      `onAdd`) - the actions column disappears the moment a quote is
+      sent. `InvoiceDetailPage.tsx` passes neither, unchanged - an
+      `Invoice`'s line items are still only ever populated once, at
+      conversion time.
+- [x] Full backend suite (462 tests, 98.7%+ coverage) and full e2e suite
+      (74 tests) updated and passing, including a
+      `--repeat-each=3 --workers` concurrent stress run of
+      `quotes.spec.ts` alongside `settings.spec.ts` - caught and fixed a
+      real race in the new e2e coverage itself (asserting a fixed 30-day
+      default expiry date, when `quote_validity_days` is a shared,
+      mutable `BusinessProfile` field a concurrent `settings.spec.ts` run
+      can change mid-test - see the "Deliberately not exact" gotcha in
+      `CLAUDE.md`). Fixed by reading the profile's current
+      `quote_validity_days` right before computing the expected expiry,
+      not by asserting the default.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

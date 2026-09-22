@@ -188,7 +188,15 @@ Expense 1──* ExpenseAttachment
 
 - `LineItem`s are only addable while the owning `Quote`/`Invoice` is
   `draft`; `send()` freezes them (issue a new quote/invoice instead of
-  editing history — see `CLAUDE.md` conventions).
+  editing history — see `CLAUDE.md` conventions). A draft `Quote`'s line
+  items are also editable/removable (`QuoteService.update_line_item`/
+  `delete_line_item`), not just addable — still gated to `draft` the same
+  way. `Invoice` has no such methods at all — its line items are only ever
+  populated once, at conversion time.
+- A draft `Quote`'s own `currency`/`issue_date` are similarly editable
+  (`QuoteService.update_quote`) while still draft — `account_id` is not;
+  `expiry_date` is recomputed from the new `issue_date` the same way
+  `create_quote` computes it initially.
 - `Quote.number`/`Invoice.number` are assigned by the service on `send()`,
   not on creation — a draft can exist indefinitely without consuming a
   number.
@@ -207,8 +215,9 @@ Expense 1──* ExpenseAttachment
   through the service layer.
 - Money fields (`unit_price`, `tax_rate`) are `Decimal` end-to-end;
   `SqliteRepository` stores them as `TEXT`, never `REAL`.
-- `QuoteService.add_line_item`/`InvoiceService.add_line_item` reject a
-  `tax_rate` outside `[0, 1]`. `QuoteService.convert_to_invoice` copies
+- `QuoteService.add_line_item`/`InvoiceService.add_line_item` (and
+  `QuoteService.update_line_item`) reject a `tax_rate` outside `[0, 1]`.
+  `QuoteService.convert_to_invoice` copies
   `tax_rate` across to the new `LineItem` along with the other fields — a
   migration or refactor that adds another `LineItem` field must update that
   copy too, or it silently reverts to the field's default on every
