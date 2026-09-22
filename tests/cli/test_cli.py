@@ -1558,7 +1558,6 @@ def test_domain_create_list_update_delete(tmp_path):
             *_base_args(db_path),
             "domain",
             "create",
-            account_id,
             "--user-id",
             "1",
             "--domain-name",
@@ -1568,15 +1567,18 @@ def test_domain_create_list_update_delete(tmp_path):
             "--registrar",
             "123-Reg",
             "--auto-renew",
+            "--account-id",
+            account_id,
         ],
     )
     assert result.exit_code == 0, result.output
     domain_id = _id_from(result.output, r"Created domain (\S+):")
 
-    result = runner.invoke(cli, [*_base_args(db_path), "domain", "list", account_id, "--user-id", "1"])
+    result = runner.invoke(cli, [*_base_args(db_path), "domain", "list", "--user-id", "1"])
     assert result.exit_code == 0, result.output
     assert "acme.test" in result.output
     assert "auto-renew" in result.output
+    assert "Acme" in result.output  # linked account name, not "unlinked"
 
     result = runner.invoke(
         cli,
@@ -1584,7 +1586,6 @@ def test_domain_create_list_update_delete(tmp_path):
             *_base_args(db_path),
             "domain",
             "update",
-            account_id,
             domain_id,
             "--user-id",
             "1",
@@ -1600,21 +1601,31 @@ def test_domain_create_list_update_delete(tmp_path):
     assert result.exit_code == 0, result.output
     assert f"Updated domain {domain_id}: acme.co.uk" in result.output
 
-    result = runner.invoke(cli, [*_base_args(db_path), "domain", "list", account_id, "--user-id", "1"])
+    result = runner.invoke(cli, [*_base_args(db_path), "domain", "list", "--user-id", "1"])
     assert "acme.co.uk" in result.output
     assert "manual renewal" in result.output
 
+    result = runner.invoke(cli, [*_base_args(db_path), "domain", "unlink", domain_id, "--user-id", "1"])
+    assert result.exit_code == 0, result.output
+    assert f"Unlinked domain {domain_id}" in result.output
+    result = runner.invoke(cli, [*_base_args(db_path), "domain", "list", "--user-id", "1"])
+    assert "unlinked" in result.output
+
     result = runner.invoke(
-        cli, [*_base_args(db_path), "domain", "delete", account_id, domain_id, "--user-id", "1"]
+        cli, [*_base_args(db_path), "domain", "link", domain_id, "--user-id", "1", "--account-id", account_id]
     )
+    assert result.exit_code == 0, result.output
+    assert f"Linked domain {domain_id} to Acme" in result.output
+
+    result = runner.invoke(cli, [*_base_args(db_path), "domain", "delete", domain_id, "--user-id", "1"])
     assert result.exit_code == 0, result.output
     assert f"Deleted domain {domain_id}" in result.output
 
-    result = runner.invoke(cli, [*_base_args(db_path), "domain", "list", account_id, "--user-id", "1"])
+    result = runner.invoke(cli, [*_base_args(db_path), "domain", "list", "--user-id", "1"])
     assert result.output.strip() == ""
 
 
-def test_domain_create_requires_existing_account(tmp_path):
+def test_domain_create_without_an_account_id_is_unlinked(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()
     runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
@@ -1625,7 +1636,6 @@ def test_domain_create_requires_existing_account(tmp_path):
             *_base_args(db_path),
             "domain",
             "create",
-            "does-not-exist",
             "--user-id",
             "1",
             "--domain-name",
@@ -1634,6 +1644,35 @@ def test_domain_create_requires_existing_account(tmp_path):
             "2027-01-01",
             "--registrar",
             "123-Reg",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    result = runner.invoke(cli, [*_base_args(db_path), "domain", "list", "--user-id", "1"])
+    assert "unlinked" in result.output
+
+
+def test_domain_create_requires_existing_account_when_given(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "domain",
+            "create",
+            "--user-id",
+            "1",
+            "--domain-name",
+            "acme.test",
+            "--expiry-date",
+            "2027-01-01",
+            "--registrar",
+            "123-Reg",
+            "--account-id",
+            "does-not-exist",
         ],
     )
     assert result.exit_code != 0
@@ -1722,13 +1761,12 @@ def test_registrar_delete_blocked_while_a_domain_still_names_it(tmp_path):
     )
     account_id = _id_from(result.output, r"Created account (\S+):")
 
-    runner.invoke(
+    result = runner.invoke(
         cli,
         [
             *_base_args(db_path),
             "domain",
             "create",
-            account_id,
             "--user-id",
             "1",
             "--domain-name",
@@ -1737,8 +1775,11 @@ def test_registrar_delete_blocked_while_a_domain_still_names_it(tmp_path):
             "2027-01-01",
             "--registrar",
             "GoDaddy",
+            "--account-id",
+            account_id,
         ],
     )
+    assert result.exit_code == 0, result.output
 
     # Raw CliRunner().invoke(cli, ...) calls the Click group directly, not
     # the main() wrapper that catches AppError and prints "Error: ..." -

@@ -35,6 +35,9 @@ export function Layout() {
             <NavLink to="/accounts" onClick={closeMenu}>
               Accounts
             </NavLink>
+            <NavLink to="/domains" onClick={closeMenu}>
+              Domains
+            </NavLink>
             <NavLink to="/quotes" onClick={closeMenu}>
               Quotes
             </NavLink>

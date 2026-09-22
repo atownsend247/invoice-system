@@ -121,56 +121,41 @@ test('cancelling an edit discards changes', async ({ authenticatedPage: page, te
   await expect(page.getByRole('heading', { name: 'Should not be saved' })).toHaveCount(0)
 })
 
-test('adding, editing, and deleting a domain on an account', async ({
+test('linking and unlinking a domain on an account', async ({
   authenticatedPage: page,
   testAccount,
   apiToken,
 }, testInfo) => {
-  // The Registrar field is a strict <select> sourced from the managed
-  // Registrar list (see CLAUDE.md/DomainForm.tsx), not free text - create
-  // two via the API first, uniquely named per test run (registrars are a
-  // shared organisation-wide list, same reasoning as testAccount's own
-  // business_name in fixtures.ts).
-  const registrarA = `${testInfo.testId} 123-Reg`
-  const registrarB = `${testInfo.testId} GoDaddy`
-  await apiFetch('/registrars', apiToken, {
+  // Domains are created independently on the standalone Domains page now
+  // (see domains.spec.ts) - an account only links to one that already
+  // exists (see CLAUDE.md). Create it directly via the API, the fastest
+  // way to get an unlinked domain in place for this test.
+  const domainName = `${testInfo.testId}-example.test`
+  await apiFetch('/domains', apiToken, {
     method: 'POST',
-    body: JSON.stringify({ name: registrarA }),
-  })
-  await apiFetch('/registrars', apiToken, {
-    method: 'POST',
-    body: JSON.stringify({ name: registrarB }),
+    body: JSON.stringify({ domain_name: domainName, expiry_date: '2027-06-15', registrar: '123-Reg' }),
   })
 
   await page.goto(`/accounts/${testAccount.id}`)
-  await expect(page.getByText('No domains recorded yet.')).toBeVisible()
+  await expect(page.getByText('No domains linked yet.')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Add domain' }).click()
-  await page.getByLabel('Domain name').fill('example.test')
-  await page.getByLabel('Expiry date').fill('2027-06-15')
-  await page.getByLabel('Registrar').selectOption(registrarA)
-  await page.getByLabel('Auto-renew').check()
-  await page.getByRole('button', { name: 'Add' }).click()
+  await page.getByLabel('Link domain').selectOption(domainName)
+  await page.getByRole('button', { name: 'Link' }).click()
 
-  const row = page.locator('tbody tr', { hasText: 'example.test' })
+  const row = page.locator('tbody tr', { hasText: domainName })
   await expect(row).toContainText('2027-06-15')
-  await expect(row).toContainText(registrarA)
-  await expect(row).toContainText('Yes')
+  await expect(row).toContainText('123-Reg')
 
-  await row.getByRole('button', { name: 'Edit' }).click()
-  await page.getByLabel('Domain name').fill('example.co.uk')
-  await page.getByLabel('Registrar').selectOption(registrarB)
-  await page.getByLabel('Auto-renew').uncheck()
-  await page.getByRole('button', { name: 'Save' }).click()
+  await row.getByRole('button', { name: 'Unlink' }).click()
+  // Row-scoped, not a page-wide text search - unlinking makes this domain
+  // available to link again, so it reappears as an <option> in the "Link
+  // domain" dropdown, which a page-wide getByText would also match.
+  await expect(page.locator('tbody tr', { hasText: domainName })).toHaveCount(0)
+  await expect(page.getByText('No domains linked yet.')).toBeVisible()
 
-  const updatedRow = page.locator('tbody tr', { hasText: 'example.co.uk' })
-  await expect(updatedRow).toContainText(registrarB)
-  await expect(updatedRow).toContainText('No')
-  await expect(page.getByText('example.test', { exact: true })).toHaveCount(0)
-
-  await updatedRow.getByRole('button', { name: 'Delete' }).click()
-  await expect(page.getByText('example.co.uk')).toHaveCount(0)
-  await expect(page.getByText('No domains recorded yet.')).toBeVisible()
+  // Unlinking didn't delete it - it's still available to link again (from
+  // this account or any other).
+  await expect(page.getByLabel('Link domain').locator('option', { hasText: domainName })).toHaveCount(1)
 })
 
 test('the accounts list paginates when there are enough accounts', async ({

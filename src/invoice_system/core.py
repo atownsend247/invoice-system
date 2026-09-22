@@ -14,6 +14,7 @@ from .models import (
     ActivityEventType,
     BusinessProfile,
     Domain,
+    DomainWithAccount,
     Expense,
     ExpenseAttachment,
     Invoice,
@@ -194,16 +195,23 @@ def _blank_to_none(value: str | None) -> str | None:
 
 
 class DomainService:
-    """Domains owned by an `Account` - which domain, when it expires, who
-    it's registered with (see models.Domain). Structurally closest to
-    `ExpenseAttachment` (`AttachmentStore` aside): always accessed through
-    its parent `Account`, resolved via `self._repository.get_account(...)`
-    first on every method here (raising `NotFound` if it's missing or
-    belongs to a different organisation) rather than carrying its own
-    `organisation_id` - same reasoning as `ExpenseService`'s attachment
-    methods. Unlike an attachment, a domain is user-edited data, so
-    `update_domain` is a full replace, mirroring
-    `AccountService.update_account`."""
+    """Domains a business tracks - which domain, when it expires, who it's
+    registered with (see models.Domain) - organisation-scoped directly
+    (own `organisation_id`, resolved the same way `RegistrarService`
+    resolves tenant ownership, not through a parent `Account` the way this
+    used to work). A domain can exist unlinked (`account_id=None`),
+    created independently in the standalone Domains section, and later
+    linked to an `Account` from that account's own page via
+    `link_domain`/`unlink_domain` - kept deliberately separate from
+    `update_domain`, which is a full replace of the domain's own fields
+    only (mirroring `AccountService.update_account`) and never touches
+    `account_id`, same "dedicated action, not bundled into a general
+    update" shape as `InvoiceService.pay`/`void` or
+    `BusinessProfileService`'s `set_next_number` actions elsewhere in this
+    app. Every mutating method here returns a `DomainWithAccount` (domain
+    + the linked account's `business_name`, or `None`), not a bare
+    `Domain`, so the caller never needs a second lookup to show which
+    account (if any) a domain currently belongs to."""
 
     def __init__(
         self, repository: Repository, clock: Clock = system_clock, new_id: IdGenerator = default_new_id
@@ -215,14 +223,15 @@ class DomainService:
     def create_domain(
         self,
         organisation_id: str,
-        account_id: str,
         *,
         domain_name: str,
         expiry_date: date_,
         registrar: str,
         auto_renew: bool = False,
-    ) -> Domain:
-        self._get_account(organisation_id, account_id)
+        account_id: str | None = None,
+    ) -> DomainWithAccount:
+        if account_id is not None:
+            self._get_account(organisation_id, account_id)
         if not domain_name.strip():
             raise ValidationFailed("domain_name is required")
         if not registrar.strip():
@@ -230,6 +239,7 @@ class DomainService:
         now = self._clock()
         domain = Domain(
             id=self._new_id(),
+            organisation_id=organisation_id,
             account_id=account_id,
             domain_name=domain_name,
             expiry_date=expiry_date,
@@ -238,29 +248,26 @@ class DomainService:
             created_at=now,
             updated_at=now,
         )
-        return self._repository.create_domain(domain)
+        created = self._repository.create_domain(domain)
+        return self._with_account_name(organisation_id, created)
 
-    def get_domain(self, organisation_id: str, account_id: str, domain_id: str) -> Domain:
-        self._get_account(organisation_id, account_id)
-        return self._get_domain(account_id, domain_id)
+    def get_domain(self, organisation_id: str, domain_id: str) -> DomainWithAccount:
+        return self._with_account_name(organisation_id, self._get_domain(organisation_id, domain_id))
 
-    def list_domains(self, organisation_id: str, account_id: str) -> list[Domain]:
-        self._get_account(organisation_id, account_id)
-        return self._repository.list_domains(account_id)
+    def list_domains(self, organisation_id: str, *, account_id: str | None = None) -> list[DomainWithAccount]:
+        return self._repository.list_domains(organisation_id, account_id=account_id)
 
     def update_domain(
         self,
         organisation_id: str,
-        account_id: str,
         domain_id: str,
         *,
         domain_name: str,
         expiry_date: date_,
         registrar: str,
         auto_renew: bool,
-    ) -> Domain:
-        self._get_account(organisation_id, account_id)
-        existing = self._get_domain(account_id, domain_id)
+    ) -> DomainWithAccount:
+        existing = self._get_domain(organisation_id, domain_id)
         if not domain_name.strip():
             raise ValidationFailed("domain_name is required")
         if not registrar.strip():
@@ -270,12 +277,30 @@ class DomainService:
         existing.registrar = registrar
         existing.auto_renew = auto_renew
         existing.updated_at = self._clock()
-        return self._repository.update_domain(existing)
+        updated = self._repository.update_domain(existing)
+        return self._with_account_name(organisation_id, updated)
 
-    def delete_domain(self, organisation_id: str, account_id: str, domain_id: str) -> None:
+    def link_domain(self, organisation_id: str, domain_id: str, account_id: str) -> DomainWithAccount:
+        # Re-linking an already-linked domain to a *different* account is
+        # allowed directly, no forced unlink-first step - matches a
+        # domain being transferred to a different client.
+        existing = self._get_domain(organisation_id, domain_id)
         self._get_account(organisation_id, account_id)
-        self._get_domain(account_id, domain_id)  # 404s if missing/wrong account
-        self._repository.delete_domain(account_id, domain_id)
+        existing.account_id = account_id
+        existing.updated_at = self._clock()
+        updated = self._repository.update_domain(existing)
+        return self._with_account_name(organisation_id, updated)
+
+    def unlink_domain(self, organisation_id: str, domain_id: str) -> DomainWithAccount:
+        existing = self._get_domain(organisation_id, domain_id)
+        existing.account_id = None
+        existing.updated_at = self._clock()
+        updated = self._repository.update_domain(existing)
+        return DomainWithAccount(domain=updated, account_name=None)
+
+    def delete_domain(self, organisation_id: str, domain_id: str) -> None:
+        self._get_domain(organisation_id, domain_id)  # 404s if missing/wrong organisation
+        self._repository.delete_domain(organisation_id, domain_id)
 
     def _get_account(self, organisation_id: str, account_id: str) -> Account:
         account = self._repository.get_account(organisation_id, account_id)
@@ -283,11 +308,18 @@ class DomainService:
             raise NotFound(f"account {account_id} not found")
         return account
 
-    def _get_domain(self, account_id: str, domain_id: str) -> Domain:
-        domain = self._repository.get_domain(account_id, domain_id)
+    def _get_domain(self, organisation_id: str, domain_id: str) -> Domain:
+        domain = self._repository.get_domain(organisation_id, domain_id)
         if domain is None:
             raise NotFound(f"domain {domain_id} not found")
         return domain
+
+    def _with_account_name(self, organisation_id: str, domain: Domain) -> DomainWithAccount:
+        account_name = None
+        if domain.account_id is not None:
+            account = self._repository.get_account(organisation_id, domain.account_id)
+            account_name = account.business_name if account is not None else None
+        return DomainWithAccount(domain=domain, account_name=account_name)
 
 
 class RegistrarService:

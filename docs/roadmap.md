@@ -1418,5 +1418,80 @@ flow," not a restructuring, whenever it's actually needed.
       pass, including a `--repeat-each=3 --workers=1` stress run of
       `settings.spec.ts` itself.
 
+## Phase 40 — Domains as a first-class top-level section (done)
+
+- [x] `Domain` moved from "always created through a parent `Account`" to
+      a standalone, organisation-scoped resource - structurally the same
+      shape as `Registrar` now, plus an *optional* link to one `Account`
+      at a time. A domain can exist unlinked (bought speculatively, or
+      simply not assigned yet) - confirmed with the user before building
+      this, along with the one-account-at-a-time (not many-to-many)
+      relationship shape. Migration 21 (rebuild-and-swap): `domains`
+      gained its own `organisation_id` (backfilled via a join to each
+      domain's existing account) and `account_id` relaxed from `NOT NULL`
+      to nullable - see `docs/data-model.md`.
+- [x] Linking/unlinking is a dedicated action
+      (`DomainService.link_domain`/`unlink_domain`, `POST
+      /domains/{id}/link|unlink`, CLI `domain link|unlink`), deliberately
+      separate from `update_domain` (which only ever replaces a domain's
+      own fields, never its account link) - same "dedicated action, not
+      bundled into a general update" shape as `InvoiceService.pay`/`void`
+      or `set_next_number` elsewhere in this app. Re-linking an
+      already-linked domain to a different account is allowed directly,
+      no forced unlink-first step. New `DomainWithAccount` (models.py) -
+      every `DomainService` mutation returns a domain alongside its
+      linked account's name (or `null`), computed at request time, so the
+      UI never needs a second lookup to show the link.
+      `count_domains_by_registrar` was simplified as part of the same
+      migration - it used to join `domains` to `accounts` purely to
+      resolve organisation scoping (the only way to do it before domains
+      had their own `organisation_id`), which would have silently
+      excluded unlinked domains from `domain_count` too, not just
+      `account_count` - filtering directly on the new column fixes that
+      before it could ever actually manifest as a bug.
+- [x] New standalone `web/src/pages/DomainsPage.tsx` (route `/domains`,
+      nav link between Accounts and Quotes) - the central place to manage
+      both domains and registrars, two stacked sections on one page (no
+      sub-tabs, deliberately - avoids reintroducing the shared-tab-state
+      issues just fixed on the Settings page). Registrars moved here from
+      the Settings page's old fifth tab entirely.
+      `AccountDetailPage.tsx`'s own "Domains" section is now link/unlink
+      only (a "Link domain" picker offering currently-unlinked domains,
+      same self-contained immediate-action shape as
+      `SettingsPage.tsx`'s `NextNumberAction`; each row's only action is
+      "Unlink", which clears the link without deleting the domain) - full
+      create/edit/delete lives on the Domains page only.
+- [x] API routes moved from nested (`/accounts/{id}/domains...`) to
+      top-level `/domains` (matching `Registrar`'s existing shape,
+      including no single-`GET` route - list is the only read path); CLI
+      `domain create`/`domain list` swapped their required `account_id`
+      positional argument for an optional `--account-id`.
+- [x] Extensive test updates across every layer for the new
+      organisation-scoped, link/unlink shape:
+      `tests/core/test_domain_service.py` (rewritten - unlinked creation,
+      link/re-link/unlink, name-drift), `tests/storage/
+      test_sqlite_repository.py` (rewritten CRUD test + a new migration-21
+      test building a database frozen at migration 20 and confirming the
+      backfill), `tests/api/test_routes.py` and `tests/cli/test_cli.py`
+      (new routes/commands, link/unlink flows). New `web/e2e/domains.spec.ts`
+      (domain CRUD, registrar CRUD moved here from `settings.spec.ts`,
+      the linked-account display); `web/e2e/accounts.spec.ts`'s old
+      domain-CRUD test replaced with a link/unlink one;
+      `web/e2e/settings.spec.ts` lost its Registrars tab entirely (down
+      to four tabs). Full backend suite (442 tests, 98.7%+ coverage),
+      full frontend checks, and full e2e suite (71 tests) all pass,
+      including a `--repeat-each=3 --workers=1` stress run of
+      `domains.spec.ts` itself.
+- [x] Found in passing, not fixed (pre-existing, unrelated to this
+      phase): `accounts.spec.ts`'s "the search box filters the accounts
+      list" test can fail under `--repeat-each --workers=2` stress
+      testing - it asserts its own freshly-created account is visible on
+      the accounts list's first page *before* searching, which can be
+      pushed past page 1 by concurrent bulk account creation from another
+      spec's own stress-test repeats. Reproduces with `accounts.spec.ts`
+      alone, unrelated to domains/registrars - left as a known gap for a
+      future fix, same as the pre-existing `quote_validity_days` cross-test
+      leak noted in an earlier phase.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

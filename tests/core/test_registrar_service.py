@@ -123,17 +123,25 @@ def test_list_registrars_with_usage_counts_domains_and_distinct_accounts(
         address_line1="2 High St",
     )
     application.domains.create_domain(
-        organisation_id, account.id, domain_name="a.test", expiry_date=date(2027, 1, 1), registrar="123-Reg"
-    )
-    application.domains.create_domain(
-        organisation_id, account.id, domain_name="b.test", expiry_date=date(2027, 1, 1), registrar="123-Reg"
+        organisation_id,
+        domain_name="a.test",
+        expiry_date=date(2027, 1, 1),
+        registrar="123-Reg",
+        account_id=account.id,
     )
     application.domains.create_domain(
         organisation_id,
-        other_account.id,
+        domain_name="b.test",
+        expiry_date=date(2027, 1, 1),
+        registrar="123-Reg",
+        account_id=account.id,
+    )
+    application.domains.create_domain(
+        organisation_id,
         domain_name="c.test",
         expiry_date=date(2027, 1, 1),
         registrar="123-Reg",
+        account_id=other_account.id,
     )
 
     [usage] = application.registrars.list_registrars_with_usage(organisation_id)
@@ -144,7 +152,11 @@ def test_list_registrars_with_usage_counts_domains_and_distinct_accounts(
 def test_list_registrars_with_usage_is_isolated_per_organisation(application, organisation_id, account):
     application.registrars.create_registrar(organisation_id, name="123-Reg")
     application.domains.create_domain(
-        organisation_id, account.id, domain_name="a.test", expiry_date=date(2027, 1, 1), registrar="123-Reg"
+        organisation_id,
+        domain_name="a.test",
+        expiry_date=date(2027, 1, 1),
+        registrar="123-Reg",
+        account_id=account.id,
     )
 
     other_organisation_id = application.organisations.get_or_create_for_user("user-2")
@@ -156,7 +168,11 @@ def test_list_registrars_with_usage_is_isolated_per_organisation(application, or
 def test_get_registrar_usage_matches_by_current_name_not_a_stale_one(application, organisation_id, account):
     registrar = application.registrars.create_registrar(organisation_id, name="123-Reg")
     application.domains.create_domain(
-        organisation_id, account.id, domain_name="a.test", expiry_date=date(2027, 1, 1), registrar="123-Reg"
+        organisation_id,
+        domain_name="a.test",
+        expiry_date=date(2027, 1, 1),
+        registrar="123-Reg",
+        account_id=account.id,
     )
 
     # A domain recorded the old name as a plain string (see models.Domain) -
@@ -171,7 +187,11 @@ def test_get_registrar_usage_matches_by_current_name_not_a_stale_one(application
 def test_delete_registrar_still_used_by_a_domain_raises_conflict(application, organisation_id, account):
     registrar = application.registrars.create_registrar(organisation_id, name="123-Reg")
     application.domains.create_domain(
-        organisation_id, account.id, domain_name="a.test", expiry_date=date(2027, 1, 1), registrar="123-Reg"
+        organisation_id,
+        domain_name="a.test",
+        expiry_date=date(2027, 1, 1),
+        registrar="123-Reg",
+        account_id=account.id,
     )
     with pytest.raises(Conflict):
         application.registrars.delete_registrar(organisation_id, registrar.id)
@@ -183,9 +203,13 @@ def test_delete_registrar_still_used_by_a_domain_raises_conflict(application, or
 def test_delete_registrar_succeeds_once_its_domains_are_gone(application, organisation_id, account):
     registrar = application.registrars.create_registrar(organisation_id, name="123-Reg")
     domain = application.domains.create_domain(
-        organisation_id, account.id, domain_name="a.test", expiry_date=date(2027, 1, 1), registrar="123-Reg"
+        organisation_id,
+        domain_name="a.test",
+        expiry_date=date(2027, 1, 1),
+        registrar="123-Reg",
+        account_id=account.id,
     )
-    application.domains.delete_domain(organisation_id, account.id, domain.id)
+    application.domains.delete_domain(organisation_id, domain.domain.id)
 
     application.registrars.delete_registrar(organisation_id, registrar.id)
     with pytest.raises(NotFound):

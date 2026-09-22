@@ -258,45 +258,52 @@ def domain() -> None:
 
 
 @domain.command("create")
-@click.argument("account_id")
 @click.option("--user-id", required=True, help=_USER_ID_HELP)
 @click.option("--domain-name", required=True)
 @click.option("--expiry-date", required=True, type=click.DateTime(formats=["%Y-%m-%d"]))
 @click.option("--registrar", required=True)
 @click.option("--auto-renew/--no-auto-renew", default=False)
+@click.option(
+    "--account-id",
+    default=None,
+    help="Link to this account immediately - optional, a domain can be created unlinked "
+    "and linked later ('domain link').",
+)
 @click.pass_obj
 def domain_create(
     application: Application,
-    account_id: str,
     user_id: str,
     domain_name: str,
     expiry_date: datetime,
     registrar: str,
     auto_renew: bool,
+    account_id: str | None,
 ) -> None:
     created = application.domains.create_domain(
         _organisation_id(application, user_id),
-        account_id,
         domain_name=domain_name,
         expiry_date=expiry_date.date(),
         registrar=registrar,
         auto_renew=auto_renew,
-    )
+        account_id=account_id,
+    ).domain
     click.echo(f"Created domain {created.id}: {created.domain_name}")
 
 
 @domain.command("list")
-@click.argument("account_id")
 @click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option("--account-id", default=None, help="Only list domains linked to this account.")
 @click.pass_obj
-def domain_list(application: Application, account_id: str, user_id: str) -> None:
-    for d in application.domains.list_domains(_organisation_id(application, user_id), account_id):
+def domain_list(application: Application, user_id: str, account_id: str | None) -> None:
+    usages = application.domains.list_domains(_organisation_id(application, user_id), account_id=account_id)
+    for usage in usages:
+        d = usage.domain
         auto = "auto-renew" if d.auto_renew else "manual renewal"
-        click.echo(f"{d.id}\t{d.domain_name}\texpires {d.expiry_date}\t{d.registrar}\t{auto}")
+        linked = usage.account_name or "unlinked"
+        click.echo(f"{d.id}\t{d.domain_name}\texpires {d.expiry_date}\t{d.registrar}\t{auto}\t{linked}")
 
 
 @domain.command("update")
-@click.argument("account_id")
 @click.argument("domain_id")
 @click.option("--user-id", required=True, help=_USER_ID_HELP)
 @click.option("--domain-name", required=True)
@@ -306,7 +313,6 @@ def domain_list(application: Application, account_id: str, user_id: str) -> None
 @click.pass_obj
 def domain_update(
     application: Application,
-    account_id: str,
     domain_id: str,
     user_id: str,
     domain_name: str,
@@ -316,24 +322,41 @@ def domain_update(
 ) -> None:
     updated = application.domains.update_domain(
         _organisation_id(application, user_id),
-        account_id,
         domain_id,
         domain_name=domain_name,
         expiry_date=expiry_date.date(),
         registrar=registrar,
         auto_renew=auto_renew,
-    )
+    ).domain
     click.echo(f"Updated domain {updated.id}: {updated.domain_name}")
 
 
 @domain.command("delete")
-@click.argument("account_id")
 @click.argument("domain_id")
 @click.option("--user-id", required=True, help=_USER_ID_HELP)
 @click.pass_obj
-def domain_delete(application: Application, account_id: str, domain_id: str, user_id: str) -> None:
-    application.domains.delete_domain(_organisation_id(application, user_id), account_id, domain_id)
+def domain_delete(application: Application, domain_id: str, user_id: str) -> None:
+    application.domains.delete_domain(_organisation_id(application, user_id), domain_id)
     click.echo(f"Deleted domain {domain_id}")
+
+
+@domain.command("link")
+@click.argument("domain_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option("--account-id", required=True)
+@click.pass_obj
+def domain_link(application: Application, domain_id: str, user_id: str, account_id: str) -> None:
+    usage = application.domains.link_domain(_organisation_id(application, user_id), domain_id, account_id)
+    click.echo(f"Linked domain {domain_id} to {usage.account_name}")
+
+
+@domain.command("unlink")
+@click.argument("domain_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.pass_obj
+def domain_unlink(application: Application, domain_id: str, user_id: str) -> None:
+    application.domains.unlink_domain(_organisation_id(application, user_id), domain_id)
+    click.echo(f"Unlinked domain {domain_id}")
 
 
 @cli.group()

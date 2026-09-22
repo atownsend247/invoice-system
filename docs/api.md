@@ -44,10 +44,12 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | GET | `/accounts` | required | Paginated list of accounts in the current user's organisation - `{items, total}`. `?query=` matches (case-insensitively) business/contact name, email, phone, or any set address line. `?page=`/`?page_size=` (defaults `1`/`20`, `page_size` max `200`) - see Conventions below. |
 | GET | `/accounts/{id}` | required | Fetch one account. 404 if missing *or* it belongs to a different organisation (see `docs/data-model.md`'s "Multi-tenancy"). |
 | PUT | `/accounts/{id}` | required | Replace it (same required/optional fields as create — a full replace, not a partial patch). 404 if missing, 422 on a blank required field. |
-| POST | `/accounts/{id}/domains` | required | Add a domain to this account (`domain_name`, `expiry_date`, `registrar` required; `auto_renew` optional, defaults `false`). 404 if the account is missing/wrong organisation, 422 on a blank `domain_name`/`registrar`. |
-| GET | `/accounts/{id}/domains` | required | List this account's domains, soonest-expiry-first (not the newest-first convention every other list here uses) - a plain array, not paginated (see Conventions below). No single-domain `GET` route - the list is the only read path. |
-| PUT | `/accounts/{id}/domains/{domain_id}` | required | Replace a domain (same fields as create - a full replace). 404 if missing/wrong account, 422 on a blank `domain_name`/`registrar`. |
-| DELETE | `/accounts/{id}/domains/{domain_id}` | required | Delete it. 204, 404 if missing/wrong account. |
+| POST | `/domains` | required | Add a domain to the current user's organisation (`domain_name`, `expiry_date`, `registrar` required; `auto_renew` optional, defaults `false`; `account_id` optional - link it to that account immediately, or leave unset to create it unlinked, see Conventions below). 404 if `account_id` is given but missing/wrong organisation, 422 on a blank `domain_name`/`registrar`. |
+| GET | `/domains` | required | List the organisation's domains, soonest-expiry-first (not the newest-first convention every other list here uses) - a plain array, not paginated (see Conventions below). Optional `?account_id=` filter. No single-domain `GET` route - the list is the only read path, same as `/registrars`. |
+| PUT | `/domains/{domain_id}` | required | Replace a domain's own fields (same as create, minus `account_id` - **never touches the link**, see Conventions below). 404 if missing/wrong organisation, 422 on a blank `domain_name`/`registrar`. |
+| DELETE | `/domains/{domain_id}` | required | Delete it. 204, 404 if missing/wrong organisation. |
+| POST | `/domains/{domain_id}/link` | required | `{account_id}` - link this domain to that account, replacing any existing link. 200 with the updated domain, 404 if either is missing/wrong organisation. |
+| POST | `/domains/{domain_id}/unlink` | required | Clear this domain's account link. 200 with the updated domain (`account_id`/`account_name` both `null`), 404 if missing/wrong organisation. |
 | POST | `/registrars` | required | Add a registrar to the current user's organisation (`name` required; `notes` optional). 422 on a blank `name`. Response includes `domain_count`/`account_count` (both `0` for a just-created registrar - see Conventions below). |
 | GET | `/registrars` | required | List the organisation's registrars, alphabetically by name (not the newest-first convention most lists here use) - a plain array, not paginated (see Conventions below). Populates the Domain form's registrar `<select>`, which ignores the `domain_count`/`account_count` fields this same response carries. |
 | PUT | `/registrars/{id}` | required | Replace a registrar (same fields as create - a full replace). 404 if missing/wrong organisation, 422 on a blank `name`. Response's `domain_count`/`account_count` reflect usage under the (possibly just-renamed) current name. |
@@ -98,12 +100,13 @@ one-for-one over the same storage, but is **not** behind login — it's a
 local, trusted tool (see `CLAUDE.md`). Where the API resolves both "which
 user" and "which organisation" from the Bearer token, the CLI has no
 session to resolve either from, so **every** `account`/`quote`/`invoice`/
-`expense`
+`expense`/`domain`/`registrar`
 command takes a **required** `--user-id` (`account create/list/update`,
 `quote create/add-item/send/convert/pdf`, `invoice
 list/send/void/pay/monthly-totals/pdf`, `expense
 create/list/add-item/update-item/delete-item/monthly-totals/pdf`,
-`expense attachment add/list/download/delete`,
+`expense attachment add/list/download/delete`, `domain
+create/list/update/delete/link/unlink`, `registrar create/list/update/delete`,
 `stats`) purely to resolve
 `organisation_id` (`OrganisationService.get_or_create_for_user`, same
 auto-create-on-first-use as the API) — this is a breaking change from
@@ -111,7 +114,13 @@ before `Organisation` existed, when these commands took no user context at
 all. `account list`/`invoice list` additionally take `--page`/`--page-size`
 (default `1`/`100`) mirroring the API's own pagination, printing a
 trailing `Page X of Y (total N)` line - there is no `quote list` command
-at all, so quotes have nothing to paginate on the CLI side.
+at all, so quotes have nothing to paginate on the CLI side. `domain
+create`/`domain list` take an optional `--account-id` (link it
+immediately on create, or filter the list to just that account) rather
+than the required positional argument they used to - a domain is created
+independently now, same as the API (see the `Domain` Convention below);
+`domain link <domain_id> --account-id`/`domain unlink <domain_id>` are new,
+mirroring `POST /domains/{id}/link|unlink`.
 `expense add-item` echoes the new line item's id (`Added line item
 <id>`) - the only `add-*` command that does, since `expense update-item`/
 `expense delete-item <expense_id> <item_id>` need it and there's no
@@ -208,22 +217,32 @@ See `docs/data-model.md`'s "Demo data" section and `CLAUDE.md`.
   rather than accepted as free text — it's interpolated directly into a
   CSS declaration in the rendered PDF template, not shown as escaped body
   text. Falls back to a fixed neutral constant when unset.
-- **`Domain`**: which domains an account owns, when each expires, who it's
-  registered with, and whether it's set to auto-renew - see the routes
-  table above. Always accessed through its parent account
-  (`/accounts/{id}/domains...`), not a standalone `/domains` collection -
-  404s the same way a mismatched-organisation account does if `{id}`
-  doesn't resolve under the caller's own organisation. `domain_name`/
-  `expiry_date`/`registrar` are all required; no format validation on
-  `domain_name` beyond non-blank, same as `Account.email`/`business_name`.
-  Editable in place (`PUT`), not add-only - a domain's expiry changes on
-  every renewal and its registrar can change on a transfer.
+- **`Domain`**: which domains a business tracks, when each expires, who
+  it's registered with, and whether it's set to auto-renew - see the
+  routes table above. Organisation-scoped directly (top-level `/domains`,
+  not nested under `/accounts`) - structurally close to `Registrar` now,
+  not resolved through a parent account the way it used to be.
+  `domain_name`/`expiry_date`/`registrar` are all required; no format
+  validation on `domain_name` beyond non-blank, same as
+  `Account.email`/`business_name`. Editable in place (`PUT`), not
+  add-only - a domain's expiry changes on every renewal and its registrar
+  can change on a transfer - but that PUT only ever touches the domain's
+  own fields, never which account (if any) it's linked to.
+  **Linking**: a domain is *optionally* linked to at most one `Account` at
+  a time (`account_id`, nullable - a domain can exist unlinked, e.g.
+  bought speculatively before a client is decided). Changing that link is
+  a dedicated action - `POST /domains/{id}/link` / `.../unlink` - kept
+  separate from the PUT above on purpose, so editing a domain's details
+  can never silently change who it belongs to. Every `DomainOut` (create,
+  list, update, link, unlink) includes `account_id` and `account_name`
+  (the linked account's `business_name`, or both `null` when unlinked) -
+  computed at request time, not stored, so the caller never needs a
+  second lookup to show which account a domain currently belongs to.
 - **`Registrar`**: a business's managed list of domain registrars, used to
   populate the Domain form's registrar `<select>` (strictly select-from-
-  list, no free-text option). Top-level (`/registrars`), not nested under
-  `/accounts` like `Domain` - a registrar has no parent, it's
-  organisation-wide. `name` required, `notes` optional free text (e.g. a
-  support URL). Editable in place - no *database-level* cascade to worry
+  list, no free-text option). Top-level (`/registrars`), organisation-wide
+  same as `Domain` now. `name` required, `notes` optional free text (e.g.
+  a support URL). Editable in place - no *database-level* cascade to worry
   about on a rename, since `Domain.registrar` stores the chosen name as a
   plain string rather than referencing this row's id (renaming a
   registrar never needs to touch domains that already recorded its old
@@ -232,11 +251,12 @@ See `docs/data-model.md`'s "Demo data" section and `CLAUDE.md`.
   **`domain_count`/`account_count`**: every `RegistrarOut` (create,
   list, update) includes how many domains currently name this registrar
   (by its *current* name) and how many distinct accounts those domains
-  belong to - computed at request time, not stored. `DELETE
-  /registrars/{id}` is blocked (`409`) while `domain_count > 0` - unlike
-  `Registrar` itself, which has no foreign key pointing at it and so
-  could always be deleted with nothing breaking, leaving domains pointing
-  at a no-longer-listed name would be confusing, so this is an
+  are linked to - computed at request time, not stored; an unlinked
+  domain still counts towards `domain_count` but not `account_count`.
+  `DELETE /registrars/{id}` is blocked (`409`) while `domain_count > 0` -
+  unlike `Registrar` itself, which has no foreign key pointing at it and
+  so could always be deleted with nothing breaking, leaving domains
+  pointing at a no-longer-listed name would be confusing, so this is an
   application-level guard, not a constraint the database enforces.
 - **`Expense.issue_date` vs `expense_date`**: `issue_date` is when the
   record was created (a system timestamp, never editable); `expense_date`
@@ -263,11 +283,10 @@ See `docs/data-model.md`'s "Demo data" section and `CLAUDE.md`.
   the new user gets their own `Organisation` lazily on first login, same
   as every other user.
 - `GET /accounts`/`GET /quotes`/`GET /invoices` are the only paginated
-  endpoints (`GET /expenses`, `GET /accounts/{id}/domains`, and `GET
-  /registrars` all stay a bare array - none has a standalone list page of
-  its own, and each is inherently small: one client's own domain count,
-  or one business's own registrar list - see the `Domain`/`Registrar`
-  bullets below). Response shape is `{items: [...], total}`,
+  endpoints (`GET /expenses`, `GET /domains`, and `GET /registrars` all
+  stay a bare array - each is inherently small for a single business:
+  its own domain list, or its own registrar list - see the
+  `Domain`/`Registrar` bullets above). Response shape is `{items: [...], total}`,
   not a bare array - `total` is the count matching the request's filters
   across *every* page, letting the client compute how many pages exist
   without a second request. `page` defaults to `1`, `page_size` to `20`

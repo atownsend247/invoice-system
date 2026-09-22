@@ -13,10 +13,10 @@ export function DomainForm({
   onCancel,
 }: {
   initial?: Domain
-  // The managed registrar list (see Settings > Registrars) - fetched once
-  // by the caller (AccountDetailPage.tsx) and passed down, not re-fetched
-  // per form instance. The Registrar field is a strict <select> sourced
-  // from this list, not free text - see CLAUDE.md.
+  // The managed registrar list (see the Domains page's own Registrars
+  // section) - fetched once by the caller (DomainsPage.tsx) and passed
+  // down, not re-fetched per form instance. The Registrar field is a
+  // strict <select> sourced from this list, not free text - see CLAUDE.md.
   registrars: Registrar[]
   submitLabel: string
   submittingLabel: string

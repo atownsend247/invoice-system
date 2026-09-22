@@ -3,6 +3,7 @@ import { Layout } from './components/Layout'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { AccountDetailPage } from './pages/AccountDetailPage'
 import { AccountsPage } from './pages/AccountsPage'
+import { DomainsPage } from './pages/DomainsPage'
 import { ExpenseDetailPage } from './pages/ExpenseDetailPage'
 import { ExpenseNewPage } from './pages/ExpenseNewPage'
 import { HomePage } from './pages/HomePage'
@@ -25,6 +26,7 @@ export function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/accounts" element={<AccountsPage />} />
           <Route path="/accounts/:id" element={<AccountDetailPage />} />
+          <Route path="/domains" element={<DomainsPage />} />
           <Route path="/quotes" element={<QuotesPage />} />
           <Route path="/quotes/new" element={<QuoteNewPage />} />
           <Route path="/quotes/:id" element={<QuoteDetailPage />} />

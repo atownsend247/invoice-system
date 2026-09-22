@@ -42,12 +42,19 @@ export interface Account {
   created_at: string
 }
 
-// A domain name owned by an Account - which domain, when it expires, who
+// A domain name a business tracks - which domain, when it expires, who
 // it's registered with (see CLAUDE.md). domain_name/expiry_date/registrar
-// are all required; auto_renew is purely informational.
+// are all required; auto_renew is purely informational. Organisation-wide,
+// not account-scoped - account_id is nullable (a domain can exist before
+// it's ever linked to a client, via the standalone Domains page) and
+// changing it is a dedicated link/unlink action, never part of a plain
+// edit. account_name is the linked account's business_name (or null),
+// resolved server-side so the Domains page doesn't need a second lookup
+// per row.
 export interface Domain {
   id: string
-  account_id: string
+  account_id: string | null
+  account_name: string | null
   domain_name: string
   expiry_date: string
   registrar: string
@@ -58,8 +65,8 @@ export interface Domain {
 
 // A business's managed list of domain registrars, used to populate the
 // Domain form's registrar <select> - see CLAUDE.md. Organisation-wide,
-// not account-scoped like Domain. Domain.registrar stores the chosen
-// name as a plain string, not a reference to this row's id.
+// same as Domain now. Domain.registrar stores the chosen name as a plain
+// string, not a reference to this row's id.
 export interface Registrar {
   id: string
   name: string

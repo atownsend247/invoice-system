@@ -10,6 +10,7 @@ from ..models import (
     ActivityEventType,
     BusinessProfile,
     Domain,
+    DomainWithAccount,
     Expense,
     ExpenseAttachment,
     Invoice,
@@ -214,10 +215,11 @@ class SqliteRepository:
     def create_domain(self, domain: Domain) -> Domain:
         with self._lock:
             self._conn.execute(
-                "INSERT INTO domains (id, account_id, domain_name, expiry_date, registrar, "
-                "auto_renew, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO domains (id, organisation_id, account_id, domain_name, expiry_date, "
+                "registrar, auto_renew, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     domain.id,
+                    domain.organisation_id,
                     domain.account_id,
                     domain.domain_name,
                     domain.expiry_date.isoformat(),
@@ -230,50 +232,67 @@ class SqliteRepository:
             self._conn.commit()
         return domain
 
-    def get_domain(self, account_id: str, domain_id: str) -> Domain | None:
+    def get_domain(self, organisation_id: str, domain_id: str) -> Domain | None:
         with self._lock:
             row = self._conn.execute(
-                "SELECT * FROM domains WHERE id = ? AND account_id = ?", (domain_id, account_id)
+                "SELECT * FROM domains WHERE id = ? AND organisation_id = ?", (domain_id, organisation_id)
             ).fetchone()
         return self._row_to_domain(row) if row else None
 
-    def list_domains(self, account_id: str) -> list[Domain]:
+    def list_domains(self, organisation_id: str, *, account_id: str | None = None) -> list[DomainWithAccount]:
         # Soonest-expiring first - the useful default for this data, unlike
         # the newest-created-first convention everything else here uses
-        # (see models.Domain).
+        # (see models.Domain). LEFT JOIN, not INNER - an unlinked domain
+        # (account_id IS NULL) must still appear, just with a null
+        # account_business_name.
+        query = (
+            "SELECT domains.*, accounts.business_name AS account_business_name FROM domains "
+            "LEFT JOIN accounts ON accounts.id = domains.account_id "
+            "WHERE domains.organisation_id = ?"
+        )
+        params: list[str] = [organisation_id]
+        if account_id is not None:
+            query += " AND domains.account_id = ?"
+            params.append(account_id)
+        query += " ORDER BY domains.expiry_date"
         with self._lock:
-            rows = self._conn.execute(
-                "SELECT * FROM domains WHERE account_id = ? ORDER BY expiry_date", (account_id,)
-            ).fetchall()
-        return [self._row_to_domain(row) for row in rows]
+            rows = self._conn.execute(query, params).fetchall()
+        return [
+            DomainWithAccount(domain=self._row_to_domain(row), account_name=row["account_business_name"])
+            for row in rows
+        ]
 
     def update_domain(self, domain: Domain) -> Domain:
         with self._lock:
             self._conn.execute(
-                "UPDATE domains SET domain_name = ?, expiry_date = ?, registrar = ?, "
-                "auto_renew = ?, updated_at = ? WHERE id = ? AND account_id = ?",
+                "UPDATE domains SET account_id = ?, domain_name = ?, expiry_date = ?, registrar = ?, "
+                "auto_renew = ?, updated_at = ? WHERE id = ? AND organisation_id = ?",
                 (
+                    domain.account_id,
                     domain.domain_name,
                     domain.expiry_date.isoformat(),
                     domain.registrar,
                     int(domain.auto_renew),
                     domain.updated_at.isoformat(),
                     domain.id,
-                    domain.account_id,
+                    domain.organisation_id,
                 ),
             )
             self._conn.commit()
         return domain
 
-    def delete_domain(self, account_id: str, domain_id: str) -> None:
+    def delete_domain(self, organisation_id: str, domain_id: str) -> None:
         with self._lock:
-            self._conn.execute("DELETE FROM domains WHERE id = ? AND account_id = ?", (domain_id, account_id))
+            self._conn.execute(
+                "DELETE FROM domains WHERE id = ? AND organisation_id = ?", (domain_id, organisation_id)
+            )
             self._conn.commit()
 
     @staticmethod
     def _row_to_domain(row: sqlite3.Row) -> Domain:
         return Domain(
             id=row["id"],
+            organisation_id=row["organisation_id"],
             account_id=row["account_id"],
             domain_name=row["domain_name"],
             expiry_date=date.fromisoformat(row["expiry_date"]),
@@ -345,17 +364,22 @@ class SqliteRepository:
             self._conn.commit()
 
     def count_domains_by_registrar(self, organisation_id: str) -> dict[str, tuple[int, int]]:
-        # Domain has no organisation_id of its own (see its docstring) -
-        # scoped via a join to accounts instead, same as every other
-        # organisation-scoped domain query. Only registrar names actually
-        # used by at least one domain appear in the result - callers treat
-        # a missing key as (0, 0), not an error.
+        # Domain carries its own organisation_id directly since migration
+        # 21 (it used to be resolved only via the parent account, back
+        # when every domain required one) - filtered directly, not via a
+        # join, which matters now that a domain can be unlinked
+        # (account_id NULL): an INNER JOIN to accounts would silently drop
+        # those rows from domain_count too, not just account_count.
+        # COUNT(DISTINCT account_id) already ignores NULLs on its own, so
+        # an unlinked domain correctly counts towards domain_count but not
+        # account_count. Only registrar names actually used by at least
+        # one domain appear in the result - callers treat a missing key as
+        # (0, 0), not an error.
         with self._lock:
             rows = self._conn.execute(
-                "SELECT domains.registrar AS registrar, COUNT(*) AS domain_count, "
-                "COUNT(DISTINCT domains.account_id) AS account_count "
-                "FROM domains JOIN accounts ON accounts.id = domains.account_id "
-                "WHERE accounts.organisation_id = ? GROUP BY domains.registrar",
+                "SELECT registrar, COUNT(*) AS domain_count, "
+                "COUNT(DISTINCT account_id) AS account_count "
+                "FROM domains WHERE organisation_id = ? GROUP BY registrar",
                 (organisation_id,),
             ).fetchall()
         return {row["registrar"]: (row["domain_count"], row["account_count"]) for row in rows}

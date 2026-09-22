@@ -97,17 +97,26 @@ class Account:
 
 @dataclass
 class Domain:
-    """A domain name owned by an `Account` - which domain, when it expires,
-    and who it's registered with. Structurally closest to
-    `ExpenseAttachment` below, not `Expense`: always accessed through its
-    parent `Account` (no `organisation_id` column of its own - tenant
-    ownership is resolved via `AccountService.get_account` first, same
-    reasoning as `ExpenseAttachment`'s own docstring), no `number`/
-    lifecycle. Unlike `ExpenseAttachment` though, it's user-edited data,
-    not an immutable uploaded file, so it supports a full update
-    (`DomainService.update_domain`, mirroring
-    `AccountService.update_account`'s full-replace semantics) rather than
-    being add-only.
+    """A domain name a business tracks - which domain, when it expires,
+    and who it's registered with. Organisation-scoped directly (its own
+    `organisation_id` column, migration 21) - structurally closest to
+    `Registrar` below, not `ExpenseAttachment`/`Expense` as it used to be:
+    both are a business-wide managed resource with full CRUD, tenant
+    ownership checked directly rather than through a parent. A `Domain` is
+    always created independently now, in the standalone Domains section,
+    and only *optionally* linked to an `Account` - `account_id` is
+    nullable, since a domain can exist before it's ever tied to a client
+    (bought speculatively, or simply not gotten to yet). Linking/unlinking
+    is a dedicated action (`DomainService.link_domain`/`unlink_domain`),
+    kept deliberately separate from `update_domain` - which is a full
+    replace of the domain's own fields only, mirroring
+    `AccountService.update_account`'s full-replace semantics, but never
+    touches `account_id` - same "dedicated action, not bundled into a
+    general update" shape as `InvoiceService.pay`/`void` or
+    `BusinessProfileService`'s `set_next_number` actions elsewhere in this
+    app. Re-linking an already-linked domain to a *different* account is
+    allowed directly (no forced unlink-first step) - matches a domain
+    being transferred to a different client. No `number`/lifecycle.
 
     `domain_name`/`registrar` are both required (enforced non-blank in
     `DomainService`, never in storage, same "required but unvalidated
@@ -125,10 +134,11 @@ class Domain:
     chosen name as a string here means a `Registrar` can be renamed or
     deleted later without needing to migrate or orphan-handle every
     `Domain` that already recorded its name (see `Registrar`'s own
-    docstring)."""
+    docstring, and its own `RegistrarUsage`'s name-drift note below)."""
 
     id: str
-    account_id: str
+    organisation_id: str
+    account_id: str | None
     domain_name: str
     expiry_date: date
     registrar: str
@@ -138,25 +148,40 @@ class Domain:
 
 
 @dataclass
+class DomainWithAccount:
+    """A `Domain` alongside the linked `Account`'s `business_name` (`None`
+    if unlinked) - computed at request time by `DomainService` (every
+    mutating method returns this, not a bare `Domain`, for one consistent
+    shape - see its own docstring), never persisted. Lets the central
+    Domains page show at a glance which account (if any) each domain
+    currently belongs to without an N+1 lookup per row - same "entity +
+    computed display data" pattern as `RegistrarUsage` below."""
+
+    domain: Domain
+    account_name: str | None
+
+
+@dataclass
 class Registrar:
     """A domain registrar a business uses - a managed reference list, kept
     so `Domain.registrar` can be picked from a `<select>` instead of typed
     freehand (avoiding "GoDaddy"/"godaddy"/"Go Daddy" drift across
-    domains). Organisation-scoped, not account-scoped like `Domain` - it's
-    a business-wide reference list, not tied to any one client - so unlike
-    `Domain` this carries its own `organisation_id` and is structurally
-    closest to `Account`: full CRUD, tenant ownership checked directly
-    rather than through a parent. Unlike `Account` though, it supports
-    delete - nothing holds a foreign key to a `Registrar` (see `Domain`'s
-    docstring above), so there's no *database-level* cascade to worry
-    about, unlike an `Account` with `Quote`/`Invoice`/`Expense`/`Domain`
-    rows depending on it. `RegistrarService.delete_registrar` still
-    refuses to delete one that at least one `Domain` currently names
-    (`Conflict`, see `RegistrarUsage` below) - an *application-level*
-    guard, not a database constraint, since silently leaving domains
-    pointing at a no-longer-listed registrar name would be confusing even
-    though nothing would actually break (`Domain.registrar` stores the
-    name as a plain string either way).
+    domains). Organisation-scoped - a business-wide reference list, not
+    tied to any one client - structurally very close to `Domain` above
+    now (both carry their own `organisation_id`, both full CRUD with
+    tenant ownership checked directly rather than through a parent): the
+    difference is that a `Registrar` has no optional link to an `Account`
+    the way a `Domain` does. Unlike `Account`, it supports delete -
+    nothing holds a foreign key to a `Registrar` (see `Domain`'s docstring
+    above), so there's no *database-level* cascade to worry about, unlike
+    an `Account` with `Quote`/`Invoice`/`Expense`/`Domain` rows depending
+    on it. `RegistrarService.delete_registrar` still refuses to delete one
+    that at least one `Domain` currently names (`Conflict`, see
+    `RegistrarUsage` below) - an *application-level* guard, not a database
+    constraint, since silently leaving domains pointing at a
+    no-longer-listed registrar name would be confusing even though
+    nothing would actually break (`Domain.registrar` stores the name as a
+    plain string either way).
 
     `name` is required (non-blank, enforced in `RegistrarService`, never
     in storage); `notes` is optional free text (e.g. a support URL or
