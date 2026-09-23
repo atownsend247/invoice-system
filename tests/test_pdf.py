@@ -331,6 +331,45 @@ def test_rendering_an_invoice_pdf_with_bank_details_does_not_error():
     assert pdf_bytes.startswith(b"%PDF")
 
 
+def test_rendering_an_invoice_pdf_with_customer_notes_does_not_error():
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    account = _account(created_at=now)
+    invoice = Invoice(
+        id=1,
+        organisation_id=1,
+        account_id=1,
+        quote_id=None,
+        number="INV-0001",
+        status=InvoiceStatus.SENT,
+        currency="USD",
+        issue_date=now.date(),
+        due_date=None,
+        created_at=now,
+        customer_notes="Please quote invoice number on remittance.\n\nThanks for your business!",
+    )
+    pdf_bytes = render_invoice_pdf(account, invoice, None)
+    assert pdf_bytes.startswith(b"%PDF")
+
+
+def test_rendering_an_invoice_pdf_with_no_customer_notes_does_not_error():
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    account = _account(created_at=now)
+    invoice = Invoice(
+        id=1,
+        organisation_id=1,
+        account_id=1,
+        quote_id=None,
+        number="INV-0001",
+        status=InvoiceStatus.SENT,
+        currency="USD",
+        issue_date=now.date(),
+        due_date=None,
+        created_at=now,
+    )
+    pdf_bytes = render_invoice_pdf(account, invoice, None)
+    assert pdf_bytes.startswith(b"%PDF")
+
+
 def test_rendering_a_quote_pdf_with_a_from_profile_and_bill_to_side_by_side_does_not_error():
     # Exercises the two-column From/Bill-to Table layout specifically (only
     # taken when a business profile with a name is set).

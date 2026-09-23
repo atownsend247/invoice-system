@@ -63,7 +63,7 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | DELETE | `/quotes/{id}/line-items/{item_id}` | required | Remove a line item. Returns the updated `QuoteOut` (`200`, not `204`), same pattern as the expense line-item delete route below. 409 if not draft, 404 if the quote or the item doesn't resolve under the caller's organisation. |
 | POST | `/quotes/{id}/send` | required | Assign a quote number (using the caller's own `quote_number_prefix`/`quote_number_digits`, e.g. `Q-0001` by default - see Conventions below), transition `draft → sent`. 422 if no line items. |
 | POST | `/quotes/next-number` | required | `{next_number}` - jump the organisation's quote counter so the *next* quote sent gets exactly this number, regardless of how many quotes already exist (see Conventions below). `204`, `422` if `next_number < 1`. |
-| POST | `/quotes/{id}/convert` | required | Convert a `sent`/`accepted` quote into a new draft invoice, copying line items (`issue_date` optional in the request body, defaults to today - lets the caller backdate the resulting invoice). 409 otherwise. |
+| POST | `/quotes/{id}/convert` | required | Convert a `sent`/`accepted` quote into a new draft invoice, copying line items (`issue_date` optional in the request body, defaults to today - lets the caller backdate the resulting invoice; `customer_notes` optional too, free text stored on the new invoice and appended to its PDF - see Conventions below). 409 otherwise. |
 | GET | `/quotes/{id}/pdf` | required | Render the quote as a PDF (`application/pdf`) - the web UI offers this both as a download and as an in-page preview (see Conventions below), the route itself is the same either way. |
 | GET | `/invoices` | required | Paginated list of invoices - `{items, total}`. Optionally filtered by `?account_id=` (exact), `?account_name=` (matches the linked account's business_name, case-insensitively), `?status=` (`draft`/`sent`/`paid`/`void` - `overdue` is accepted but never matches anything, see Conventions below), and/or `?quote_id=` (exact - a quote converts to at most one invoice, so this matches 0 or 1 row; used by `QuoteDetailPage.tsx`'s "View invoice" button on a converted quote). `?page=`/`?page_size=`, same as `/accounts`. |
 | GET | `/invoices/{id}` | required | Fetch one invoice with its line items, `events` (its audit trail, newest-first - see Conventions below), `subtotal`, `tax_total`, and (gross) `total`. |
@@ -71,6 +71,7 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | POST | `/invoices/next-number` | required | `{next_number}` - jump the organisation's invoice counter so the *next* invoice sent gets exactly this number (see Conventions below). `204`, `422` if `next_number < 1`. |
 | POST | `/invoices/{id}/void` | required | Transition to `void`. 409 if already `paid`. |
 | POST | `/invoices/{id}/pay` | required | Transition `sent → paid`. 409 if not currently `sent` (covers `draft`, `void`, and already-`paid`). |
+| PUT | `/invoices/{id}/customer-notes` | required | `{customer_notes}` (nullable) - replace the invoice's customer notes. Editable regardless of status, unlike line items (see Conventions below). 404 if missing/wrong organisation. |
 | GET | `/invoices/monthly-totals` | required | Registered *before* `/invoices/{id}` (see `CLAUDE.md`'s architecture rules on route ordering). `{currency, months: [{month, paid_total, unpaid_total}]}` for the trailing 12 months, scoped to the current user's organisation, in the current user's business profile `currency`. An invoice in any other currency isn't counted. |
 | GET | `/invoices/{id}/pdf` | required | Render the invoice as a PDF (`application/pdf`), with a "From" section for the current user's business name/address if set (with "Bill to" beside it, not below, when it is), their `invoice_document_header`/`invoice_document_footer` (if set) above the title/below the totals table, and — invoices only, never quotes or expenses — a "Payment details" section for whichever of `bank_account_name`/`bank_sort_code`/`bank_account_number` are set, after the totals table. Quotes/expenses render the same way via their own `quote_document_header`/`quote_document_footer`/`expense_document_header`/`expense_document_footer` pair instead - see the Conventions section. |
 | POST | `/expenses` | required | Create an expense against an account (`account_id` required; `currency` defaults `USD`; `expense_date` optional, defaults to today). Unlike a quote, its `number` (using the caller's own `expense_number_prefix`/`expense_number_digits`, e.g. `EXP-0001` by default) is assigned immediately - there's no draft state (see `CLAUDE.md`). |
@@ -106,7 +107,7 @@ session to resolve either from, so **every** `account`/`quote`/`invoice`/
 `expense`/`domain`/`registrar`
 command takes a **required** `--user-id` (`account create/list/update`,
 `quote create/update/add-item/update-item/delete-item/send/convert/pdf`, `invoice
-list/send/void/pay/monthly-totals/pdf`, `expense
+list/send/void/pay/set-customer-notes/monthly-totals/pdf`, `expense
 create/list/add-item/update-item/delete-item/monthly-totals/pdf`,
 `expense attachment add/list/download/delete`, `domain
 create/list/update/delete/link/unlink`, `registrar create/list/update/delete`,
@@ -143,6 +144,11 @@ send`/`expense create --user-id` additionally resolve that profile's
 number - see the number-prefix/digits Convention above. `quote create`/`quote
 convert` both additionally take an optional `--issue-date` (`YYYY-MM-DD`,
 defaults to today - see the issue-date-driven dates Convention below).
+`quote convert` also takes an optional `--customer-notes` (free text,
+stored on the resulting invoice - see the `customer_notes` Convention
+above); `invoice set-customer-notes <invoice_id> --user-id
+--customer-notes` mirrors `PUT /invoices/{id}/customer-notes` and works
+at any invoice status, unlike every other `invoice` mutation here.
 `settings show`/`settings
 set --user-id` (no API equivalent by path, but the same
 `BusinessProfileService` underneath) are unaffected, since `BusinessProfile`
@@ -182,6 +188,17 @@ See `docs/data-model.md`'s "Demo data" section and `CLAUDE.md`.
   (`issue_date + payment_terms_days`) - not "today" in either case. An
   `Invoice.issue_date` can only ever be set at conversion time, since
   there's no standalone "create invoice" route.
+- **`customer_notes`**: free text, optionally set on `POST
+  /quotes/{id}/convert` (alongside `issue_date` - see above) and stored on
+  the resulting `Invoice`. Unlike `issue_date`, it's **not** fixed at
+  conversion time - `PUT /invoices/{id}/customer-notes` can change it
+  afterwards, at any status (`draft`/`sent`/`paid`/`void`), since it's
+  metadata about the invoice rather than a financial fact `POST
+  /invoices/{id}/send` needs to freeze the way line items are. Blank/
+  omitted normalises to `null`, same as every other optional free-text
+  field in this app. Appended to the generated invoice PDF as a "Notes"
+  section, after "Payment details" and before the document footer -
+  `Quote`/`Expense` PDFs never show one, since neither has this field.
 - **Per-document-type header/footer**: `quote_document_header`/
   `quote_document_footer`, `invoice_document_header`/
   `invoice_document_footer`, and `expense_document_header`/

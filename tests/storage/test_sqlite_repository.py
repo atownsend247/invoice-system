@@ -545,6 +545,27 @@ def test_add_invoice_event_round_trips_and_orders_newest_first(repo, organisatio
     ]
 
 
+def test_create_and_update_invoice_round_trip_customer_notes(repo, organisation_id):
+    account = repo.create_account(_account(organisation_id))
+    created = repo.create_invoice(
+        _invoice(organisation_id, account.id, customer_notes="Thanks for your business!")
+    )
+    assert created.customer_notes == "Thanks for your business!"
+
+    fetched = repo.get_invoice(organisation_id, created.id)
+    assert fetched.customer_notes == "Thanks for your business!"
+
+    fetched.customer_notes = None
+    repo.update_invoice(fetched)
+    assert repo.get_invoice(organisation_id, created.id).customer_notes is None
+
+
+def test_create_invoice_defaults_customer_notes_to_none(repo, organisation_id):
+    account = repo.create_account(_account(organisation_id))
+    created = repo.create_invoice(_invoice(organisation_id, account.id))
+    assert created.customer_notes is None
+
+
 def test_account_round_trip_preserves_fields_and_tz(repo, organisation_id):
     created = repo.create_account(_account(organisation_id))
     assert created.id is not None

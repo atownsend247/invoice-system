@@ -136,6 +136,7 @@ export interface Invoice {
   issue_date: string
   due_date: string | null
   created_at: string
+  customer_notes: string | null
   line_items: LineItem[]
   events: ActivityEvent[]
   subtotal: string

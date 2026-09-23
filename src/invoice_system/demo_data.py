@@ -325,11 +325,13 @@ class _Seeder:
         self.quotes.send(self.organisation_id, quote_id)
         self.quotes.mark_expired(self.organisation_id, quote_id)
 
-    def _accepted_and_converted(self) -> str:
+    def _accepted_and_converted(self, *, customer_notes: str | None = None) -> str:
         quote_id = self._new_quote()
         self.quotes.send(self.organisation_id, quote_id)
         self.quotes.mark_accepted(self.organisation_id, quote_id)
-        return self.quotes.convert_to_invoice(self.organisation_id, quote_id).id
+        return self.quotes.convert_to_invoice(
+            self.organisation_id, quote_id, customer_notes=customer_notes
+        ).id
 
     def draft_invoice(self) -> None:
         self._accepted_and_converted()
@@ -356,6 +358,17 @@ class _Seeder:
         self.invoices.send(self.organisation_id, invoice_id, payment_terms_days=14)
         self.invoices.void(self.organisation_id, invoice_id)
 
+    def paid_invoice_with_customer_notes(self) -> None:
+        """Same as paid_invoice, but shows off customer_notes (captured at
+        quote-to-invoice conversion, see CLAUDE.md) - one curated scenario
+        only, not every paid_invoice, so most demo invoices still look
+        like the common case with nothing set."""
+        invoice_id = self._accepted_and_converted(
+            customer_notes="Please quote invoice number on remittance.\nThanks for your business!"
+        )
+        self.invoices.send(self.organisation_id, invoice_id, payment_terms_days=14)
+        self.invoices.pay(self.organisation_id, invoice_id)
+
 
 # Spread across the last 12 months (11 = a year ago, 0 = this month).
 # `overdue_invoice` is pinned far enough back, and `outstanding_invoice`
@@ -366,7 +379,7 @@ _CURATED_SCENARIOS = [
     _Scenario(10, 1, "sent_quote"),
     _Scenario(10, 2, "overdue_invoice"),
     _Scenario(9, 3, "rejected_quote"),
-    _Scenario(8, 4, "paid_invoice"),
+    _Scenario(8, 4, "paid_invoice_with_customer_notes"),
     _Scenario(7, 0, "expired_quote"),
     _Scenario(6, 1, "void_invoice"),
     _Scenario(5, 2, "paid_invoice"),

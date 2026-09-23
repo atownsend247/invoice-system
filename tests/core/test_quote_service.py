@@ -325,6 +325,42 @@ def test_convert_to_invoice_accepts_a_backdated_issue_date(application, organisa
     assert invoice.events[0].event_type == ActivityEventType.CREATED
 
 
+def test_convert_to_invoice_accepts_optional_customer_notes(application, organisation_id, account):
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    quote = application.quotes.add_line_item(
+        organisation_id, quote.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    quote = application.quotes.send(organisation_id, quote.id)
+
+    invoice = application.quotes.convert_to_invoice(
+        organisation_id, quote.id, customer_notes="Thanks for your business!"
+    )
+    assert invoice.customer_notes == "Thanks for your business!"
+
+    fetched = application.invoices.get_invoice(organisation_id, invoice.id)
+    assert fetched.customer_notes == "Thanks for your business!"
+
+
+def test_convert_to_invoice_defaults_customer_notes_to_none_and_normalises_blank(
+    application, organisation_id, account
+):
+    quote = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    quote = application.quotes.add_line_item(
+        organisation_id, quote.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    quote = application.quotes.send(organisation_id, quote.id)
+    invoice = application.quotes.convert_to_invoice(organisation_id, quote.id)
+    assert invoice.customer_notes is None
+
+    quote2 = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    quote2 = application.quotes.add_line_item(
+        organisation_id, quote2.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    quote2 = application.quotes.send(organisation_id, quote2.id)
+    invoice2 = application.quotes.convert_to_invoice(organisation_id, quote2.id, customer_notes="   ")
+    assert invoice2.customer_notes is None
+
+
 def test_quote_numbers_are_independent_per_organisation(application, organisation_id, account):
     first = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
     first = application.quotes.add_line_item(

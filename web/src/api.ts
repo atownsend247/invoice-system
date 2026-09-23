@@ -347,10 +347,13 @@ export function sendQuote(id: string): Promise<Quote> {
   return request(`/quotes/${id}/send`, { method: 'POST' })
 }
 
-export function convertQuote(id: string, issueDate?: string): Promise<Invoice> {
+export function convertQuote(id: string, issueDate?: string, customerNotes?: string): Promise<Invoice> {
   return request(`/quotes/${id}/convert`, {
     method: 'POST',
-    body: JSON.stringify({ issue_date: issueDate || undefined }),
+    body: JSON.stringify({
+      issue_date: issueDate || undefined,
+      customer_notes: customerNotes || undefined,
+    }),
   })
 }
 
@@ -399,6 +402,13 @@ export function voidInvoice(id: string): Promise<Invoice> {
 
 export function payInvoice(id: string): Promise<Invoice> {
   return request(`/invoices/${id}/pay`, { method: 'POST' })
+}
+
+export function updateInvoiceCustomerNotes(id: string, customerNotes: string): Promise<Invoice> {
+  return request(`/invoices/${id}/customer-notes`, {
+    method: 'PUT',
+    body: JSON.stringify({ customer_notes: customerNotes || null }),
+  })
 }
 
 export function getMonthlyInvoiceTotals(): Promise<MonthlyTotalsReport> {

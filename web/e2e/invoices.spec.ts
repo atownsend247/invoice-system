@@ -1,8 +1,10 @@
 import { expect, test } from './fixtures'
 
-// No "updating an invoice" spec - line items are fixed at conversion time,
-// there is no add-line-item route for invoices (see docs/api.md). What can
-// change after creation is status (send/void) and that's what these cover.
+// No "updating an invoice" spec beyond customer notes - line items are
+// fixed at conversion time, there is no add-line-item route for invoices
+// (see docs/api.md). What else can change after creation is status
+// (send/void) and customer_notes (free text, editable regardless of
+// status) - see the customer-notes tests below.
 
 test('shows the line items copied from its quote, with a link back to it', async ({
   authenticatedPage: page,
@@ -80,6 +82,43 @@ test('marking a sent invoice as paid updates its status and removes further acti
 test('a draft invoice cannot be marked as paid', async ({ authenticatedPage: page, draftInvoice }) => {
   await page.goto(`/invoices/${draftInvoice.id}`)
   await expect(page.getByRole('button', { name: 'Mark as paid' })).toHaveCount(0)
+})
+
+test('an invoice with no customer notes shows a placeholder, editable inline', async ({
+  authenticatedPage: page,
+  draftInvoice,
+}) => {
+  await page.goto(`/invoices/${draftInvoice.id}`)
+  await expect(page.getByText('No customer notes yet.')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByLabel('Customer notes').fill('Please pay by bank transfer.')
+  await page.getByRole('button', { name: 'Save' }).click()
+
+  await expect(page.getByText('Please pay by bank transfer.')).toBeVisible()
+  await expect(page.getByText('No customer notes yet.')).toHaveCount(0)
+
+  // Persists across a reload, not just in local state.
+  await page.reload()
+  await expect(page.getByText('Please pay by bank transfer.')).toBeVisible()
+})
+
+test('customer notes are editable regardless of invoice status, and can be cleared', async ({
+  authenticatedPage: page,
+  sentInvoice,
+}) => {
+  await page.goto(`/invoices/${sentInvoice.id}`)
+  await page.getByRole('button', { name: 'Mark as paid' }).click()
+
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByLabel('Customer notes').fill('Paid, thank you!')
+  await page.getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByText('Paid, thank you!')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByLabel('Customer notes').fill('')
+  await page.getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByText('No customer notes yet.')).toBeVisible()
 })
 
 test('filtering the invoices list by account name and status', async ({

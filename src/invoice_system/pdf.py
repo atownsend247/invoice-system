@@ -67,6 +67,11 @@ def render_invoice_pdf(
         # models.Expense) - so this is the one place `show_bank_details`
         # is True.
         show_bank_details=True,
+        # customer_notes is an Invoice-only field (see models.Invoice) -
+        # captured optionally when converting from a quote, editable
+        # afterwards - there's nothing to split into lines beyond what
+        # _text_lines already does for header/footer.
+        customer_notes_lines=_text_lines(invoice.customer_notes),
     )
 
 
@@ -224,6 +229,7 @@ def _render(
     header_lines: list[str],
     footer_lines: list[str],
     show_bank_details: bool = False,
+    customer_notes_lines: list[str] | None = None,
 ) -> bytes:
     accent = (from_profile.accent_color if from_profile is not None else None) or _ACCENT_FALLBACK
 
@@ -261,6 +267,7 @@ def _render(
         tax_total=_money(tax_total, currency),
         total=_money(total, currency),
         bank_lines=bank_lines,
+        customer_notes_lines=customer_notes_lines or [],
         accent=accent,
         accent_tint=_lighten(accent, 0.9),
     )

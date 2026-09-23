@@ -266,6 +266,46 @@ def test_get_missing_invoice_raises_not_found_for_pay(application, organisation_
         application.invoices.pay(organisation_id, 999)
 
 
+def test_update_customer_notes_sets_and_clears_it(application, organisation_id, draft_invoice):
+    updated = application.invoices.update_customer_notes(
+        organisation_id, draft_invoice.id, "Please pay by bank transfer."
+    )
+    assert updated.customer_notes == "Please pay by bank transfer."
+
+    fetched = application.invoices.get_invoice(organisation_id, draft_invoice.id)
+    assert fetched.customer_notes == "Please pay by bank transfer."
+
+    cleared = application.invoices.update_customer_notes(organisation_id, draft_invoice.id, None)
+    assert cleared.customer_notes is None
+
+
+def test_update_customer_notes_normalises_blank_to_none(application, organisation_id, draft_invoice):
+    updated = application.invoices.update_customer_notes(organisation_id, draft_invoice.id, "   ")
+    assert updated.customer_notes is None
+
+
+def test_update_customer_notes_is_not_gated_by_status(application, organisation_id, draft_invoice):
+    sent = application.invoices.send(organisation_id, draft_invoice.id)
+    application.invoices.pay(organisation_id, sent.id)
+
+    updated = application.invoices.update_customer_notes(organisation_id, sent.id, "Paid in full, thank you!")
+    assert updated.customer_notes == "Paid in full, thank you!"
+    assert updated.status == InvoiceStatus.PAID
+
+
+def test_update_customer_notes_requires_existing_invoice(application, organisation_id):
+    with pytest.raises(NotFound):
+        application.invoices.update_customer_notes(organisation_id, "does-not-exist", "notes")
+
+
+def test_update_customer_notes_from_another_organisation_raises_not_found(
+    application, organisation_id, draft_invoice
+):
+    other_organisation_id = application.organisations.get_or_create_for_user("user-2")
+    with pytest.raises(NotFound):
+        application.invoices.update_customer_notes(other_organisation_id, draft_invoice.id, "notes")
+
+
 def test_add_line_item_to_a_draft_invoice_applies_tax_rate(application, organisation_id, account, fake_clock):
     empty = application.repository.create_invoice(
         Invoice(

@@ -201,6 +201,7 @@ class QuoteUpdateIn(BaseModel):
 
 class QuoteConvertIn(BaseModel):
     issue_date: date | None = None
+    customer_notes: str | None = None
 
 
 class NextNumberIn(BaseModel):
@@ -276,6 +277,7 @@ class InvoiceOut(BaseModel):
     issue_date: date
     due_date: date | None
     created_at: datetime
+    customer_notes: str | None
     line_items: list[LineItemOut]
     events: list[ActivityEventOut]
     subtotal: str
@@ -294,12 +296,17 @@ class InvoiceOut(BaseModel):
             issue_date=invoice.issue_date,
             due_date=invoice.due_date,
             created_at=invoice.created_at,
+            customer_notes=invoice.customer_notes,
             line_items=[LineItemOut.from_model(item) for item in invoice.line_items],
             events=[ActivityEventOut.from_model(event) for event in invoice.events],
             subtotal=str(invoice.subtotal),
             tax_total=str(invoice.tax_total),
             total=str(invoice.total),
         )
+
+
+class InvoiceCustomerNotesIn(BaseModel):
+    customer_notes: str | None = None
 
 
 class InvoiceListOut(BaseModel):

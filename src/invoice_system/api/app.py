@@ -40,6 +40,7 @@ from .schemas import (
     ExpenseCreateIn,
     ExpenseDateIn,
     ExpenseOut,
+    InvoiceCustomerNotesIn,
     InvoiceListOut,
     InvoiceOut,
     LineItemIn,
@@ -494,7 +495,10 @@ def convert_quote(
     organisation_id: str = Depends(get_organisation_id),
 ) -> InvoiceOut:
     issue_date = body.issue_date if body is not None else None
-    invoice = application.quotes.convert_to_invoice(organisation_id, quote_id, issue_date=issue_date)
+    customer_notes = body.customer_notes if body is not None else None
+    invoice = application.quotes.convert_to_invoice(
+        organisation_id, quote_id, issue_date=issue_date, customer_notes=customer_notes
+    )
     return InvoiceOut.from_model(invoice)
 
 
@@ -554,6 +558,17 @@ def get_invoice(
     organisation_id: str = Depends(get_organisation_id),
 ) -> InvoiceOut:
     return InvoiceOut.from_model(application.invoices.get_invoice(organisation_id, invoice_id))
+
+
+@domain_router.put("/invoices/{invoice_id}/customer-notes", response_model=InvoiceOut)
+def update_invoice_customer_notes(
+    invoice_id: str,
+    body: InvoiceCustomerNotesIn,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> InvoiceOut:
+    invoice = application.invoices.update_customer_notes(organisation_id, invoice_id, body.customer_notes)
+    return InvoiceOut.from_model(invoice)
 
 
 @domain_router.post("/invoices/{invoice_id}/send", response_model=InvoiceOut)

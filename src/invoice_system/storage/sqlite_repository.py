@@ -727,7 +727,8 @@ class SqliteRepository:
         with self._lock:
             self._conn.execute(
                 "INSERT INTO invoices (id, organisation_id, account_id, quote_id, number, status, "
-                "currency, issue_date, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "currency, issue_date, due_date, created_at, customer_notes) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     invoice.id,
                     invoice.organisation_id,
@@ -739,6 +740,7 @@ class SqliteRepository:
                     invoice.issue_date.isoformat(),
                     invoice.due_date.isoformat() if invoice.due_date else None,
                     invoice.created_at.isoformat(),
+                    invoice.customer_notes,
                 ),
             )
             self._conn.commit()
@@ -828,14 +830,15 @@ class SqliteRepository:
     def update_invoice(self, invoice: Invoice) -> Invoice:
         with self._lock:
             self._conn.execute(
-                "UPDATE invoices SET number = ?, status = ?, currency = ?, issue_date = ?, due_date = ? "
-                "WHERE id = ? AND organisation_id = ?",
+                "UPDATE invoices SET number = ?, status = ?, currency = ?, issue_date = ?, due_date = ?, "
+                "customer_notes = ? WHERE id = ? AND organisation_id = ?",
                 (
                     invoice.number,
                     invoice.status.value,
                     invoice.currency,
                     invoice.issue_date.isoformat(),
                     invoice.due_date.isoformat() if invoice.due_date else None,
+                    invoice.customer_notes,
                     invoice.id,
                     invoice.organisation_id,
                 ),
@@ -901,6 +904,7 @@ class SqliteRepository:
             issue_date=date.fromisoformat(row["issue_date"]),
             due_date=date.fromisoformat(row["due_date"]) if row["due_date"] else None,
             created_at=datetime.fromisoformat(row["created_at"]),
+            customer_notes=row["customer_notes"],
             line_items=[SqliteRepository._row_to_line_item(r) for r in item_rows],
             events=[SqliteRepository._row_to_activity_event(r) for r in event_rows],
         )

@@ -1096,6 +1096,86 @@ def test_quote_create_and_convert_accept_an_explicit_issue_date(tmp_path):
     assert "Converted quote" in result.output
 
 
+def test_quote_convert_accepts_customer_notes_and_invoice_set_customer_notes_updates_it(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "account",
+            "create",
+            "--user-id",
+            "1",
+            "--business-name",
+            "Acme",
+            "--email",
+            "a@b.test",
+            "--address-line1",
+            "1 Main St",
+        ],
+    )
+    account_id = _id_from(result.output, r"Created account (\S+):")
+
+    result = runner.invoke(
+        cli, [*_base_args(db_path), "quote", "create", "--user-id", "1", "--account-id", account_id]
+    )
+    quote_id = _id_from(result.output, r"Created quote (\S+) \(draft\)")
+
+    runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "quote",
+            "add-item",
+            quote_id,
+            "--user-id",
+            "1",
+            "--description",
+            "Work",
+            "--quantity",
+            "1",
+            "--unit-price",
+            "100.00",
+        ],
+    )
+    runner.invoke(cli, [*_base_args(db_path), "quote", "send", quote_id, "--user-id", "1"])
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "quote",
+            "convert",
+            quote_id,
+            "--user-id",
+            "1",
+            "--customer-notes",
+            "Thanks for your business!",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    invoice_id = _id_from(result.output, r"to invoice (\S+)")
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "invoice",
+            "set-customer-notes",
+            invoice_id,
+            "--user-id",
+            "1",
+            "--customer-notes",
+            "Updated notes",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Updated invoice" in result.output
+
+
 def test_configurable_document_number_prefix_and_digits(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()

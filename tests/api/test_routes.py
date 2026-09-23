@@ -306,6 +306,52 @@ def test_convert_quote_accepts_a_backdated_issue_date(client, auth_headers):
     assert response.json()["issue_date"] == "2025-11-01"
 
 
+def test_convert_quote_accepts_optional_customer_notes(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+    client.post(
+        f"/quotes/{quote_id}/line-items",
+        json={"description": "Work", "quantity": "1", "unit_price": "100.00"},
+        headers=auth_headers,
+    )
+    client.post(f"/quotes/{quote_id}/send", headers=auth_headers)
+
+    response = client.post(
+        f"/quotes/{quote_id}/convert",
+        json={"customer_notes": "Thanks for your business!"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["customer_notes"] == "Thanks for your business!"
+
+    response = client.get(f"/invoices/{body['id']}", headers=auth_headers)
+    assert response.json()["customer_notes"] == "Thanks for your business!"
+
+
+def test_convert_quote_with_no_body_leaves_customer_notes_null(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    quote_id = client.post("/quotes", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+    client.post(
+        f"/quotes/{quote_id}/line-items",
+        json={"description": "Work", "quantity": "1", "unit_price": "100.00"},
+        headers=auth_headers,
+    )
+    client.post(f"/quotes/{quote_id}/send", headers=auth_headers)
+
+    response = client.post(f"/quotes/{quote_id}/convert", headers=auth_headers)
+    assert response.status_code == 201
+    assert response.json()["customer_notes"] is None
+
+
 def test_update_quote_changes_currency_and_issue_date(client, auth_headers):
     account_id = client.post(
         "/accounts",
@@ -1662,6 +1708,50 @@ def test_cannot_pay_a_draft_invoice(client, auth_headers):
 
     response = client.post(f"/invoices/{invoice_id}/pay", headers=auth_headers)
     assert response.status_code == 409
+
+
+def test_update_invoice_customer_notes(client, auth_headers):
+    invoice = _send_invoice(client, auth_headers)
+
+    response = client.put(
+        f"/invoices/{invoice['id']}/customer-notes",
+        json={"customer_notes": "Please pay by bank transfer."},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["customer_notes"] == "Please pay by bank transfer."
+
+    response = client.get(f"/invoices/{invoice['id']}", headers=auth_headers)
+    assert response.json()["customer_notes"] == "Please pay by bank transfer."
+
+    # editable regardless of status
+    client.post(f"/invoices/{invoice['id']}/pay", headers=auth_headers)
+    response = client.put(
+        f"/invoices/{invoice['id']}/customer-notes",
+        json={"customer_notes": "Paid, thank you!"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["customer_notes"] == "Paid, thank you!"
+
+    response = client.put(
+        f"/invoices/{invoice['id']}/customer-notes", json={"customer_notes": None}, headers=auth_headers
+    )
+    assert response.status_code == 200
+    assert response.json()["customer_notes"] is None
+
+
+def test_update_invoice_customer_notes_from_another_login_user_returns_404(
+    client, auth_headers, other_auth_headers
+):
+    invoice = _send_invoice(client, auth_headers)
+
+    response = client.put(
+        f"/invoices/{invoice['id']}/customer-notes",
+        json={"customer_notes": "notes"},
+        headers=other_auth_headers,
+    )
+    assert response.status_code == 404
 
 
 def test_monthly_totals_requires_auth(client):

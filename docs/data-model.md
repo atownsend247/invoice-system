@@ -3,7 +3,7 @@
 **Status: implemented** (`src/invoice_system/models.py`,
 `storage/schema.py`). Keep this table in sync with the actual schema — this
 doc is read as ground truth. `storage/schema.py`'s `MIGRATIONS` has
-twenty-one entries: the flattened baseline (2026-09-16), migration 2 (added `tax_rate`
+twenty-two entries: the flattened baseline (2026-09-16), migration 2 (added `tax_rate`
 to both line-item tables), migration 3 (added `Organisation` — the tenant
 boundary — plus nullable `organisation_id` columns on `accounts`/`quotes`/
 `invoices`), migration 4 (rescoped `Quote.number`/`Invoice.number`
@@ -74,9 +74,13 @@ account — a rebuild-and-swap, not a plain `ADD COLUMN`, since
 `organisation_id NOT NULL` column is backfilled via a join to each
 existing domain's account, safe because every domain already had one at
 the time — see the `Domain` row below and `docs/api.md`'s `Domain`
-Convention).
+Convention), and migration 22 (added a nullable `invoices.customer_notes
+TEXT` column — one more plain `ADD COLUMN`, no rebuild needed and no
+backfill possible or attempted, since an existing invoice was never asked
+this at creation time — see the `Invoice` row below and `CLAUDE.md`'s
+`customer_notes` Convention).
 Schema changes from here on are new entries appended to that list, not
-edits to any of these twenty-one.
+edits to any of these twenty-two.
 
 ## Entities
 
@@ -87,7 +91,7 @@ edits to any of these twenty-one.
 | `Domain` | id, organisation_id, account_id, domain_name, expiry_date, registrar, auto_renew, created_at, updated_at | A domain name a business tracks — which domain, when it expires, who it's registered with, whether it's set to auto-renew. **Organisation-scoped directly** (`organisation_id`, migration 21) — structurally close to `Registrar` below now, not resolved through a parent `Account` the way it used to be. `account_id` is **nullable** — a domain is created independently (the standalone Domains page) and only *optionally* linked to one `Account` at a time; changing that link is a dedicated action (`DomainService.link_domain`/`unlink_domain`), not part of a plain edit. `domain_name`/`expiry_date`/`registrar` all required; `auto_renew` defaults `false`, purely informational. Editable in place (`DomainService.update_domain`, full replace of its own fields, mirroring `AccountService.update_account` — but never touches `account_id`) — see `CLAUDE.md`. `registrar` is a plain string, not a foreign key to `Registrar` below — the web UI populates it from a strict `<select>` sourced from that managed list, but stores the chosen name, so a later rename/delete of a `Registrar` never needs to touch this row. |
 | `Registrar` | id, organisation_id, name, notes, created_at, updated_at | A business's managed list of domain registrars, used to populate the Domain form's registrar `<select>` — see `CLAUDE.md`. **Organisation-scoped**, same as `Domain` above now — carries its own `organisation_id`, full CRUD, tenant ownership checked directly. Unlike `Account`, supports delete — nothing holds a foreign key to a `Registrar` (see the `Domain` row above), so there's no *database-level* cascade. `RegistrarService.delete_registrar` still refuses (`Conflict`, 409) to delete one that at least one `Domain` currently names — an *application-level* guard computed at request time via `count_domains_by_registrar` (not a stored column), not enforced by SQLite — see `CLAUDE.md`'s `Registrar` Convention and `docs/api.md`'s `domain_count`/`account_count` Convention. `name` required; `notes` optional free text, no format validation. |
 | `Quote` | id, organisation_id, account_id, number, status, currency, issue_date, expiry_date, created_at | `status`: `draft \| sent \| accepted \| rejected \| expired \| converted`. `number` (`Q-0001`, ...) is assigned on `send`, not on creation, and is unique per-`organisation_id`, not globally (see migration 4 above) — two organisations' first quotes can both be `Q-0001`. `issue_date` defaults to today but is settable at creation; `expiry_date` is always computed as `issue_date + BusinessProfile.quote_validity_days`, not independently settable. |
-| `Invoice` | id, organisation_id, account_id, quote_id, number, status, currency, issue_date, due_date, created_at | `status`: `draft \| sent \| paid \| overdue \| void`. `quote_id` is set when created via conversion, `NULL` otherwise. `number` (`INV-0001`, ...) and `due_date` are assigned on `send`, and — same as `Quote.number` — unique per-`organisation_id`, not globally. `due_date` is `issue_date + payment_terms_days`, not "today" + `payment_terms_days`. `issue_date` defaults to today but is settable at conversion time (`QuoteService.convert_to_invoice`, the only place an `Invoice` is ever created), allowing a backdated invoice. `paid` is assigned by `InvoiceService.pay()`, only from `sent` — `overdue` is a defined enum value nothing ever actually sets (see "Not yet modelled"). |
+| `Invoice` | id, organisation_id, account_id, quote_id, number, status, currency, issue_date, due_date, created_at, customer_notes | `status`: `draft \| sent \| paid \| overdue \| void`. `quote_id` is set when created via conversion, `NULL` otherwise. `number` (`INV-0001`, ...) and `due_date` are assigned on `send`, and — same as `Quote.number` — unique per-`organisation_id`, not globally. `due_date` is `issue_date + payment_terms_days`, not "today" + `payment_terms_days`. `issue_date` defaults to today but is settable at conversion time (`QuoteService.convert_to_invoice`, the only place an `Invoice` is ever created), allowing a backdated invoice. `paid` is assigned by `InvoiceService.pay()`, only from `sent` — `overdue` is a defined enum value nothing ever actually sets (see "Not yet modelled"). `customer_notes` (migration 22) is free text, optionally set at conversion time and editable afterwards regardless of status (`InvoiceService.update_customer_notes`) — appended to the generated PDF, see `CLAUDE.md`'s `customer_notes` Convention. |
 | `LineItem` | id, description, quantity, unit_price, tax_rate, position | One shape, shared by quotes, invoices, and expenses; associated via `quote_line_items`/`invoice_line_items`/`expense_line_items` join tables (`quote_id`/`invoice_id`/`expense_id` + the same columns). `tax_rate` is a fraction (`0.20` = 20% UK VAT; `0` = none), independently set per line. `net_total`/`tax_amount`/`total` (`net_total + tax_amount`, gross) are derived properties, never stored — `tax_amount` is rounded to the minor currency unit, `net_total` is not (see `CLAUDE.md`). |
 | `ActivityEvent` | id, event_type, from_status, to_status, occurred_at | The audit trail for a `Quote`/`Invoice` — creation and status changes only, not every field edit. Same "one shape, two parent tables" pattern as `LineItem`: associated via `quote_events`/`invoice_events` join tables (`quote_id`/`invoice_id` + the same columns), not one polymorphic table. `event_type`: `created \| status_changed`; `from_status` is `NULL` for a `created` event. Fetched newest-first (`ORDER BY rowid`, not `occurred_at` — see `CLAUDE.md`). |
 | `Expense` | id, organisation_id, account_id, number, currency, issue_date, expense_date, created_at | A cost incurred against an `Account` (e.g. a domain renewal paid on the client's behalf) — see `CLAUDE.md`. Unlike `Quote`/`Invoice`, no `status` column: there's no draft/sent lifecycle, so `number` (`EXP-0001`, ..., same per-`organisation_id` composite-unique-index pattern as `Quote.number`/`Invoice.number` — see migration 8) is `NOT NULL` and assigned by `ExpenseService.create_expense` immediately, not deferred to a later `send()`. `issue_date` (recorded, fixed) and `expense_date` (when the money was actually spent, defaults to today, the one field here editable after creation via `ExpenseService.update_expense_date`) answer different questions — `monthly_totals` buckets by `expense_date`, not `issue_date`. |
@@ -232,6 +236,12 @@ Expense 1──* ExpenseAttachment
   address lines stay independently optional, blank input normalised to
   `NULL`) and always replaces the whole record (no partial-field updates)
   — 404s via `get_account` if the id doesn't exist first.
+- `InvoiceService.update_customer_notes` is the one `Invoice` field
+  editable regardless of status - not gated behind `draft` the way line
+  items and `Quote.currency`/`issue_date` are, since it's metadata about
+  the invoice rather than a financial fact `send()` needs to freeze. Blank
+  input normalises to `NULL` (via `_blank_to_none`), same as
+  `QuoteService.convert_to_invoice`'s own optional `customer_notes` param.
 - `StatsService.get_stats(organisation_id, currency)` is scoped to one
   `Organisation` — not a system-wide snapshot, same as
   `InvoiceService.monthly_totals`. `total_paid` follows that same method's

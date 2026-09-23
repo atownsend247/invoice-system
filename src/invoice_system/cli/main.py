@@ -585,10 +585,24 @@ def quote_set_next_number(application: Application, user_id: str, next_number: i
     type=click.DateTime(formats=["%Y-%m-%d"]),
     help="Defaults to today. Set to backdate the resulting invoice.",
 )
+@click.option(
+    "--customer-notes",
+    default=None,
+    help="Free text stored against the resulting invoice and appended to its PDF - optional.",
+)
 @click.pass_obj
-def quote_convert(application: Application, quote_id: str, user_id: str, issue_date: datetime | None) -> None:
+def quote_convert(
+    application: Application,
+    quote_id: str,
+    user_id: str,
+    issue_date: datetime | None,
+    customer_notes: str | None,
+) -> None:
     invoice = application.quotes.convert_to_invoice(
-        _organisation_id(application, user_id), quote_id, issue_date=issue_date.date() if issue_date else None
+        _organisation_id(application, user_id),
+        quote_id,
+        issue_date=issue_date.date() if issue_date else None,
+        customer_notes=customer_notes,
     )
     click.echo(f"Converted quote {quote_id} to invoice {invoice.id}")
 
@@ -680,6 +694,24 @@ def invoice_void(application: Application, invoice_id: str, user_id: str) -> Non
 def invoice_pay(application: Application, invoice_id: str, user_id: str) -> None:
     application.invoices.pay(_organisation_id(application, user_id), invoice_id)
     click.echo(f"Invoice {invoice_id} marked paid")
+
+
+@invoice.command("set-customer-notes")
+@click.argument("invoice_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option(
+    "--customer-notes",
+    default=None,
+    help="Free text appended to the invoice's generated PDF - blank clears it. Editable at any status.",
+)
+@click.pass_obj
+def invoice_set_customer_notes(
+    application: Application, invoice_id: str, user_id: str, customer_notes: str | None
+) -> None:
+    application.invoices.update_customer_notes(
+        _organisation_id(application, user_id), invoice_id, customer_notes
+    )
+    click.echo(f"Updated invoice {invoice_id}'s customer notes")
 
 
 @invoice.command("monthly-totals")

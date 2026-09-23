@@ -406,6 +406,7 @@ class Invoice:
     issue_date: date
     due_date: date | None
     created_at: datetime
+    customer_notes: str | None = None
     line_items: list[LineItem] = field(default_factory=list)
     events: list[ActivityEvent] = field(default_factory=list)
 

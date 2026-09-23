@@ -123,7 +123,7 @@
     margin-top: 1mm;
   }
 
-  .payment-details h3, .footer-lines h3 {
+  .payment-details h3, .customer-notes h3, .footer-lines h3 {
     font-size: 8pt;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -132,6 +132,7 @@
     font-weight: bold;
   }
   .payment-details { margin-bottom: 6mm; }
+  .customer-notes { margin-bottom: 6mm; }
   .footer-lines {
     font-size: 9pt;
     color: #374151;
@@ -208,6 +209,13 @@
   <div class="payment-details">
     <h3>Payment details</h3>
     {% for line in bank_lines %}<p>{{ line }}</p>{% endfor %}
+  </div>
+  {% endif %}
+
+  {% if customer_notes_lines %}
+  <div class="customer-notes">
+    <h3>Notes</h3>
+    {% for line in customer_notes_lines %}<p>{{ line }}</p>{% endfor %}
   </div>
   {% endif %}
 

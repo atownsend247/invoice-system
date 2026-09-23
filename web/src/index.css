@@ -80,6 +80,37 @@ h2 {
   margin-top: 1.5rem;
 }
 
+.customer-notes-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.customer-notes-section h2 {
+  font-size: 1rem;
+  margin: 0 0 0.5rem;
+}
+
+.customer-notes-text {
+  white-space: pre-wrap;
+  margin: 0 0 0.6rem;
+}
+
+.customer-notes-section textarea {
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.92rem;
+  font-family: inherit;
+  resize: vertical;
+  margin-bottom: 0.6rem;
+}
+
 .monthly-chart-legend {
   display: flex;
   align-items: center;
@@ -706,13 +737,20 @@ button.secondary {
   color: var(--text-muted);
 }
 
-.convert-action input {
+.convert-action input,
+.convert-action textarea {
   padding: 0.4rem 0.5rem;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg);
   color: var(--text);
   font-size: 0.92rem;
+  font-family: inherit;
+}
+
+.convert-action textarea {
+  min-width: 16rem;
+  resize: vertical;
 }
 
 .next-number-action {
@@ -972,7 +1010,8 @@ button.secondary {
     flex: 1 1 100%;
   }
 
-  .convert-action input {
+  .convert-action input,
+  .convert-action textarea {
     width: 100%;
   }
 

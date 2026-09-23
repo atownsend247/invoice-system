@@ -1548,5 +1548,49 @@ flow," not a restructuring, whenever it's actually needed.
       `quote_validity_days` right before computing the expected expiry,
       not by asserting the default.
 
+## Phase 42 — Invoice customer notes, captured at quote-to-invoice conversion (done)
+
+- [x] Requested feature: prompt for optional "customer notes" when
+      converting a quote to an invoice, store them against the invoice,
+      and append them to the generated PDF as free text. Confirmed scope
+      with the user before building: editable on the invoice afterwards
+      (not fixed at conversion time only, unlike a backdated
+      `issue_date`), and shown on `InvoiceDetailPage.tsx`, not just the
+      PDF.
+- [x] Migration 22: nullable `invoices.customer_notes TEXT`, plain `ADD
+      COLUMN`, no backfill (an existing invoice was never asked this).
+      `models.Invoice` gains `customer_notes: str | None = None`.
+- [x] `QuoteService.convert_to_invoice` gains an optional `customer_notes`
+      param (normalised via the existing `_blank_to_none` helper, same as
+      header/footer/address fields elsewhere). New
+      `InvoiceService.update_customer_notes(organisation_id, invoice_id,
+      customer_notes)` - **not gated by status**, unlike line items and
+      `QuoteService.update_quote` (Phase 41) - this is metadata about the
+      invoice, not a financial fact `send()` needs to freeze. Not
+      recorded as an `ActivityEvent` (creation/status changes only, see
+      the Audit trail Convention).
+- [x] `POST /quotes/{id}/convert`'s body gains optional `customer_notes`;
+      new `PUT /invoices/{id}/customer-notes`. CLI: `quote convert
+      --customer-notes`, new `invoice set-customer-notes`.
+- [x] `pdf.py`: `_render` gains `customer_notes_lines` (split via the
+      existing `_text_lines` helper, same as header/footer text) -
+      `render_invoice_pdf` is the only caller that passes it, since
+      `Quote`/`Expense` have no such field.
+      `templates/document.html.jinja` renders it as a "Notes" section
+      after "Payment details" and before the document footer.
+- [x] Web UI: `QuoteDetailPage.tsx`'s existing "Convert to invoice" action
+      gains an optional "Customer notes" `<textarea>` alongside its
+      issue-date field. `InvoiceDetailPage.tsx` gets a new "Customer
+      notes" section (current value or "No customer notes yet.", with an
+      inline "Edit" toggle) above the line items table - same lightweight
+      local-state pattern as `ExpenseDetailPage.tsx`'s expense-date
+      toggle and `QuoteDetailPage.tsx`'s own currency/issue-date toggle
+      from Phase 41.
+- [x] Demo data: one curated scenario (`paid_invoice_with_customer_notes`,
+      replacing a single `paid_invoice` slot) shows off the field without
+      changing what every other seeded invoice looks like.
+- [x] Full backend suite (478 tests, 98.8%+ coverage) and full e2e suite
+      (78 tests) updated and passing.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

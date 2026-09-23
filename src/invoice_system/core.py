@@ -781,7 +781,12 @@ class QuoteService:
         )
 
     def convert_to_invoice(
-        self, organisation_id: str, quote_id: str, *, issue_date: date_ | None = None
+        self,
+        organisation_id: str,
+        quote_id: str,
+        *,
+        issue_date: date_ | None = None,
+        customer_notes: str | None = None,
     ) -> Invoice:
         quote = self._get_quote(organisation_id, quote_id)
         if quote.status not in (QuoteStatus.SENT, QuoteStatus.ACCEPTED):
@@ -797,6 +802,7 @@ class QuoteService:
             issue_date=issue_date or self._clock().date(),
             due_date=None,
             created_at=self._clock(),
+            customer_notes=_blank_to_none(customer_notes),
         )
         invoice = self._repository.create_invoice(invoice)
         for item in quote.line_items:
@@ -991,6 +997,20 @@ class InvoiceService:
         invoice.status = InvoiceStatus.PAID
         self._repository.update_invoice(invoice)
         self._record_event(invoice.id, from_status=from_status, to_status=invoice.status)
+        return self._get_invoice(organisation_id, invoice_id)
+
+    def update_customer_notes(
+        self, organisation_id: str, invoice_id: str, customer_notes: str | None
+    ) -> Invoice:
+        """Free text appended to the generated invoice PDF - editable at any
+        time regardless of status (not gated like line items), same
+        reasoning as `ExpenseService.update_expense_date` having no status
+        check: this is metadata about the invoice, not a financial fact
+        `send()` needs to freeze. Not recorded as an ActivityEvent - see
+        the Audit trail Convention (status changes only)."""
+        invoice = self._get_invoice(organisation_id, invoice_id)
+        invoice.customer_notes = _blank_to_none(customer_notes)
+        self._repository.update_invoice(invoice)
         return self._get_invoice(organisation_id, invoice_id)
 
     def _record_event(

@@ -637,4 +637,13 @@ MIGRATIONS: list[str] = [
     CREATE INDEX idx_domains_organisation ON domains (organisation_id);
     CREATE INDEX idx_domains_account ON domains (account_id);
     """,
+    """
+    -- Free-text customer notes, captured when converting a Quote to an
+    -- Invoice (QuoteService.convert_to_invoice's new optional
+    -- customer_notes param) and editable afterwards
+    -- (InvoiceService.update_customer_notes) - appended to the generated
+    -- invoice PDF. Nullable, no backfill needed - an existing invoice
+    -- simply has none. Plain ADD COLUMN, no rebuild needed.
+    ALTER TABLE invoices ADD COLUMN customer_notes TEXT;
+    """,
 ]

@@ -151,6 +151,29 @@ test('converting a sent quote creates a matching draft invoice', async ({
   await expect(page.getByText(`converted from quote #${sentQuote.id}`)).toBeVisible()
 })
 
+test('converting a quote can capture optional customer notes for the resulting invoice', async ({
+  authenticatedPage: page,
+  sentQuote,
+}) => {
+  await page.goto(`/quotes/${sentQuote.id}`)
+  await page.getByLabel('Customer notes (optional)').fill('Please pay by bank transfer.')
+  await page.getByRole('button', { name: 'Convert to invoice' }).click()
+
+  await expect(page.getByRole('heading', { name: /Draft invoice/ })).toBeVisible()
+  await expect(page.getByText('Please pay by bank transfer.')).toBeVisible()
+})
+
+test('converting a quote with no customer notes leaves the invoice with a placeholder', async ({
+  authenticatedPage: page,
+  sentQuote,
+}) => {
+  await page.goto(`/quotes/${sentQuote.id}`)
+  await page.getByRole('button', { name: 'Convert to invoice' }).click()
+
+  await expect(page.getByRole('heading', { name: /Draft invoice/ })).toBeVisible()
+  await expect(page.getByText('No customer notes yet.')).toBeVisible()
+})
+
 test('a converted quote shows a View invoice button linking back to the resulting invoice', async ({
   authenticatedPage: page,
   sentQuote,

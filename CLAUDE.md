@@ -154,7 +154,7 @@ Four separate things are easy to conflate here — don't:
   account/quote/invoice/expense
   command (`account create/list/update`, `quote
   create/update/add-item/update-item/delete-item/send/convert/pdf`, `invoice
-  list/send/void/pay/monthly-totals/pdf`, `expense
+  list/send/void/pay/set-customer-notes/monthly-totals/pdf`, `expense
   create/list/add-item/pdf`, `expense attachment
   add/list/download/delete`, `stats`), since there's no session
   to resolve an organisation from otherwise (see "Four separate things"
@@ -296,6 +296,38 @@ Four separate things are easy to conflate here — don't:
   (its own local busy/error state, not the heavier `initial`/`onSubmit`/
   `onDone` form-component shape `DomainForm`/`RegistrarForm` use) - fields
   for `currency`/`issue_date` only, calling `api.updateQuote`.
+- **`Invoice.customer_notes`** - free text, optionally captured when
+  converting a quote (`QuoteService.convert_to_invoice`'s new
+  `customer_notes` param, `POST /quotes/{id}/convert`'s request body,
+  `quote convert --customer-notes`) and appended to the generated invoice
+  PDF (`pdf.py`'s `_render` gains a `customer_notes_lines` param, split
+  the same way header/footer text is via the existing `_text_lines`
+  helper; `document.html.jinja` renders it as a "Notes" section after
+  "Payment details" and before the document footer - only on an invoice,
+  since `Quote`/`Expense` have no such field). Blank input normalises to
+  `None` via the existing `_blank_to_none` helper, same as the
+  header/footer/address fields elsewhere in this app - `customer_notes`
+  stays a plain `str | None`, unlike `first_name`/`last_name`/
+  `business_name` (see the settings-page bullet above), since there's no
+  "leave every tab independently saveable" reason to need a blank-string
+  sentinel here. **Editable at any time, regardless of invoice status**
+  (`InvoiceService.update_customer_notes`, `PUT
+  /invoices/{id}/customer-notes`, CLI `invoice set-customer-notes`) -
+  deliberately not gated the way line items are, since this is metadata
+  about the invoice, not a financial fact `send()` needs to freeze;
+  confirmed with the user before building this (the alternative -
+  capture-once-at-conversion-only, matching how a backdated `issue_date`
+  works - was the other option offered). Not recorded as an
+  `ActivityEvent` - see the Audit trail Convention below (status changes
+  only). Web UI: `QuoteDetailPage.tsx`'s existing "Convert to invoice"
+  action (see above) gains an optional "Customer notes" `<textarea>`
+  alongside its issue-date field; `InvoiceDetailPage.tsx` gets a new
+  "Customer notes" section above the line items table, showing the
+  current value (or "No customer notes yet.") with its own inline "Edit"
+  toggle - same lightweight local-state pattern as
+  `ExpenseDetailPage.tsx`'s expense-date toggle and `QuoteDetailPage.tsx`'s
+  own currency/issue-date toggle above, not the heavier `initial`/
+  `onSubmit`/`onDone` form-component shape.
 - **Audit trail** (`ActivityEvent` in models.py, `quote_events`/
   `invoice_events` tables) - creation and status changes only, not every
   field edit (e.g. adding a line item isn't recorded). Same "one shared

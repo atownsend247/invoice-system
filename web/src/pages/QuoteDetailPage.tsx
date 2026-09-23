@@ -35,6 +35,10 @@ export function QuoteDetailPage() {
   // Optional backdating for the resulting invoice - blank means "today"
   // (see CLAUDE.md/QuoteService.convert_to_invoice).
   const [convertIssueDate, setConvertIssueDate] = useState('')
+  // Optional free text stored against the resulting invoice and appended
+  // to its PDF - blank means none (see CLAUDE.md/QuoteService.
+  // convert_to_invoice). Editable afterwards on the invoice itself too.
+  const [convertCustomerNotes, setConvertCustomerNotes] = useState('')
   const [editingDetails, setEditingDetails] = useState(false)
   const [currencyInput, setCurrencyInput] = useState('')
   const [issueDateInput, setIssueDateInput] = useState('')
@@ -226,12 +230,24 @@ export function QuoteDetailPage() {
                 onChange={(event) => setConvertIssueDate(event.target.value)}
               />
             </label>
+            <label>
+              Customer notes (optional)
+              <textarea
+                value={convertCustomerNotes}
+                onChange={(event) => setConvertCustomerNotes(event.target.value)}
+                rows={2}
+              />
+            </label>
             <button
               type="button"
               disabled={busy}
               onClick={() =>
                 run(async () => {
-                  const invoice = await api.convertQuote(quote.id, convertIssueDate || undefined)
+                  const invoice = await api.convertQuote(
+                    quote.id,
+                    convertIssueDate || undefined,
+                    convertCustomerNotes || undefined,
+                  )
                   navigate(`/invoices/${invoice.id}`)
                 })
               }

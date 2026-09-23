@@ -22,6 +22,10 @@ export function InvoiceDetailPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const [editingNotes, setEditingNotes] = useState(false)
+  const [customerNotesInput, setCustomerNotesInput] = useState('')
+  const [notesError, setNotesError] = useState<string | null>(null)
+  const [savingNotes, setSavingNotes] = useState(false)
 
   function closePdfPreview() {
     if (pdfUrl) URL.revokeObjectURL(pdfUrl)
@@ -49,6 +53,21 @@ export function InvoiceDetailPage() {
     }
   }
 
+  async function handleSaveNotes() {
+    if (!invoice) return
+    setNotesError(null)
+    setSavingNotes(true)
+    try {
+      await api.updateInvoiceCustomerNotes(invoice.id, customerNotesInput)
+      setEditingNotes(false)
+      refetch()
+    } catch (err) {
+      setNotesError(errorMessage(err))
+    } finally {
+      setSavingNotes(false)
+    }
+  }
+
   const canVoid = invoice.status !== 'paid' && invoice.status !== 'void'
   const canPay = invoice.status === 'sent'
 
@@ -66,6 +85,56 @@ export function InvoiceDetailPage() {
         {invoice.due_date && <> · due {invoice.due_date}</>}
         {invoice.quote_id && <> · converted from quote #{invoice.quote_id}</>}
       </p>
+
+      <div className="customer-notes-section">
+        <h2>Customer notes</h2>
+        {editingNotes ? (
+          <>
+            <textarea
+              aria-label="Customer notes"
+              value={customerNotesInput}
+              onChange={(event) => setCustomerNotesInput(event.target.value)}
+              rows={3}
+            />
+            <div className="actions">
+              <button type="button" onClick={handleSaveNotes} disabled={savingNotes}>
+                {savingNotes ? 'Saving…' : 'Save'}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setEditingNotes(false)}
+                disabled={savingNotes}
+              >
+                Cancel
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            {invoice.customer_notes ? (
+              <p className="customer-notes-text">{invoice.customer_notes}</p>
+            ) : (
+              <p className="meta">No customer notes yet.</p>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setCustomerNotesInput(invoice.customer_notes ?? '')
+                setNotesError(null)
+                setEditingNotes(true)
+              }}
+            >
+              Edit
+            </button>
+          </>
+        )}
+        {notesError && (
+          <p className="form-error" role="alert">
+            {notesError}
+          </p>
+        )}
+      </div>
 
       <LineItemsTable
         lineItems={invoice.line_items}
