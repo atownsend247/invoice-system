@@ -449,8 +449,11 @@ test('accepting a Data tab confirmation actually deletes the data', async ({ pag
   // TEST_EMAIL one every other spec file uses - this test genuinely
   // executes the delete-all actions below, which are organisation-wide
   // (see CLAUDE.md), so running them against the shared organisation would
-  // corrupt other specs' concurrently-running fixtures.
-  const email = `danger-zone-${testInfo.testId}@example.test`
+  // corrupt other specs' concurrently-running fixtures. Includes
+  // testInfo.retry, not just testId - testId is stable *across* a retry of
+  // the same test, so without it a retry would resubmit the same email a
+  // first attempt already registered and get rejected as a duplicate.
+  const email = `danger-zone-${testInfo.testId}-${testInfo.retry}@example.test`
   const password = 'correct horse battery staple'
 
   await page.goto(`/register?token=${inviteToken}`)
@@ -478,17 +481,25 @@ test('accepting a Data tab confirmation actually deletes the data', async ({ pag
   await page.goto('/settings')
   await page.getByRole('tab', { name: 'Data' }).click()
 
-  page.once('dialog', (dialog) => dialog.accept())
-  await page.getByRole('button', { name: 'Delete all quotes', exact: true }).click()
-  await expect(page.getByText('Deleted 1 item.')).toBeVisible()
+  // Scoped to each action's own row, not a page-wide getByText - two
+  // DangerActions can easily end up showing the identical "Deleted 1
+  // item." message at the same time (neither clears when a sibling
+  // action succeeds), which a page-wide locator can't disambiguate.
+  const quotesAction = page.locator('.danger-action', { hasText: 'Delete all quotes' })
+  const invoicesAction = page.locator('.danger-action', { hasText: 'Delete all invoices' })
+  const expensesAction = page.locator('.danger-action', { hasText: 'Delete all expenses' })
 
   page.once('dialog', (dialog) => dialog.accept())
-  await page.getByRole('button', { name: 'Delete all expenses', exact: true }).click()
-  await expect(page.getByText('Deleted 1 item.')).toBeVisible()
+  await quotesAction.getByRole('button', { name: 'Delete all quotes', exact: true }).click()
+  await expect(quotesAction.getByText('Deleted 1 item.')).toBeVisible()
 
   page.once('dialog', (dialog) => dialog.accept())
-  await page.getByRole('button', { name: 'Delete all invoices', exact: true }).click()
-  await expect(page.getByText('Deleted 0 items.')).toBeVisible()
+  await expensesAction.getByRole('button', { name: 'Delete all expenses', exact: true }).click()
+  await expect(expensesAction.getByText('Deleted 1 item.')).toBeVisible()
+
+  page.once('dialog', (dialog) => dialog.accept())
+  await invoicesAction.getByRole('button', { name: 'Delete all invoices', exact: true }).click()
+  await expect(invoicesAction.getByText('Deleted 0 items.')).toBeVisible()
 
   const quotes = await apiFetch<{ items: unknown[] }>('/quotes', token)
   expect(quotes.items).toEqual([])
