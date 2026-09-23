@@ -506,6 +506,39 @@ def test_cannot_update_or_delete_a_line_item_on_a_sent_quote(client, auth_header
     assert response.status_code == 409
 
 
+def test_delete_all_quotes(client, auth_headers, other_auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    client.post("/quotes", json={"account_id": account_id}, headers=auth_headers)
+    client.post("/quotes", json={"account_id": account_id}, headers=auth_headers)
+
+    other_account_id = client.post(
+        "/accounts",
+        json={"business_name": "Other Co", "email": "b@c.test", "address_line1": "2 Other St"},
+        headers=other_auth_headers,
+    ).json()["id"]
+    other_quote_id = client.post(
+        "/quotes", json={"account_id": other_account_id}, headers=other_auth_headers
+    ).json()["id"]
+
+    response = client.delete("/quotes", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json() == {"deleted": 2}
+
+    assert client.get("/quotes", headers=auth_headers).json()["items"] == []
+    # Another login user's quotes are untouched.
+    response = client.get(f"/quotes/{other_quote_id}", headers=other_auth_headers)
+    assert response.status_code == 200
+
+
+def test_delete_all_quotes_requires_auth(client):
+    response = client.delete("/quotes")
+    assert response.status_code == 401
+
+
 def test_list_accounts_paginates_and_filters_by_query(client, auth_headers):
     for name, email in [("Northwind Traders", "billing@northwind.test"), ("Acme Ltd", "a@acme.test")]:
         client.post(
@@ -602,6 +635,26 @@ def test_list_invoices_paginates_and_filters_by_account_name_and_status(client, 
     body = response.json()
     assert [i["id"] for i in body["items"]] == [invoice_id]
     assert body["total"] == 1
+
+
+def test_delete_all_invoices_does_not_affect_the_quotes_they_came_from(client, auth_headers):
+    invoice = _send_invoice(client, auth_headers)
+
+    response = client.delete("/invoices", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json() == {"deleted": 1}
+
+    assert client.get("/invoices", headers=auth_headers).json()["items"] == []
+    response = client.get(f"/invoices/{invoice['id']}", headers=auth_headers)
+    assert response.status_code == 404
+
+    response = client.get("/quotes", headers=auth_headers)
+    assert response.json()["items"][0]["status"] == "converted"
+
+
+def test_delete_all_invoices_requires_auth(client):
+    response = client.delete("/invoices")
+    assert response.status_code == 401
 
 
 def test_account_expense_flow(client, auth_headers):
@@ -1119,6 +1172,33 @@ def test_expense_attachment_from_another_login_user_returns_404(client, auth_hea
         f"/expenses/{expense_id}/attachments/{attachment_id}", headers=other_auth_headers
     )
     assert response.status_code == 404
+
+
+def test_delete_all_expenses_also_removes_attachments(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    expense_id = client.post("/expenses", json={"account_id": account_id}, headers=auth_headers).json()["id"]
+    client.post(
+        f"/expenses/{expense_id}/attachments",
+        files={"file": ("receipt.pdf", b"data", "application/pdf")},
+        headers=auth_headers,
+    )
+
+    response = client.delete("/expenses", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json() == {"deleted": 1}
+
+    assert client.get("/expenses", headers=auth_headers).json() == []
+    response = client.get(f"/expenses/{expense_id}", headers=auth_headers)
+    assert response.status_code == 404
+
+
+def test_delete_all_expenses_requires_auth(client):
+    response = client.delete("/expenses")
+    assert response.status_code == 401
 
 
 def test_accounts_are_isolated_between_login_users(client, auth_headers, other_auth_headers):

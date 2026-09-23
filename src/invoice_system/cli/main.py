@@ -576,6 +576,23 @@ def quote_set_next_number(application: Application, user_id: str, next_number: i
     click.echo(f"Next quote number set - the next one sent will be number {next_number}")
 
 
+@quote.command("delete-all")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option(
+    "--yes", "-y", is_flag=True, default=False, help="Skip the confirmation prompt (for scripted use)."
+)
+@click.pass_obj
+def quote_delete_all(application: Application, user_id: str, yes: bool) -> None:
+    organisation_id = _organisation_id(application, user_id)
+    if not yes and not click.confirm(
+        "This will permanently delete every quote in this organisation. Continue?"
+    ):
+        click.echo("Aborted - nothing was deleted.")
+        return
+    deleted = application.quotes.delete_all(organisation_id)
+    click.echo(f"Deleted {deleted} quote(s)")
+
+
 @quote.command("convert")
 @click.argument("quote_id")
 @click.option("--user-id", required=True, help=_USER_ID_HELP)
@@ -676,6 +693,23 @@ def invoice_send(application: Application, invoice_id: str, user_id: str) -> Non
 def invoice_set_next_number(application: Application, user_id: str, next_number: int) -> None:
     application.invoices.set_next_number(_organisation_id(application, user_id), next_number)
     click.echo(f"Next invoice number set - the next one sent will be number {next_number}")
+
+
+@invoice.command("delete-all")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option(
+    "--yes", "-y", is_flag=True, default=False, help="Skip the confirmation prompt (for scripted use)."
+)
+@click.pass_obj
+def invoice_delete_all(application: Application, user_id: str, yes: bool) -> None:
+    organisation_id = _organisation_id(application, user_id)
+    if not yes and not click.confirm(
+        "This will permanently delete every invoice in this organisation. Continue?"
+    ):
+        click.echo("Aborted - nothing was deleted.")
+        return
+    deleted = application.invoices.delete_all(organisation_id)
+    click.echo(f"Deleted {deleted} invoice(s)")
 
 
 @invoice.command("void")
@@ -788,6 +822,24 @@ def expense_create(
 def expense_set_next_number(application: Application, user_id: str, next_number: int) -> None:
     application.expenses.set_next_number(_organisation_id(application, user_id), next_number)
     click.echo(f"Next expense number set - the next one created will be number {next_number}")
+
+
+@expense.command("delete-all")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option(
+    "--yes", "-y", is_flag=True, default=False, help="Skip the confirmation prompt (for scripted use)."
+)
+@click.pass_obj
+def expense_delete_all(application: Application, user_id: str, yes: bool) -> None:
+    organisation_id = _organisation_id(application, user_id)
+    if not yes and not click.confirm(
+        "This will permanently delete every expense (and its uploaded attachments) in this "
+        "organisation. Continue?"
+    ):
+        click.echo("Aborted - nothing was deleted.")
+        return
+    deleted = application.expenses.delete_all(organisation_id)
+    click.echo(f"Deleted {deleted} expense(s)")
 
 
 @expense.command("list")

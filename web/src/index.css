@@ -721,6 +721,51 @@ button.danger:hover:not(:disabled) {
   color: var(--text-muted);
 }
 
+.danger-zone {
+  background: var(--surface);
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 1.2rem;
+  margin: 0;
+}
+
+.danger-zone legend {
+  padding: 0;
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--danger);
+}
+
+.danger-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem 1.5rem;
+  padding: 0.9rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.danger-action:first-of-type {
+  border-top: none;
+  padding-top: 0.9rem;
+}
+
+.danger-action-text {
+  flex: 1 1 20rem;
+}
+
+.danger-action-label {
+  font-weight: 600;
+  margin: 0 0 0.2rem;
+}
+
+.danger-action .form-error,
+.danger-action .form-success {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 .line-items {
   margin-bottom: 1.2rem;
 }

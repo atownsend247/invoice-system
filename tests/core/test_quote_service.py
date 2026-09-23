@@ -614,3 +614,45 @@ def test_cannot_delete_a_line_item_on_a_sent_quote(application, organisation_id,
 
     with pytest.raises(InvalidTransition):
         application.quotes.delete_line_item(organisation_id, quote.id, item_id)
+
+
+def test_delete_all_removes_every_quote_regardless_of_status(application, organisation_id, account):
+    draft = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    sent = application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    sent = application.quotes.add_line_item(
+        organisation_id, sent.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    application.quotes.send(organisation_id, sent.id)
+
+    deleted = application.quotes.delete_all(organisation_id)
+    assert deleted == 2
+
+    assert application.quotes.list_quotes(organisation_id).items == []
+    with pytest.raises(NotFound):
+        application.quotes.get_quote(organisation_id, draft.id)
+    with pytest.raises(NotFound):
+        application.quotes.get_quote(organisation_id, sent.id)
+
+
+def test_delete_all_only_affects_the_calling_organisation(application, organisation_id, account):
+    application.quotes.create_quote(organisation_id=organisation_id, account_id=account.id)
+    other_organisation_id = application.organisations.get_or_create_for_user("user-2")
+    other_account = application.accounts.create_account(
+        organisation_id=other_organisation_id,
+        business_name="Other Co",
+        email="b@other.test",
+        address_line1="2 Other St",
+    )
+    other_quote = application.quotes.create_quote(
+        organisation_id=other_organisation_id, account_id=other_account.id
+    )
+
+    deleted = application.quotes.delete_all(organisation_id)
+    assert deleted == 1
+
+    fetched = application.quotes.get_quote(other_organisation_id, other_quote.id)
+    assert fetched.id == other_quote.id
+
+
+def test_delete_all_returns_zero_when_there_is_nothing_to_delete(application, organisation_id):
+    assert application.quotes.delete_all(organisation_id) == 0

@@ -208,6 +208,13 @@ class NextNumberIn(BaseModel):
     next_number: int
 
 
+class BulkDeleteResultOut(BaseModel):
+    """Response for the Settings > Data danger-zone bulk deletes - see
+    CLAUDE.md - `deleted` is how many rows were actually removed."""
+
+    deleted: int
+
+
 class ActivityEventOut(BaseModel):
     id: str
     event_type: str

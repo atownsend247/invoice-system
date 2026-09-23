@@ -705,6 +705,22 @@ class SqliteRepository:
     def set_next_quote_number(self, organisation_id: str, next_number: int) -> None:
         self._set_next_number(f"{organisation_id}:quote", next_number)
 
+    def delete_all_quotes(self, organisation_id: str) -> int:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM quote_line_items WHERE quote_id IN "
+                "(SELECT id FROM quotes WHERE organisation_id = ?)",
+                (organisation_id,),
+            )
+            self._conn.execute(
+                "DELETE FROM quote_events WHERE quote_id IN "
+                "(SELECT id FROM quotes WHERE organisation_id = ?)",
+                (organisation_id,),
+            )
+            cursor = self._conn.execute("DELETE FROM quotes WHERE organisation_id = ?", (organisation_id,))
+            self._conn.commit()
+            return cursor.rowcount
+
     @staticmethod
     def _row_to_quote(row: sqlite3.Row, item_rows: list[sqlite3.Row], event_rows: list[sqlite3.Row]) -> Quote:
         return Quote(
@@ -889,6 +905,22 @@ class SqliteRepository:
     def set_next_invoice_number(self, organisation_id: str, next_number: int) -> None:
         self._set_next_number(f"{organisation_id}:invoice", next_number)
 
+    def delete_all_invoices(self, organisation_id: str) -> int:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM invoice_line_items WHERE invoice_id IN "
+                "(SELECT id FROM invoices WHERE organisation_id = ?)",
+                (organisation_id,),
+            )
+            self._conn.execute(
+                "DELETE FROM invoice_events WHERE invoice_id IN "
+                "(SELECT id FROM invoices WHERE organisation_id = ?)",
+                (organisation_id,),
+            )
+            cursor = self._conn.execute("DELETE FROM invoices WHERE organisation_id = ?", (organisation_id,))
+            self._conn.commit()
+            return cursor.rowcount
+
     @staticmethod
     def _row_to_invoice(
         row: sqlite3.Row, item_rows: list[sqlite3.Row], event_rows: list[sqlite3.Row]
@@ -1048,6 +1080,27 @@ class SqliteRepository:
             )
             self._conn.commit()
         return expense
+
+    def delete_all_expenses(self, organisation_id: str) -> int:
+        # Metadata rows only - the uploaded attachment bytes themselves live
+        # on the filesystem, not here (see attachments.py), so the caller
+        # (ExpenseService.delete_all) is the one that deletes those files,
+        # using the attachment ids it reads via list_expenses *before*
+        # calling this - once this runs, that metadata is gone.
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM expense_line_items WHERE expense_id IN "
+                "(SELECT id FROM expenses WHERE organisation_id = ?)",
+                (organisation_id,),
+            )
+            self._conn.execute(
+                "DELETE FROM expense_attachments WHERE expense_id IN "
+                "(SELECT id FROM expenses WHERE organisation_id = ?)",
+                (organisation_id,),
+            )
+            cursor = self._conn.execute("DELETE FROM expenses WHERE organisation_id = ?", (organisation_id,))
+            self._conn.commit()
+            return cursor.rowcount
 
     @staticmethod
     def _row_to_expense(

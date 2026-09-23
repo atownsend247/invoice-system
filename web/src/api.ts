@@ -365,6 +365,13 @@ export function getQuotePdfUrl(quote: Quote): Promise<string> {
   return getPdfObjectUrl(`/quotes/${quote.id}/pdf`)
 }
 
+/** Danger zone (Settings > Data) - permanently deletes every quote in the
+ * current organisation. Always confirmed client-side first, see
+ * SettingsPage.tsx's DangerAction. */
+export function deleteAllQuotes(): Promise<{ deleted: number }> {
+  return request('/quotes', { method: 'DELETE' })
+}
+
 // -- invoices --------------------------------------------------------------
 
 export interface ListInvoicesOptions {
@@ -421,6 +428,12 @@ export function downloadInvoicePdf(invoice: Invoice): Promise<void> {
 
 export function getInvoicePdfUrl(invoice: Invoice): Promise<string> {
   return getPdfObjectUrl(`/invoices/${invoice.id}/pdf`)
+}
+
+/** Danger zone (Settings > Data) - see deleteAllQuotes above. Does not
+ * affect the quotes these invoices were converted from. */
+export function deleteAllInvoices(): Promise<{ deleted: number }> {
+  return request('/invoices', { method: 'DELETE' })
 }
 
 // -- expenses ----------------------------------------------------------------
@@ -500,6 +513,12 @@ export function getExpenseAttachmentPdfUrl(expenseId: string, attachmentId: stri
 
 export function getMonthlyExpenseTotals(): Promise<MonthlyExpenseTotalsReport> {
   return request('/expenses/monthly-totals')
+}
+
+/** Danger zone (Settings > Data) - see deleteAllQuotes above. Also removes
+ * every uploaded attachment file on the server, not just the DB rows. */
+export function deleteAllExpenses(): Promise<{ deleted: number }> {
+  return request('/expenses', { method: 'DELETE' })
 }
 
 // -- settings ----------------------------------------------------------------

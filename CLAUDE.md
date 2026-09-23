@@ -153,9 +153,9 @@ Four separate things are easy to conflate here — don't:
   explicit `--user-id` instead — **required** on every
   account/quote/invoice/expense
   command (`account create/list/update`, `quote
-  create/update/add-item/update-item/delete-item/send/convert/pdf`, `invoice
-  list/send/void/pay/set-customer-notes/monthly-totals/pdf`, `expense
-  create/list/add-item/pdf`, `expense attachment
+  create/update/add-item/update-item/delete-item/send/convert/delete-all/pdf`, `invoice
+  list/send/void/pay/set-customer-notes/delete-all/monthly-totals/pdf`, `expense
+  create/list/add-item/delete-all/pdf`, `expense attachment
   add/list/download/delete`, `stats`), since there's no session
   to resolve an organisation from otherwise (see "Four separate things"
   above). `settings show/set`, `invoice send`, `quote pdf`/`invoice pdf`/
@@ -605,8 +605,9 @@ Four separate things are easy to conflate here — don't:
 - The settings page (`web/src/pages/SettingsPage.tsx`) presents
   `BusinessProfile`'s four groups (user settings, business settings,
   payment and tax settings, document settings) as actual **tabs**, not
-  four sections stacked on one long page — a `role="tablist"` of four
-  `role="tab"` buttons (`aria-selected`/`aria-controls`) drives a single
+  four sections stacked on one long page — a `role="tablist"` of (now
+  five, see the Data tab bullet below) `role="tab"` buttons
+  (`aria-selected`/`aria-controls`) drives a single
   `activeTab` state; each tab's content sits in a `role="tabpanel"` `<div>`
   using the native `hidden` attribute for the inactive ones, **not**
   conditional unmounting, so every field's React state survives switching
@@ -658,7 +659,7 @@ Four separate things are easy to conflate here — don't:
   field's own tab before validating, which nothing currently does).
   No URL involvement and no roving-tabindex arrow-key nav - a plain
   click/Tab-focus/Enter-activate button already covers basic keyboard
-  operability for a 4-item tab bar. Each tab's original `<fieldset>/
+  operability for a small tab bar. Each tab's original `<fieldset>/
   <legend>` moved inside its `tabpanel` unchanged, so the same semantic/
   accessible grouping as before still holds (Playwright's
   `getByRole('group', { name: ... })` finds it via the `<legend>` exactly
@@ -676,12 +677,62 @@ Four separate things are easy to conflate here — don't:
   unrelated one (found from a real bug report: it looked like the
   message was about whatever tab was now on screen, since there's no
   visual link to which tab it actually came from). This page used to have
-  a fifth "Registrars" tab too, rendered outside `BusinessProfileForm`'s
-  own `<form>` with its own extra guard to keep that form's trailing Save
+  a fifth "Registrars" tab, rendered outside `BusinessProfileForm`'s own
+  `<form>` with its own extra guard to keep that form's trailing Save
   button/message from also showing on it - Registrars moved to the
   standalone Domains page (see the `Domain`/`Registrar` Convention below),
-  so that guard was removed as dead weight: every tab here is genuinely
-  part of the shared form again.
+  and for a while every tab here really was part of the shared form again.
+  A fifth tab is back now, though - **Data** (see the next bullet), the
+  same "outside `BusinessProfileForm`'s own `<form>`, guarded off from its
+  trailing Save button/message" shape Registrars used, for the same
+  reason: a `<form>` can't nest inside another, and this tab's actions are
+  immediate, not deferred to a profile save.
+- **Data tab danger zone** - bulk, irreversible deletes of everything of
+  one type in the caller's organisation: `QuoteService.delete_all`/
+  `InvoiceService.delete_all`/`ExpenseService.delete_all` (`core.py`),
+  each returning the count deleted for user feedback. Deliberately only
+  these three, not `Account` too - not asked for, and an `Account` is the
+  thing a `Quote`/`Invoice`/`Expense` points *at*, not itself something
+  these methods manage. Each cascades its own child rows
+  (`SqliteRepository.delete_all_quotes`/`delete_all_invoices`/
+  `delete_all_expenses` - line items, `quote_events`/`invoice_events`,
+  and (expenses only) `expense_attachments` *metadata*) in one locked
+  transaction via `DELETE ... WHERE x_id IN (SELECT id FROM x WHERE
+  organisation_id = ?)`, same shape as every other cascading delete in
+  this codebase. `ExpenseService.delete_all` is the one of the three with
+  filesystem cleanup to do - it reads every attachment id via
+  `self._repository.list_expenses(organisation_id)` *before* calling
+  `delete_all_expenses` (once that runs, the metadata needed to find the
+  files is gone), deletes the DB rows, then the files via
+  `self._attachments.delete(...)` - DB-then-files, same ordering
+  `delete_attachment` already uses and for the same reason (an orphaned
+  file is wasted disk space, never a broken reference). **Deliberately no
+  cross-entity cleanup**: deleting all quotes doesn't touch any
+  `Invoice.quote_id` that pointed at one of them (a dangling reference,
+  not a broken one - nothing dereferences it eagerly, `QuoteDetailPage.tsx`
+  would just 404 if you followed a stale link), and deleting all invoices
+  doesn't touch the quotes they came from (still `converted`, still
+  showing their own history) - each action does exactly what its label
+  says, no more. The counter driving the next quote/invoice/expense number
+  is untouched too, same reasoning as `set_next_number` being a separate,
+  explicit action elsewhere in this file - a bulk delete doesn't implicitly
+  reset it.
+  `DELETE /quotes`/`DELETE /invoices`/`DELETE /expenses` (all
+  `200` with `{deleted: N}`, `BulkDeleteResultOut` - not `204`, so the
+  caller can show a count) and CLI `quote delete-all`/`invoice
+  delete-all`/`expense delete-all` (`--user-id` as usual, plus `--yes`/`-y`
+  to skip a `click.confirm` prompt - same flag shape and wording style as
+  `init-db --reset`'s own confirmation). Web UI: `SettingsPage.tsx`'s Data
+  tab (`DataDangerZonePanel`) renders one `DangerAction` per entity type -
+  a description paragraph plus a `button.danger` (see the Void-button
+  styling bullet above) that calls `window.confirm(...)` before doing
+  anything, same plain-native-dialog choice as that button, for the same
+  reason (no custom confirmation-modal pattern exists anywhere else in
+  this app to be consistent with, and the request was literally "always
+  ask for confirmation when buttons are clicked"). Each action shows its
+  own busy/error/"Deleted N item(s)." success state independently, same
+  self-contained-immediate-action shape as `NextNumberAction` elsewhere on
+  this page.
 - `AccountService.update_account(account_id, ...)` is a full replace, not a
   partial patch — same required fields (`business_name`/`email`/
   `address_line1`) and validation as `create_account`, mirroring

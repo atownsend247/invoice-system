@@ -30,6 +30,7 @@ from .schemas import (
     AccountIn,
     AccountListOut,
     AccountOut,
+    BulkDeleteResultOut,
     BusinessProfileIn,
     BusinessProfileOut,
     DomainCreateIn,
@@ -487,6 +488,14 @@ def set_next_quote_number(
     application.quotes.set_next_number(organisation_id, body.next_number)
 
 
+@domain_router.delete("/quotes", response_model=BulkDeleteResultOut)
+def delete_all_quotes(
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> BulkDeleteResultOut:
+    return BulkDeleteResultOut(deleted=application.quotes.delete_all(organisation_id))
+
+
 @domain_router.post("/quotes/{quote_id}/convert", response_model=InvoiceOut, status_code=201)
 def convert_quote(
     quote_id: str,
@@ -598,6 +607,14 @@ def set_next_invoice_number(
     application.invoices.set_next_number(organisation_id, body.next_number)
 
 
+@domain_router.delete("/invoices", response_model=BulkDeleteResultOut)
+def delete_all_invoices(
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> BulkDeleteResultOut:
+    return BulkDeleteResultOut(deleted=application.invoices.delete_all(organisation_id))
+
+
 @domain_router.post("/invoices/{invoice_id}/void", response_model=InvoiceOut)
 def void_invoice(
     invoice_id: str,
@@ -655,6 +672,14 @@ def set_next_expense_number(
     organisation_id: str = Depends(get_organisation_id),
 ) -> None:
     application.expenses.set_next_number(organisation_id, body.next_number)
+
+
+@domain_router.delete("/expenses", response_model=BulkDeleteResultOut)
+def delete_all_expenses(
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> BulkDeleteResultOut:
+    return BulkDeleteResultOut(deleted=application.expenses.delete_all(organisation_id))
 
 
 @domain_router.get("/expenses", response_model=list[ExpenseOut])

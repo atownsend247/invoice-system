@@ -843,6 +843,117 @@ def test_quote_update_and_update_item_and_delete_item(tmp_path):
     assert "Deleted line item" in result.output
 
 
+def test_quote_invoice_expense_delete_all_with_yes_skips_the_prompt(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "account",
+            "create",
+            "--user-id",
+            "1",
+            "--business-name",
+            "Acme",
+            "--email",
+            "a@b.test",
+            "--address-line1",
+            "1 Main St",
+        ],
+    )
+    account_id = _id_from(result.output, r"Created account (\S+):")
+
+    runner.invoke(
+        cli, [*_base_args(db_path), "quote", "create", "--user-id", "1", "--account-id", account_id]
+    )
+    runner.invoke(
+        cli, [*_base_args(db_path), "expense", "create", "--user-id", "1", "--account-id", account_id]
+    )
+
+    result = runner.invoke(cli, [*_base_args(db_path), "quote", "delete-all", "--user-id", "1", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert "Deleted 1 quote(s)" in result.output
+
+    result = runner.invoke(cli, [*_base_args(db_path), "invoice", "delete-all", "--user-id", "1", "-y"])
+    assert result.exit_code == 0, result.output
+    assert "Deleted 0 invoice(s)" in result.output
+
+    result = runner.invoke(cli, [*_base_args(db_path), "expense", "delete-all", "--user-id", "1", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert "Deleted 1 expense(s)" in result.output
+
+    result = runner.invoke(cli, [*_base_args(db_path), "account", "list", "--user-id", "1"])
+    assert "total 1" in result.output, "the account itself should be untouched"
+
+
+def test_quote_delete_all_without_yes_prompts_and_aborts_on_decline(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "account",
+            "create",
+            "--user-id",
+            "1",
+            "--business-name",
+            "Acme",
+            "--email",
+            "a@b.test",
+            "--address-line1",
+            "1 Main St",
+        ],
+    )
+    account_id = _id_from(result.output, r"Created account (\S+):")
+    runner.invoke(
+        cli, [*_base_args(db_path), "quote", "create", "--user-id", "1", "--account-id", account_id]
+    )
+
+    result = runner.invoke(cli, [*_base_args(db_path), "quote", "delete-all", "--user-id", "1"], input="n\n")
+    assert result.exit_code == 0, result.output
+    assert "aborted" in result.output.lower()
+
+    # Nothing was deleted - re-running with --yes still finds the one quote.
+    result = runner.invoke(cli, [*_base_args(db_path), "quote", "delete-all", "--user-id", "1", "--yes"])
+    assert "Deleted 1 quote(s)" in result.output
+
+
+def test_invoice_delete_all_without_yes_prompts_and_aborts_on_decline(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
+
+    result = runner.invoke(
+        cli, [*_base_args(db_path), "invoice", "delete-all", "--user-id", "1"], input="n\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert "aborted" in result.output.lower()
+
+    result = runner.invoke(cli, [*_base_args(db_path), "invoice", "delete-all", "--user-id", "1", "--yes"])
+    assert "Deleted 0 invoice(s)" in result.output
+
+
+def test_expense_delete_all_without_yes_prompts_and_aborts_on_decline(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
+
+    result = runner.invoke(
+        cli, [*_base_args(db_path), "expense", "delete-all", "--user-id", "1"], input="n\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert "aborted" in result.output.lower()
+
+    result = runner.invoke(cli, [*_base_args(db_path), "expense", "delete-all", "--user-id", "1", "--yes"])
+    assert "Deleted 0 expense(s)" in result.output
+
+
 def test_expense_attachment_add_rejects_a_non_pdf(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()

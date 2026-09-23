@@ -765,6 +765,15 @@ class QuoteService:
             raise ValidationFailed("next_number must be at least 1")
         self._repository.set_next_quote_number(organisation_id, next_number)
 
+    def delete_all(self, organisation_id: str) -> int:
+        """Danger-zone bulk delete (Settings > Data) - every quote in this
+        organisation, any status, along with its line items and activity
+        history. Doesn't touch any `Invoice.quote_id` already pointing at a
+        deleted quote (see CLAUDE.md's Data tab Convention) - the counter
+        driving the next quote number is untouched too, same reasoning as
+        `set_next_number` being a separate, explicit action."""
+        return self._repository.delete_all_quotes(organisation_id)
+
     def mark_accepted(self, organisation_id: str, quote_id: str) -> Quote:
         return self._transition(
             organisation_id, quote_id, from_status=QuoteStatus.SENT, to_status=QuoteStatus.ACCEPTED
@@ -977,6 +986,13 @@ class InvoiceService:
             raise ValidationFailed("next_number must be at least 1")
         self._repository.set_next_invoice_number(organisation_id, next_number)
 
+    def delete_all(self, organisation_id: str) -> int:
+        """Danger-zone bulk delete (Settings > Data) - every invoice in this
+        organisation, any status, along with its line items and activity
+        history. Doesn't touch the quotes these invoices were converted
+        from - see QuoteService.delete_all's matching docstring."""
+        return self._repository.delete_all_invoices(organisation_id)
+
     def void(self, organisation_id: str, invoice_id: str) -> Invoice:
         invoice = self._get_invoice(organisation_id, invoice_id)
         if invoice.status == InvoiceStatus.PAID:
@@ -1136,6 +1152,27 @@ class ExpenseService:
         if next_number < 1:
             raise ValidationFailed("next_number must be at least 1")
         self._repository.set_next_expense_number(organisation_id, next_number)
+
+    def delete_all(self, organisation_id: str) -> int:
+        """Danger-zone bulk delete (Settings > Data) - every expense in this
+        organisation, its line items, and any uploaded attachment *files*
+        (not just their metadata rows) - the one of the three delete_all
+        methods that has filesystem cleanup to do, since attachment bytes
+        live on disk (see attachments.py), not in SQLite.
+        `self._repository.list_expenses` is read *before* the bulk delete
+        so the attachment ids it collects are still resolvable; deleting the
+        DB rows first, then the files, matches delete_attachment's own
+        ordering above (an orphaned file with no referencing row is wasted
+        disk space, never a broken reference)."""
+        attachment_ids = [
+            attachment.id
+            for expense in self._repository.list_expenses(organisation_id)
+            for attachment in expense.attachments
+        ]
+        count = self._repository.delete_all_expenses(organisation_id)
+        for attachment_id in attachment_ids:
+            self._attachments.delete(attachment_id)
+        return count
 
     def get_expense(self, organisation_id: str, expense_id: str) -> Expense:
         return self._get_expense(organisation_id, expense_id)

@@ -11,7 +11,7 @@ import { apiFetch, expect, test } from './fixtures'
 // after another - the actual guarantee a shared-mutable-state file needs.
 test.describe.configure({ mode: 'serial' })
 
-test('shows the four settings tabs and loads the current profile on visit', async ({
+test('shows the five settings tabs and loads the current profile on visit', async ({
   authenticatedPage: page,
 }) => {
   await page.goto('/settings')
@@ -42,9 +42,16 @@ test('shows the four settings tabs and loads the current profile on visit', asyn
   await expect(page.getByRole('group', { name: 'Expenses' })).toBeVisible()
   await expect(page.getByRole('group', { name: 'Payment and tax settings' })).not.toBeVisible()
 
-  // Registrars moved to the standalone Domains page (see CLAUDE.md) -
-  // there's no fifth tab here anymore.
+  // Registrars moved to the standalone Domains page (see CLAUDE.md) - the
+  // fifth tab here is now Data (the danger zone, see below), not Registrars.
   await expect(page.getByRole('tab', { name: 'Registrars' })).toHaveCount(0)
+
+  await page.getByRole('tab', { name: 'Data' }).click()
+  await expect(page.getByRole('group', { name: 'Danger zone' })).toBeVisible()
+  await expect(page.getByRole('group', { name: 'Document settings' })).not.toBeVisible()
+  // No Save settings button on this tab - each action there is immediate
+  // (see CLAUDE.md).
+  await expect(page.getByRole('button', { name: 'Save settings' })).toHaveCount(0)
 
   // Not asserting a specific "default" value here - a business profile is a
   // singleton per user (see CLAUDE.md), and this spec shares its login user
@@ -399,4 +406,97 @@ test('each settings tab can be saved independently, even while the others are st
   await page.getByLabel('Business name').fill('Contoso Consulting')
   await page.getByRole('button', { name: 'Save settings' }).click()
   await expect(page.getByText('Saved.')).toBeVisible()
+})
+
+test('each Data tab danger action asks for confirmation, naming the action, and dismissing it deletes nothing', async ({
+  authenticatedPage: page,
+  draftQuote,
+}) => {
+  await page.goto('/settings')
+  await page.getByRole('tab', { name: 'Data' }).click()
+
+  const expectedMessages: Record<string, string> = {
+    'Delete all quotes': 'Are you sure you want to permanently delete ALL quotes? This cannot be undone.',
+    'Delete all invoices':
+      'Are you sure you want to permanently delete ALL invoices? This cannot be undone.',
+    'Delete all expenses':
+      'Are you sure you want to permanently delete ALL expenses? This cannot be undone.',
+  }
+
+  for (const [label, expectedMessage] of Object.entries(expectedMessages)) {
+    let message = ''
+    page.once('dialog', (dialog) => {
+      message = dialog.message()
+      void dialog.dismiss()
+    })
+    await page.getByRole('button', { name: label, exact: true }).click()
+    expect(message).toBe(expectedMessage)
+  }
+
+  // Dismissing every prompt above deleted nothing - this test's own quote
+  // (created in this same shared organisation, see fixtures.ts) still
+  // resolves. Deliberately not testing the *accept* path here - this file
+  // shares its login/organisation with every other spec file, and actually
+  // deleting all quotes/invoices/expenses would wipe out whatever those
+  // are concurrently relying on. See the isolated-new-user test below for
+  // real accept-path coverage instead.
+  await page.goto(`/quotes/${draftQuote.id}`)
+  await expect(page.getByRole('heading', { name: /Draft quote/ })).toBeVisible()
+})
+
+test('accepting a Data tab confirmation actually deletes the data', async ({ page, inviteToken }, testInfo) => {
+  // A brand-new, fully isolated login/organisation, not the shared
+  // TEST_EMAIL one every other spec file uses - this test genuinely
+  // executes the delete-all actions below, which are organisation-wide
+  // (see CLAUDE.md), so running them against the shared organisation would
+  // corrupt other specs' concurrently-running fixtures.
+  const email = `danger-zone-${testInfo.testId}@example.test`
+  const password = 'correct horse battery staple'
+
+  await page.goto(`/register?token=${inviteToken}`)
+  await page.getByLabel('Email').fill(email)
+  await page.getByLabel('Password', { exact: true }).fill(password)
+  await page.getByLabel('Confirm password').fill(password)
+  await page.getByRole('button', { name: 'Create account' }).click()
+  await expect(page).toHaveURL('/login')
+  await page.getByLabel('Email').fill(email)
+  await page.getByLabel('Password').fill(password)
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible()
+
+  const { token } = await apiFetch<{ token: string }>('/auth/login', null, {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  })
+  const accountId = await apiFetch<{ id: string }>('/accounts', token, {
+    method: 'POST',
+    body: JSON.stringify({ business_name: 'Acme', email: 'a@b.test', address_line1: '1 Main St' }),
+  }).then((account) => account.id)
+  await apiFetch('/quotes', token, { method: 'POST', body: JSON.stringify({ account_id: accountId }) })
+  await apiFetch('/expenses', token, { method: 'POST', body: JSON.stringify({ account_id: accountId }) })
+
+  await page.goto('/settings')
+  await page.getByRole('tab', { name: 'Data' }).click()
+
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: 'Delete all quotes', exact: true }).click()
+  await expect(page.getByText('Deleted 1 item.')).toBeVisible()
+
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: 'Delete all expenses', exact: true }).click()
+  await expect(page.getByText('Deleted 1 item.')).toBeVisible()
+
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: 'Delete all invoices', exact: true }).click()
+  await expect(page.getByText('Deleted 0 items.')).toBeVisible()
+
+  const quotes = await apiFetch<{ items: unknown[] }>('/quotes', token)
+  expect(quotes.items).toEqual([])
+  const expenses = await apiFetch<unknown[]>('/expenses', token)
+  expect(expenses).toEqual([])
+
+  // The account itself - not one of the three danger-zone actions - is
+  // untouched.
+  const account = await apiFetch<{ id: string }>(`/accounts/${accountId}`, token)
+  expect(account.id).toBe(accountId)
 })

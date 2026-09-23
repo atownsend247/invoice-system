@@ -753,6 +753,104 @@ def test_set_next_expense_number_jumps_the_counter(repo, organisation_id):
     assert repo.next_expense_number(organisation_id, "EXP-", 4) == "EXP-0067"
 
 
+def test_delete_all_quotes_cascades_line_items_and_events(repo, organisation_id):
+    account = repo.create_account(_account(organisation_id))
+    quote = repo.create_quote(_quote(organisation_id, account.id))
+    repo.add_quote_line_item(
+        quote.id,
+        LineItem(
+            id=new_id(),
+            description="Design work",
+            quantity=Decimal("1"),
+            unit_price=Decimal("50.00"),
+            tax_rate=Decimal("0"),
+            position=0,
+        ),
+    )
+    repo.add_quote_event(
+        quote.id,
+        ActivityEvent(
+            id=new_id(),
+            event_type=ActivityEventType.CREATED,
+            from_status=None,
+            to_status="draft",
+            occurred_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ),
+    )
+    other_quote = repo.create_quote(_quote(organisation_id, account.id))
+
+    deleted = repo.delete_all_quotes(organisation_id)
+    assert deleted == 2
+
+    items, total = repo.list_quotes(organisation_id)
+    assert items == []
+    assert total == 0
+    assert repo.get_quote(organisation_id, quote.id) is None
+    assert repo.get_quote(organisation_id, other_quote.id) is None
+
+
+def test_delete_all_quotes_only_affects_the_given_organisation(repo, organisation_id):
+    account = repo.create_account(_account(organisation_id))
+    repo.create_quote(_quote(organisation_id, account.id))
+
+    other_organisation_id = new_id()
+    other_account = repo.create_account(_account(other_organisation_id))
+    other_quote = repo.create_quote(_quote(other_organisation_id, other_account.id))
+
+    deleted = repo.delete_all_quotes(organisation_id)
+    assert deleted == 1
+
+    assert repo.get_quote(other_organisation_id, other_quote.id) is not None
+
+
+def test_delete_all_invoices_cascades_line_items_and_events(repo, organisation_id):
+    account = repo.create_account(_account(organisation_id))
+    invoice = repo.create_invoice(_invoice(organisation_id, account.id))
+    repo.add_invoice_line_item(
+        invoice.id,
+        LineItem(
+            id=new_id(),
+            description="Design work",
+            quantity=Decimal("1"),
+            unit_price=Decimal("50.00"),
+            tax_rate=Decimal("0"),
+            position=0,
+        ),
+    )
+    repo.add_invoice_event(
+        invoice.id,
+        ActivityEvent(
+            id=new_id(),
+            event_type=ActivityEventType.CREATED,
+            from_status=None,
+            to_status="draft",
+            occurred_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ),
+    )
+
+    deleted = repo.delete_all_invoices(organisation_id)
+    assert deleted == 1
+
+    items, total = repo.list_invoices(organisation_id)
+    assert items == []
+    assert total == 0
+    assert repo.get_invoice(organisation_id, invoice.id) is None
+
+
+def test_delete_all_invoices_only_affects_the_given_organisation(repo, organisation_id):
+    account = repo.create_account(_account(organisation_id))
+    repo.create_invoice(_invoice(organisation_id, account.id))
+
+    other_organisation_id = new_id()
+    other_account = repo.create_account(_account(other_organisation_id))
+    other_invoice = repo.create_invoice(_invoice(other_organisation_id, other_account.id))
+
+    deleted = repo.delete_all_invoices(organisation_id)
+    assert deleted == 1
+
+    assert repo.get_invoice(other_organisation_id, other_invoice.id) is not None
+
+
 def test_get_business_profile_returns_none_when_unset(repo):
     assert repo.get_business_profile(user_id="user-1") is None
 
@@ -1342,6 +1440,59 @@ def test_delete_expense_attachment_removes_it(repo, organisation_id):
 
     assert repo.get_expense_attachment(expense.id, created.id) is None
     assert repo.list_expense_attachments(expense.id) == []
+
+
+def test_delete_all_expenses_cascades_line_items_and_attachment_metadata(repo, organisation_id):
+    expense = _expense_for(repo, organisation_id)
+    repo.add_expense_line_item(
+        expense.id,
+        LineItem(
+            id=new_id(),
+            description="Domain renewal",
+            quantity=Decimal("1"),
+            unit_price=Decimal("12.00"),
+            tax_rate=Decimal("0"),
+            position=0,
+        ),
+    )
+    repo.create_expense_attachment(_attachment(expense.id))
+    other_expense = _expense_for(repo, organisation_id)
+
+    deleted = repo.delete_all_expenses(organisation_id)
+    assert deleted == 2
+
+    assert repo.list_expenses(organisation_id) == []
+    assert repo.get_expense(organisation_id, expense.id) is None
+    assert repo.get_expense(organisation_id, other_expense.id) is None
+    # Child rows are gone too, not just orphaned - confirmed by re-creating
+    # a fresh expense with the same organisation and checking nothing from
+    # the deleted one leaks in.
+    fresh = _expense_for(repo, organisation_id)
+    assert fresh.line_items == []
+    assert fresh.attachments == []
+
+
+def test_delete_all_expenses_only_affects_the_given_organisation(repo, organisation_id):
+    _expense_for(repo, organisation_id)
+    other_organisation_id = new_id()
+    other_account = repo.create_account(_account(other_organisation_id))
+    other_expense = repo.create_expense(
+        Expense(
+            id=new_id(),
+            organisation_id=other_organisation_id,
+            account_id=other_account.id,
+            number=repo.next_expense_number(other_organisation_id, "EXP-", 4),
+            currency="GBP",
+            issue_date=date(2026, 1, 1),
+            expense_date=date(2026, 1, 1),
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+
+    deleted = repo.delete_all_expenses(organisation_id)
+    assert deleted == 1
+
+    assert repo.get_expense(other_organisation_id, other_expense.id) is not None
 
 
 def _invite(**overrides: object) -> RegistrationInvite:

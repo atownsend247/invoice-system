@@ -242,6 +242,18 @@ Expense 1──* ExpenseAttachment
   the invoice rather than a financial fact `send()` needs to freeze. Blank
   input normalises to `NULL` (via `_blank_to_none`), same as
   `QuoteService.convert_to_invoice`'s own optional `customer_notes` param.
+- `QuoteService.delete_all`/`InvoiceService.delete_all`/
+  `ExpenseService.delete_all` (Settings > Data danger zone) each remove
+  every row of that type for one `organisation_id`, any status, cascading
+  their own child rows but never each other's: deleting all quotes leaves
+  a stale `Invoice.quote_id` dangling rather than nulling it, and deleting
+  all invoices leaves the quotes they came from exactly as they were.
+  Neither resets the matching number counter - see the number-prefix/
+  digits Convention's own `set_next_number` for the one way to do that.
+  `ExpenseService.delete_all` also deletes every attachment *file* from
+  disk, not just its metadata row, reading the attachment ids via
+  `list_expenses` before the DB rows (which the file lookup needs) are
+  gone - see `CLAUDE.md`'s Data tab Convention.
 - `StatsService.get_stats(organisation_id, currency)` is scoped to one
   `Organisation` — not a system-wide snapshot, same as
   `InvoiceService.monthly_totals`. `total_paid` follows that same method's

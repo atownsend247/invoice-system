@@ -484,6 +484,60 @@ def test_delete_missing_attachment_raises_not_found(application, organisation_id
         application.expenses.delete_attachment(organisation_id, expense.id, "does-not-exist")
 
 
+def test_delete_all_removes_every_expense_and_its_line_items(application, organisation_id, account):
+    first = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    application.expenses.add_line_item(
+        organisation_id, first.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    second = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+
+    deleted = application.expenses.delete_all(organisation_id)
+    assert deleted == 2
+
+    assert application.expenses.list_expenses(organisation_id) == []
+    with pytest.raises(NotFound):
+        application.expenses.get_expense(organisation_id, first.id)
+    with pytest.raises(NotFound):
+        application.expenses.get_expense(organisation_id, second.id)
+
+
+def test_delete_all_also_deletes_attachment_files_from_disk(application, organisation_id, account, tmp_path):
+    expense = application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    attachment = application.expenses.add_attachment(
+        organisation_id, expense.id, filename="receipt.pdf", content_type="application/pdf", data=b"data"
+    )
+    attachment_path = tmp_path / "attachments" / f"{attachment.id}.pdf"
+    assert attachment_path.exists()
+
+    application.expenses.delete_all(organisation_id)
+
+    assert not attachment_path.exists()
+
+
+def test_delete_all_only_affects_the_calling_organisation(application, organisation_id, account):
+    application.expenses.create_expense(organisation_id=organisation_id, account_id=account.id)
+    other_organisation_id = application.organisations.get_or_create_for_user("user-2")
+    other_account = application.accounts.create_account(
+        organisation_id=other_organisation_id,
+        business_name="Other Co",
+        email="b@other.test",
+        address_line1="2 Other St",
+    )
+    other_expense = application.expenses.create_expense(
+        organisation_id=other_organisation_id, account_id=other_account.id
+    )
+
+    deleted = application.expenses.delete_all(organisation_id)
+    assert deleted == 1
+
+    fetched = application.expenses.get_expense(other_organisation_id, other_expense.id)
+    assert fetched.id == other_expense.id
+
+
+def test_delete_all_returns_zero_when_there_is_nothing_to_delete(application, organisation_id):
+    assert application.expenses.delete_all(organisation_id) == 0
+
+
 class TestMonthlyTotals:
     def _create_expense(
         self,

@@ -306,6 +306,56 @@ def test_update_customer_notes_from_another_organisation_raises_not_found(
         application.invoices.update_customer_notes(other_organisation_id, draft_invoice.id, "notes")
 
 
+def test_delete_all_removes_every_invoice_regardless_of_status(application, organisation_id, draft_invoice):
+    sent = application.invoices.send(organisation_id, draft_invoice.id)
+    application.invoices.pay(organisation_id, sent.id)
+
+    deleted = application.invoices.delete_all(organisation_id)
+    assert deleted == 1
+
+    assert application.invoices.list_invoices(organisation_id).items == []
+    with pytest.raises(NotFound):
+        application.invoices.get_invoice(organisation_id, draft_invoice.id)
+
+
+def test_delete_all_does_not_affect_the_quote_it_was_converted_from(
+    application, organisation_id, account, draft_invoice
+):
+    quote_id = draft_invoice.quote_id
+    application.invoices.delete_all(organisation_id)
+
+    quote = application.quotes.get_quote(organisation_id, quote_id)
+    assert quote.status.value == "converted"
+
+
+def test_delete_all_only_affects_the_calling_organisation(application, organisation_id, draft_invoice):
+    other_organisation_id = application.organisations.get_or_create_for_user("user-2")
+    other_account = application.accounts.create_account(
+        organisation_id=other_organisation_id,
+        business_name="Other Co",
+        email="b@other.test",
+        address_line1="2 Other St",
+    )
+    other_quote = application.quotes.create_quote(
+        organisation_id=other_organisation_id, account_id=other_account.id
+    )
+    other_quote = application.quotes.add_line_item(
+        other_organisation_id, other_quote.id, description="x", quantity=Decimal("1"), unit_price=Decimal("1")
+    )
+    other_quote = application.quotes.send(other_organisation_id, other_quote.id)
+    other_invoice = application.quotes.convert_to_invoice(other_organisation_id, other_quote.id)
+
+    deleted = application.invoices.delete_all(organisation_id)
+    assert deleted == 1
+
+    fetched = application.invoices.get_invoice(other_organisation_id, other_invoice.id)
+    assert fetched.id == other_invoice.id
+
+
+def test_delete_all_returns_zero_when_there_is_nothing_to_delete(application, organisation_id):
+    assert application.invoices.delete_all(organisation_id) == 0
+
+
 def test_add_line_item_to_a_draft_invoice_applies_tax_rate(application, organisation_id, account, fake_clock):
     empty = application.repository.create_invoice(
         Invoice(

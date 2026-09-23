@@ -3,7 +3,7 @@ import * as api from '../api'
 import { errorMessage, useAsync } from '../hooks/useAsync'
 import type { BusinessProfile } from '../types'
 
-const TABS = ['User', 'Business', 'Payment and tax', 'Document'] as const
+const TABS = ['User', 'Business', 'Payment and tax', 'Document', 'Data'] as const
 type Tab = (typeof TABS)[number]
 
 // Element ids can technically contain spaces, but it's fragile (breaks
@@ -49,6 +49,15 @@ export function SettingsPage() {
         </div>
       )}
       {profile && <BusinessProfileForm profile={profile} activeTab={activeTab} />}
+      {activeTab === 'Data' && (
+        <div
+          role="tabpanel"
+          id={`settings-panel-${tabSlug('Data')}`}
+          aria-labelledby={`settings-tab-${tabSlug('Data')}`}
+        >
+          <DataDangerZonePanel />
+        </div>
+      )}
     </section>
   )
 }
@@ -462,15 +471,19 @@ function BusinessProfileForm({ profile, activeTab }: { profile: BusinessProfile;
         </fieldset>
       </div>
 
-      {error && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
+      {activeTab !== 'Data' && (
+        <>
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+          {saved && !error && <p className="form-success">Saved.</p>}
+          <button type="submit" disabled={submitting}>
+            {submitting ? 'Saving…' : 'Save settings'}
+          </button>
+        </>
       )}
-      {saved && !error && <p className="form-success">Saved.</p>}
-      <button type="submit" disabled={submitting}>
-        {submitting ? 'Saving…' : 'Save settings'}
-      </button>
     </form>
   )
 }
@@ -527,6 +540,96 @@ function NextNumberAction({ label, onSet }: { label: string; onSet: (nextNumber:
         </p>
       )}
       {success && <p className="form-success">Set.</p>}
+    </div>
+  )
+}
+
+/** The Data tab's "danger zone" - bulk, irreversible deletes scoped to the
+ * current organisation (see CLAUDE.md). Rendered as a sibling of
+ * BusinessProfileForm's own <form>, not inside it (same reasoning as the
+ * old Registrars tab used to: these are immediate actions, not part of
+ * the profile-save flow, and a <form> can't nest inside another). */
+function DataDangerZonePanel() {
+  return (
+    <fieldset className="form-section danger-zone">
+      <legend>Danger zone</legend>
+      <p className="meta">
+        Permanently delete data belonging to your organisation. Each action asks for confirmation
+        first - there is no undo.
+      </p>
+      <DangerAction
+        label="Delete all quotes"
+        description="Every quote - draft, sent, accepted, rejected, expired, and converted - along with
+        its line items and activity history. Invoices already converted from a quote are not affected."
+        confirmMessage="Are you sure you want to permanently delete ALL quotes? This cannot be undone."
+        onDelete={api.deleteAllQuotes}
+      />
+      <DangerAction
+        label="Delete all invoices"
+        description="Every invoice - draft, sent, paid, and void - along with its line items and
+        activity history. The quotes they were converted from are not affected."
+        confirmMessage="Are you sure you want to permanently delete ALL invoices? This cannot be undone."
+        onDelete={api.deleteAllInvoices}
+      />
+      <DangerAction
+        label="Delete all expenses"
+        description="Every expense, its line items, and any uploaded attachment files."
+        confirmMessage="Are you sure you want to permanently delete ALL expenses? This cannot be undone."
+        onDelete={api.deleteAllExpenses}
+      />
+    </fieldset>
+  )
+}
+
+function DangerAction({
+  label,
+  description,
+  confirmMessage,
+  onDelete,
+}: {
+  label: string
+  description: string
+  confirmMessage: string
+  onDelete: () => Promise<{ deleted: number }>
+}) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [deletedCount, setDeletedCount] = useState<number | null>(null)
+
+  async function handleClick() {
+    if (!window.confirm(confirmMessage)) return
+    setError(null)
+    setDeletedCount(null)
+    setBusy(true)
+    try {
+      const { deleted } = await onDelete()
+      setDeletedCount(deleted)
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="danger-action">
+      <div className="danger-action-text">
+        <p className="danger-action-label">{label}</p>
+        <p className="meta">{description}</p>
+      </div>
+      <button type="button" className="danger" disabled={busy} onClick={handleClick}>
+        {busy ? 'Deleting…' : label}
+      </button>
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+      {deletedCount !== null && !error && (
+        <p className="form-success">
+          Deleted {deletedCount} {deletedCount === 1 ? 'item' : 'items'}.
+        </p>
+      )}
     </div>
   )
 }

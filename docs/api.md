@@ -63,6 +63,7 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | DELETE | `/quotes/{id}/line-items/{item_id}` | required | Remove a line item. Returns the updated `QuoteOut` (`200`, not `204`), same pattern as the expense line-item delete route below. 409 if not draft, 404 if the quote or the item doesn't resolve under the caller's organisation. |
 | POST | `/quotes/{id}/send` | required | Assign a quote number (using the caller's own `quote_number_prefix`/`quote_number_digits`, e.g. `Q-0001` by default - see Conventions below), transition `draft → sent`. 422 if no line items. |
 | POST | `/quotes/next-number` | required | `{next_number}` - jump the organisation's quote counter so the *next* quote sent gets exactly this number, regardless of how many quotes already exist (see Conventions below). `204`, `422` if `next_number < 1`. |
+| DELETE | `/quotes` | required | **Danger zone** (Settings > Data) - permanently delete every quote in the current user's organisation, any status, with its line items/activity history. Doesn't touch any invoice's `quote_id` still pointing at one of them - see Conventions below. `200` with `{deleted: N}`. |
 | POST | `/quotes/{id}/convert` | required | Convert a `sent`/`accepted` quote into a new draft invoice, copying line items (`issue_date` optional in the request body, defaults to today - lets the caller backdate the resulting invoice; `customer_notes` optional too, free text stored on the new invoice and appended to its PDF - see Conventions below). 409 otherwise. |
 | GET | `/quotes/{id}/pdf` | required | Render the quote as a PDF (`application/pdf`) - the web UI offers this both as a download and as an in-page preview (see Conventions below), the route itself is the same either way. |
 | GET | `/invoices` | required | Paginated list of invoices - `{items, total}`. Optionally filtered by `?account_id=` (exact), `?account_name=` (matches the linked account's business_name, case-insensitively), `?status=` (`draft`/`sent`/`paid`/`void` - `overdue` is accepted but never matches anything, see Conventions below), and/or `?quote_id=` (exact - a quote converts to at most one invoice, so this matches 0 or 1 row; used by `QuoteDetailPage.tsx`'s "View invoice" button on a converted quote). `?page=`/`?page_size=`, same as `/accounts`. |
@@ -72,10 +73,12 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | POST | `/invoices/{id}/void` | required | Transition to `void`. 409 if already `paid`. |
 | POST | `/invoices/{id}/pay` | required | Transition `sent → paid`. 409 if not currently `sent` (covers `draft`, `void`, and already-`paid`). |
 | PUT | `/invoices/{id}/customer-notes` | required | `{customer_notes}` (nullable) - replace the invoice's customer notes. Editable regardless of status, unlike line items (see Conventions below). 404 if missing/wrong organisation. |
+| DELETE | `/invoices` | required | **Danger zone** (Settings > Data) - permanently delete every invoice in the current user's organisation, any status. Doesn't touch the quotes these invoices were converted from - see Conventions below. `200` with `{deleted: N}`. |
 | GET | `/invoices/monthly-totals` | required | Registered *before* `/invoices/{id}` (see `CLAUDE.md`'s architecture rules on route ordering). `{currency, months: [{month, paid_total, unpaid_total}]}` for the trailing 12 months, scoped to the current user's organisation, in the current user's business profile `currency`. An invoice in any other currency isn't counted. |
 | GET | `/invoices/{id}/pdf` | required | Render the invoice as a PDF (`application/pdf`), with a "From" section for the current user's business name/address if set (with "Bill to" beside it, not below, when it is), their `invoice_document_header`/`invoice_document_footer` (if set) above the title/below the totals table, and — invoices only, never quotes or expenses — a "Payment details" section for whichever of `bank_account_name`/`bank_sort_code`/`bank_account_number` are set, after the totals table. Quotes/expenses render the same way via their own `quote_document_header`/`quote_document_footer`/`expense_document_header`/`expense_document_footer` pair instead - see the Conventions section. |
 | POST | `/expenses` | required | Create an expense against an account (`account_id` required; `currency` defaults `USD`; `expense_date` optional, defaults to today). Unlike a quote, its `number` (using the caller's own `expense_number_prefix`/`expense_number_digits`, e.g. `EXP-0001` by default) is assigned immediately - there's no draft state (see `CLAUDE.md`). |
 | POST | `/expenses/next-number` | required | `{next_number}` - jump the organisation's expense counter so the *next* expense created gets exactly this number (see Conventions below). `204`, `422` if `next_number < 1`. |
+| DELETE | `/expenses` | required | **Danger zone** (Settings > Data) - permanently delete every expense in the current user's organisation, its line items, and any uploaded attachment files (not just their metadata rows). `200` with `{deleted: N}`. |
 | GET | `/expenses` | required | List expenses, optionally filtered by `?account_id=`. |
 | GET | `/expenses/{id}` | required | Fetch one expense with its line items, `subtotal`, `tax_total`, and (gross) `total`. |
 | PUT | `/expenses/{id}/expense-date` | required | Update just `expense_date` (required) - the one `Expense` field editable after creation, unlike `account_id`/`currency`/`issue_date`. 404 if missing/wrong organisation. |
@@ -106,9 +109,9 @@ user" and "which organisation" from the Bearer token, the CLI has no
 session to resolve either from, so **every** `account`/`quote`/`invoice`/
 `expense`/`domain`/`registrar`
 command takes a **required** `--user-id` (`account create/list/update`,
-`quote create/update/add-item/update-item/delete-item/send/convert/pdf`, `invoice
-list/send/void/pay/set-customer-notes/monthly-totals/pdf`, `expense
-create/list/add-item/update-item/delete-item/monthly-totals/pdf`,
+`quote create/update/add-item/update-item/delete-item/send/convert/delete-all/pdf`, `invoice
+list/send/void/pay/set-customer-notes/delete-all/monthly-totals/pdf`, `expense
+create/list/add-item/update-item/delete-item/delete-all/monthly-totals/pdf`,
 `expense attachment add/list/download/delete`, `domain
 create/list/update/delete/link/unlink`, `registrar create/list/update/delete`,
 `stats`) purely to resolve
@@ -149,6 +152,11 @@ stored on the resulting invoice - see the `customer_notes` Convention
 above); `invoice set-customer-notes <invoice_id> --user-id
 --customer-notes` mirrors `PUT /invoices/{id}/customer-notes` and works
 at any invoice status, unlike every other `invoice` mutation here.
+`quote delete-all`/`invoice delete-all`/`expense delete-all --user-id`
+mirror `DELETE /quotes|invoices|expenses` (the Data tab danger zone - see
+the Convention above) - each prompts for confirmation (`click.confirm`,
+same wording style as `init-db --reset`'s own prompt) unless `--yes`/`-y`
+is also given, then echoes `Deleted N quote(s)/invoice(s)/expense(s)`.
 `settings show`/`settings
 set --user-id` (no API equivalent by path, but the same
 `BusinessProfileService` underneath) are unaffected, since `BusinessProfile`
@@ -199,6 +207,22 @@ See `docs/data-model.md`'s "Demo data" section and `CLAUDE.md`.
   field in this app. Appended to the generated invoice PDF as a "Notes"
   section, after "Payment details" and before the document footer -
   `Quote`/`Expense` PDFs never show one, since neither has this field.
+- **Danger-zone bulk deletes** (Settings > Data): `DELETE /quotes|invoices|
+  expenses` each remove every row of that type in the caller's organisation,
+  regardless of status, along with their own child rows (line items,
+  `quote_events`/`invoice_events`, and - expenses only - uploaded
+  attachment metadata *and files*). Each is scoped to the current
+  organisation only, same as every other route here - never a system-wide
+  wipe. No cross-entity cleanup: deleting all quotes leaves any
+  `Invoice.quote_id` that pointed at one of them dangling rather than
+  nulling it out, and deleting all invoices leaves the quotes they were
+  converted from exactly as they were (still `converted`). None of the
+  three reset the matching number counter - `POST .../next-number`
+  (above) is the only way to do that, and it's a deliberately separate
+  action. `Account` is **not** one of the three - not asked for, and it's
+  what these entities point at, not itself in scope. All three return
+  `200` with `{deleted: N}` (not `204`), so the caller can show how many
+  rows were actually removed.
 - **Per-document-type header/footer**: `quote_document_header`/
   `quote_document_footer`, `invoice_document_header`/
   `invoice_document_footer`, and `expense_document_header`/

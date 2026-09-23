@@ -1592,5 +1592,66 @@ flow," not a restructuring, whenever it's actually needed.
 - [x] Full backend suite (478 tests, 98.8%+ coverage) and full e2e suite
       (78 tests) updated and passing.
 
+## Phase 43 — Settings "Data" tab: danger-zone bulk deletes (done)
+
+- [x] Requested feature: a new Settings tab where all quotes, all
+      invoices, or all expenses belonging to the logged-in user's
+      organisation can be wiped, each action always confirmed first.
+      `Account` is deliberately not one of the three - not asked for, and
+      it's what these entities point at, not itself in scope.
+- [x] `QuoteService.delete_all`/`InvoiceService.delete_all`/
+      `ExpenseService.delete_all` (`core.py`), each returning the count
+      deleted. Backed by `SqliteRepository.delete_all_quotes`/
+      `delete_all_invoices`/`delete_all_expenses` - one locked transaction
+      each, cascading their own child rows (line items, `quote_events`/
+      `invoice_events`, and - expenses only - `expense_attachments`
+      metadata) via `DELETE ... WHERE x_id IN (SELECT id FROM x WHERE
+      organisation_id = ?)`. `ExpenseService.delete_all` additionally
+      cleans up attachment *files* from disk - it reads every attachment
+      id via `list_expenses` before the DB rows are gone, deletes the
+      rows, then the files, same ordering `delete_attachment` already
+      uses. Deliberately no cross-entity cleanup (deleting all quotes
+      leaves a stale `Invoice.quote_id` dangling rather than nulling it;
+      deleting all invoices leaves their source quotes' `converted`
+      status untouched) and no counter reset (a separate, explicit
+      `set_next_number` action already exists for that) - each action
+      does exactly what its label says.
+- [x] `DELETE /quotes|invoices|expenses` (all `200` with
+      `{deleted: N}`, `BulkDeleteResultOut` - not `204`, so the caller can
+      show a count). CLI `quote delete-all`/`invoice delete-all`/`expense
+      delete-all --user-id`, each prompting via `click.confirm` unless
+      `--yes`/`-y` is given, same shape as `init-db --reset`'s own prompt.
+- [x] Web UI: a fifth Settings tab, "Data" (`SettingsPage.tsx`'s
+      `DataDangerZonePanel`) - rendered outside `BusinessProfileForm`'s
+      own `<form>` with the same guard-and-sibling shape the old
+      Registrars tab used, since a `<form>` can't nest inside another and
+      this tab's actions are immediate, not deferred to a profile save.
+      One `DangerAction` per entity type (description + a `button.danger`)
+      that calls `window.confirm(...)` before doing anything - dismissing
+      it deletes nothing. Each action shows its own busy/error/"Deleted N
+      item(s)." state independently, same self-contained shape as
+      `NextNumberAction` elsewhere on this page.
+- [x] Also requested in the same conversation: the existing invoice "Void"
+      button is now styled `button.danger` (a fixed solid red - not
+      `var(--danger)`, which is a *text* colour meant to pair with the
+      soft `var(--danger-bg)` and turns pale in dark mode) and asks
+      `window.confirm('Are you sure you want to mark as void?')` before
+      voiding. Quotes have no equivalent button - there's no `void` status
+      on `Quote`; confirmed with the user that only the existing Invoice
+      button was in scope, not wiring up the currently-unused
+      `QuoteService.mark_rejected`.
+- [x] Full backend suite (505 tests, 98.8%+ coverage) and full e2e suite
+      (81 tests) updated and passing, plus a `--repeat-each=3 --workers=1`
+      stress run of `settings.spec.ts`. The e2e "accept" path (does
+      confirming actually delete the data) runs against a brand-new,
+      fully isolated login/organisation registered mid-test, not the
+      shared `TEST_EMAIL` one every other spec file uses - these deletes
+      are organisation-wide, so running them for real against the shared
+      organisation would wipe out whatever every other concurrently-
+      running spec file's fixtures depend on. The dismiss-path test (far
+      more common, and what every other spec file's confirmation dialogs
+      are tested the same way) does use the shared organisation, since it
+      never actually deletes anything.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.
