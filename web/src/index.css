@@ -348,6 +348,20 @@ button.secondary {
   border: 1px solid var(--border);
 }
 
+/* A fixed red, not var(--danger) - that token is designed as a *text*
+   colour paired with the soft var(--danger-bg) (status pills, form
+   errors), not a solid button background; var(--danger) turns pale in
+   dark mode (see :root[data-theme='dark'] above), which would leave white
+   button text unreadable against it. */
+button.danger {
+  background: #c0362c;
+  color: #ffffff;
+}
+
+button.danger:hover:not(:disabled) {
+  background: #a52e26;
+}
+
 .icon-button {
   padding: 0.5rem;
   line-height: 0;

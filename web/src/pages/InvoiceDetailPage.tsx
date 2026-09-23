@@ -196,13 +196,15 @@ export function InvoiceDetailPage() {
         {canVoid && (
           <button
             type="button"
+            className="danger"
             disabled={busy}
-            onClick={() =>
+            onClick={() => {
+              if (!window.confirm('Are you sure you want to mark as void?')) return
               run(async () => {
                 await api.voidInvoice(invoice.id)
                 refetch()
               })
-            }
+            }}
           >
             Void
           </button>

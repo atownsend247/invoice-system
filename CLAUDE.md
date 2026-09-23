@@ -572,6 +572,21 @@ Four separate things are easy to conflate here — don't:
   a plain `currency: str` and has no idea whose profile it came from - the
   API/CLI resolve both the organisation and the currency to pass, same
   pattern as `payment_terms_days`.
+- `InvoiceDetailPage.tsx`'s "Void" button is styled `button.danger` (a
+  fixed solid red, `#c0362c` - deliberately not `var(--danger)`, which is
+  a *text* colour meant to pair with the soft `var(--danger-bg)` for
+  status pills/form errors and turns pale in dark mode, unreadable as a
+  button background with white text - see `index.css`'s comment above
+  `button.danger`) and, on click, asks `window.confirm('Are you sure you
+  want to mark as void?')` before calling `api.voidInvoice` - dismissing
+  it leaves the invoice untouched. A plain native `confirm()`, not a
+  custom modal component - there's no confirmation-dialog pattern
+  anywhere else in this app yet to be consistent with, and the request
+  was literally "open a prompt." Quotes have **no equivalent button** -
+  there's no `void` status on `Quote` (see `QuoteStatus`); confirmed with
+  the user before making this change that only the existing `Invoice`
+  Void button was in scope, not wiring up the currently-unused
+  `QuoteService.mark_rejected`.
 - `ExpenseService.monthly_totals(organisation_id, currency, months=12)` is
   the same aggregation as `InvoiceService.monthly_totals` above - trailing
   12 months ending with the current one, bucketed by `issue_date`, filtered

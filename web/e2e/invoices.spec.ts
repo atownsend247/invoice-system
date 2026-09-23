@@ -55,16 +55,36 @@ test('sending an invoice assigns a number and a due date', async ({ authenticate
   await expect(page.locator('.activity-timeline li').first()).toContainText('draft → sent')
 })
 
-test('voiding an invoice updates its status and removes further actions', async ({
+test('voiding an invoice prompts for confirmation, then updates its status and removes further actions', async ({
   authenticatedPage: page,
   draftInvoice,
 }) => {
   await page.goto(`/invoices/${draftInvoice.id}`)
+
+  let dialogMessage = ''
+  page.once('dialog', (dialog) => {
+    dialogMessage = dialog.message()
+    void dialog.accept()
+  })
   await page.getByRole('button', { name: 'Void' }).click()
 
   await expect(page.getByText('void', { exact: true })).toBeVisible()
+  expect(dialogMessage).toBe('Are you sure you want to mark as void?')
   await expect(page.getByRole('button', { name: 'Send' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Void' })).toHaveCount(0)
+})
+
+test('dismissing the void confirmation leaves the invoice unchanged', async ({
+  authenticatedPage: page,
+  draftInvoice,
+}) => {
+  await page.goto(`/invoices/${draftInvoice.id}`)
+
+  page.once('dialog', (dialog) => dialog.dismiss())
+  await page.getByRole('button', { name: 'Void' }).click()
+
+  await expect(page.getByText('void', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Void' })).toBeVisible()
 })
 
 test('marking a sent invoice as paid updates its status and removes further actions', async ({
