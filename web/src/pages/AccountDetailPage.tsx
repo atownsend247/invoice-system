@@ -289,7 +289,7 @@ function ExpensesTable({ expenses }: { expenses: Expense[] }) {
         <thead>
           <tr>
             <th>Number</th>
-            <th>Recorded</th>
+            <th>Expense date</th>
             <th>Total</th>
             <th />
           </tr>
@@ -298,7 +298,7 @@ function ExpensesTable({ expenses }: { expenses: Expense[] }) {
           {expenses.map((expense) => (
             <tr key={expense.id}>
               <td>{expense.number}</td>
-              <td>{expense.issue_date}</td>
+              <td>{expense.expense_date}</td>
               <td>
                 {expense.total} {expense.currency}
               </td>
