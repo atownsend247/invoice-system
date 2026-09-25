@@ -646,4 +646,29 @@ MIGRATIONS: list[str] = [
     -- simply has none. Plain ADD COLUMN, no rebuild needed.
     ALTER TABLE invoices ADD COLUMN customer_notes TEXT;
     """,
+    """
+    -- Account status (new/active/closed - see models.AccountStatus) and
+    -- hosting provider tracking. `status` needs a constant default on the
+    -- ADD COLUMN itself (SQLite's requirement for a non-empty table) -
+    -- 'active' for every pre-existing account, not 'new' (they already
+    -- have history by definition); AccountService.create_account passes
+    -- 'new' explicitly for every account created from here on, so this
+    -- default only ever actually applies to the backfill. `hosting_provider`
+    -- is nullable (no default needed) - same "plain string, not a foreign
+    -- key" shape as domains.registrar. `hosting_providers` mirrors
+    -- `registrars` exactly (see above) - a new, brand new table, no
+    -- rebuild needed.
+    ALTER TABLE accounts ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
+    ALTER TABLE accounts ADD COLUMN hosting_provider TEXT;
+
+    CREATE TABLE hosting_providers (
+        id TEXT PRIMARY KEY,
+        organisation_id TEXT NOT NULL REFERENCES organisations(id),
+        name TEXT NOT NULL,
+        notes TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX idx_hosting_providers_organisation ON hosting_providers (organisation_id);
+    """,
 ]

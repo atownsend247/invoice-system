@@ -67,6 +67,12 @@ class Organisation:
     created_at: datetime
 
 
+class AccountStatus(StrEnum):
+    NEW = "new"
+    ACTIVE = "active"
+    CLOSED = "closed"
+
+
 @dataclass
 class Account:
     """A business we provide a service to and bill via quotes/invoices.
@@ -79,7 +85,17 @@ class Account:
     `AccountService`, never in storage) - an `Account` is a real client
     being billed, not the user's own optionally-published details; the
     remaining lines are each independently optional, same "no all or
-    nothing" rule."""
+    nothing" rule.
+
+    `status` (migration 23) is a plain lifecycle label - new/active/closed
+    - with no enforced transition rules (any value can change to any
+    other) and no effect on whether quotes/invoices/expenses can be
+    created against this account; it's presentation only, same spirit as
+    `Domain.auto_renew`. `hosting_provider` (migration 23) is a plain
+    string, not a foreign key - same "managed reference list, but the
+    account stores the chosen name" shape as `Domain.registrar`, picked
+    from a `<select>` sourced from `HostingProvider` (see below) on
+    `AccountForm.tsx`, not typed freehand."""
 
     id: str
     organisation_id: str
@@ -92,6 +108,8 @@ class Account:
     town_or_city: str | None
     county: str | None
     postcode: str | None
+    status: AccountStatus
+    hosting_provider: str | None
     created_at: datetime
 
 
@@ -211,6 +229,52 @@ class RegistrarUsage:
 
     registrar: Registrar
     domain_count: int
+    account_count: int
+
+
+@dataclass
+class HostingProvider:
+    """A hosting provider a business uses - a managed reference list, kept
+    so `Account.hosting_provider` can be picked from a `<select>` instead
+    of typed freehand, same "avoid GoDaddy/godaddy/Go Daddy drift" reasoning
+    as `Registrar` above, and structurally identical to it: organisation-
+    scoped, full CRUD, tenant ownership checked directly. Managed from the
+    Domains page alongside `Registrar` (confirmed with the user - domains
+    and accounts are both "things this business tracks the provider of"),
+    even though it's an `Account` field, not a `Domain` one.
+    `HostingProviderService.delete_hosting_provider` refuses to delete one
+    that at least one `Account` currently names (`Conflict`, see
+    `HostingProviderUsage` below) - same application-level guard as
+    `Registrar`'s, and for the same reason (nothing would actually break,
+    since `Account.hosting_provider` stores the name as a plain string, but
+    silently orphaning the reference would be confusing).
+
+    `name` is required (non-blank, enforced in `HostingProviderService`,
+    never in storage); `notes` is optional free text, same convention as
+    `Registrar.notes`."""
+
+    id: str
+    organisation_id: str
+    name: str
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass
+class HostingProviderUsage:
+    """A `HostingProvider` alongside how many `Account`s currently name it
+    - computed at request time by
+    `HostingProviderService.list_hosting_providers_with_usage`/
+    `get_hosting_provider_usage`, never persisted. Matched by the
+    provider's current `name` against `Account.hosting_provider` (a plain
+    string, not a foreign key), so an account still naming an *old*
+    provider name from before a rename won't count towards the renamed
+    provider's usage - same name-drift tradeoff as `RegistrarUsage`
+    above. No `domain_count` the way `RegistrarUsage` has - a hosting
+    provider isn't a `Domain`-level concern, only an `Account`-level one."""
+
+    hosting_provider: HostingProvider
     account_count: int
 
 

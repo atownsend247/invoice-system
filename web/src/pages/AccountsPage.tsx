@@ -4,6 +4,7 @@ import { accountAddressLines } from '../accountAddress'
 import * as api from '../api'
 import { AccountForm } from '../components/AccountForm'
 import { Pagination } from '../components/Pagination'
+import { StatusBadge } from '../components/StatusBadge'
 import { useAsync } from '../hooks/useAsync'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 
@@ -24,6 +25,9 @@ export function AccountsPage() {
     () => api.listAccounts({ query: debouncedQuery || undefined, page, pageSize: PAGE_SIZE }),
     [debouncedQuery, page],
   )
+  // Fetched once here, not per AccountForm instance - same reasoning as
+  // DomainsPage.tsx's own registrars fetch for DomainForm.
+  const { data: hostingProviders } = useAsync(() => api.listHostingProviders(), [])
   const accounts = result?.items
   const totalPages = Math.max(1, Math.ceil((result?.total ?? 0) / PAGE_SIZE))
   const hasQuery = query.trim().length > 0
@@ -39,6 +43,7 @@ export function AccountsPage() {
 
       {showForm && (
         <AccountForm
+          hostingProviders={hostingProviders ?? []}
           submitLabel="Create account"
           submittingLabel="Creating…"
           onSubmit={(input) => api.createAccount(input)}
@@ -78,6 +83,7 @@ export function AccountsPage() {
                   <th>Contact</th>
                   <th>Email</th>
                   <th>Address</th>
+                  <th>Status</th>
                   <th />
                 </tr>
               </thead>
@@ -101,6 +107,9 @@ export function AccountsPage() {
                     <td>{account.contact_name ?? '—'}</td>
                     <td>{account.email}</td>
                     <td>{accountAddressLines(account).join(', ')}</td>
+                    <td>
+                      <StatusBadge status={account.status} />
+                    </td>
                     <td
                       onClick={(event) => event.stopPropagation()}
                       onKeyDown={(event) => event.stopPropagation()}

@@ -13,6 +13,7 @@ from ..auth import build_auth
 from ..demo_data import DEMO_EMAIL, DEMO_PASSWORD, seed_demo_data
 from ..errors import AppError
 from ..factory import Application, build_application
+from ..models import AccountStatus
 from ..paths import DEFAULT_STORAGE_DIR, StoragePaths
 from ..pdf import render_expense_pdf, render_invoice_pdf, render_quote_pdf
 
@@ -166,6 +167,8 @@ def account() -> None:
 @click.option("--town-or-city", default=None)
 @click.option("--county", default=None)
 @click.option("--postcode", default=None)
+@click.option("--status", type=click.Choice(["new", "active", "closed"]), default="new", show_default=True)
+@click.option("--hosting-provider", default=None)
 @click.pass_obj
 def account_create(
     application: Application,
@@ -179,6 +182,8 @@ def account_create(
     town_or_city: str | None,
     county: str | None,
     postcode: str | None,
+    status: str,
+    hosting_provider: str | None,
 ) -> None:
     created = application.accounts.create_account(
         organisation_id=_organisation_id(application, user_id),
@@ -191,6 +196,8 @@ def account_create(
         town_or_city=town_or_city,
         county=county,
         postcode=postcode,
+        status=AccountStatus(status),
+        hosting_provider=hosting_provider,
     )
     click.echo(f"Created account {created.id}: {created.business_name}")
 
@@ -221,6 +228,8 @@ def account_list(application: Application, user_id: str, page: int, page_size: i
 @click.option("--town-or-city", default=None)
 @click.option("--county", default=None)
 @click.option("--postcode", default=None)
+@click.option("--status", type=click.Choice(["new", "active", "closed"]), default="new", show_default=True)
+@click.option("--hosting-provider", default=None)
 @click.pass_obj
 def account_update(
     application: Application,
@@ -235,6 +244,8 @@ def account_update(
     town_or_city: str | None,
     county: str | None,
     postcode: str | None,
+    status: str,
+    hosting_provider: str | None,
 ) -> None:
     updated = application.accounts.update_account(
         _organisation_id(application, user_id),
@@ -248,6 +259,8 @@ def account_update(
         town_or_city=town_or_city,
         county=county,
         postcode=postcode,
+        status=AccountStatus(status),
+        hosting_provider=hosting_provider,
     )
     click.echo(f"Updated account {updated.id}: {updated.business_name}")
 
@@ -411,6 +424,61 @@ def registrar_update(
 def registrar_delete(application: Application, registrar_id: str, user_id: str) -> None:
     application.registrars.delete_registrar(_organisation_id(application, user_id), registrar_id)
     click.echo(f"Deleted registrar {registrar_id}")
+
+
+@cli.group("hosting-provider")
+def hosting_provider() -> None:
+    pass
+
+
+@hosting_provider.command("create")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option("--name", required=True)
+@click.option("--notes", default=None)
+@click.pass_obj
+def hosting_provider_create(application: Application, user_id: str, name: str, notes: str | None) -> None:
+    created = application.hosting_providers.create_hosting_provider(
+        _organisation_id(application, user_id), name=name, notes=notes
+    )
+    click.echo(f"Created hosting provider {created.id}: {created.name}")
+
+
+@hosting_provider.command("list")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.pass_obj
+def hosting_provider_list(application: Application, user_id: str) -> None:
+    usages = application.hosting_providers.list_hosting_providers_with_usage(
+        _organisation_id(application, user_id)
+    )
+    for usage in usages:
+        p = usage.hosting_provider
+        click.echo(f"{p.id}\t{p.name}\t{p.notes or '-'}\t{usage.account_count} account(s)")
+
+
+@hosting_provider.command("update")
+@click.argument("hosting_provider_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option("--name", required=True)
+@click.option("--notes", default=None)
+@click.pass_obj
+def hosting_provider_update(
+    application: Application, hosting_provider_id: str, user_id: str, name: str, notes: str | None
+) -> None:
+    updated = application.hosting_providers.update_hosting_provider(
+        _organisation_id(application, user_id), hosting_provider_id, name=name, notes=notes
+    )
+    click.echo(f"Updated hosting provider {updated.id}: {updated.name}")
+
+
+@hosting_provider.command("delete")
+@click.argument("hosting_provider_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.pass_obj
+def hosting_provider_delete(application: Application, hosting_provider_id: str, user_id: str) -> None:
+    application.hosting_providers.delete_hosting_provider(
+        _organisation_id(application, user_id), hosting_provider_id
+    )
+    click.echo(f"Deleted hosting provider {hosting_provider_id}")
 
 
 @cli.group()

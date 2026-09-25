@@ -7,6 +7,7 @@ from .core import (
     BusinessProfileService,
     DomainService,
     ExpenseService,
+    HostingProviderService,
     InvoiceService,
     OrganisationService,
     QuoteService,
@@ -26,6 +27,7 @@ class Application:
         accounts: AccountService,
         domains: DomainService,
         registrars: RegistrarService,
+        hosting_providers: HostingProviderService,
         quotes: QuoteService,
         invoices: InvoiceService,
         expenses: ExpenseService,
@@ -39,6 +41,7 @@ class Application:
         self.accounts = accounts
         self.domains = domains
         self.registrars = registrars
+        self.hosting_providers = hosting_providers
         self.quotes = quotes
         self.invoices = invoices
         self.expenses = expenses
@@ -71,6 +74,7 @@ def build_application(
         accounts=AccountService(repository, clock=clock),
         domains=DomainService(repository, clock=clock),
         registrars=RegistrarService(repository, clock=clock),
+        hosting_providers=HostingProviderService(repository, clock=clock),
         quotes=QuoteService(repository, clock=clock),
         invoices=InvoiceService(repository, clock=clock),
         expenses=ExpenseService(repository, clock=clock, attachments=attachment_store),

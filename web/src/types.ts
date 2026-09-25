@@ -28,6 +28,8 @@ export interface PagedResult<T> {
   total: number
 }
 
+export type AccountStatus = 'new' | 'active' | 'closed'
+
 export interface Account {
   id: string
   business_name: string
@@ -39,6 +41,10 @@ export interface Account {
   town_or_city: string | null
   county: string | null
   postcode: string | null
+  status: AccountStatus
+  // A plain string, not a foreign key - see the HostingProvider interface
+  // below and CLAUDE.md.
+  hosting_provider: string | null
   created_at: string
 }
 
@@ -75,6 +81,23 @@ export interface Registrar {
   // this registrar - see RegistrarUsage in models.py. Computed, not
   // stored - always present.
   domain_count: number
+  account_count: number
+  created_at: string
+  updated_at: string
+}
+
+// A business's managed list of hosting providers, used to populate the
+// Account form's hosting-provider <select> - see CLAUDE.md. Managed from
+// the Domains page alongside Registrar, even though it's an Account
+// field, not a Domain one. Account.hosting_provider stores the chosen
+// name as a plain string, not a reference to this row's id.
+export interface HostingProvider {
+  id: string
+  name: string
+  notes: string | null
+  // How many accounts currently name this hosting provider - see
+  // HostingProviderUsage in models.py. Computed, not stored - always
+  // present.
   account_count: number
   created_at: string
   updated_at: string

@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from invoice_system.models import (
     Account,
+    AccountStatus,
     BusinessProfile,
     Invoice,
     InvoiceStatus,
@@ -80,6 +81,8 @@ def _account(**overrides: object) -> Account:
         "town_or_city": None,
         "county": None,
         "postcode": None,
+        "status": AccountStatus.ACTIVE,
+        "hosting_provider": None,
         "created_at": datetime(2026, 1, 1, tzinfo=UTC),
     }
     defaults.update(overrides)

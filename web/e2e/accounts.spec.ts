@@ -110,6 +110,32 @@ test('editing an account through the form pre-fills its current values and persi
   await expect(page.getByText('Bristol')).toBeVisible()
 })
 
+test('a new account defaults to New status, editable afterwards alongside hosting provider', async ({
+  authenticatedPage: page,
+  testAccount,
+  apiToken,
+}, testInfo) => {
+  // Created before navigating - AccountDetailPage.tsx fetches the hosting
+  // provider list once on load, so creating it after the page has already
+  // loaded wouldn't show up as an option without a reload.
+  const hostingProviderName = `${testInfo.testId} Acme Hosting`
+  await apiFetch('/hosting-providers', apiToken, {
+    method: 'POST',
+    body: JSON.stringify({ name: hostingProviderName }),
+  })
+
+  await page.goto(`/accounts/${testAccount.id}`)
+  await expect(page.locator('.page-header').getByText('new', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByLabel('Status').selectOption('active')
+  await page.getByLabel('Hosting provider (optional)').selectOption(hostingProviderName)
+  await page.getByRole('button', { name: 'Save' }).click()
+
+  await expect(page.locator('.page-header').getByText('active', { exact: true })).toBeVisible()
+  await expect(page.getByText(hostingProviderName)).toBeVisible()
+})
+
 test('cancelling an edit discards changes', async ({ authenticatedPage: page, testAccount }) => {
   await page.goto(`/accounts/${testAccount.id}`)
   await page.getByRole('button', { name: 'Edit' }).click()

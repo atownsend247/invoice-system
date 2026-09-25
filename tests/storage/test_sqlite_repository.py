@@ -7,12 +7,14 @@ import pytest
 from invoice_system.ids import new_id
 from invoice_system.models import (
     Account,
+    AccountStatus,
     ActivityEvent,
     ActivityEventType,
     BusinessProfile,
     Domain,
     Expense,
     ExpenseAttachment,
+    HostingProvider,
     Invoice,
     InvoiceStatus,
     LineItem,
@@ -151,16 +153,23 @@ def test_migration_5_splits_account_address_into_structured_fields_and_preserves
     conn.commit()
     conn.close()
 
-    repository = SqliteRepository(db_path)
-
-    fetched = repository.get_account(1, 1)
-    assert fetched is not None
-    assert fetched.address_line1 == "12 Kings Road, London, SW1A 1AA"
-    assert fetched.address_line2 is None
-    assert fetched.town_or_city is None
-    assert fetched.county is None
-    assert fetched.postcode is None
-    repository.close()
+    # Not repository.get_account() - it reads accounts.status/
+    # hosting_provider too, columns added by a much later migration that
+    # don't exist on this deliberately-frozen-at-migration-5 database (same
+    # reasoning as the migration 4 test above's raw quotes read).
+    row = (
+        sqlite3.connect(str(db_path))
+        .execute(
+            "SELECT address_line1, address_line2, town_or_city, county, postcode FROM accounts WHERE id = 1"
+        )
+        .fetchone()
+    )
+    assert row is not None
+    assert row[0] == "12 Kings Road, London, SW1A 1AA"
+    assert row[1] is None
+    assert row[2] is None
+    assert row[3] is None
+    assert row[4] is None
 
 
 def test_migration_7_resets_ids_to_uuids(tmp_path):
@@ -392,6 +401,50 @@ def test_migration_21_makes_domains_organisation_scoped_and_preserves_data(tmp_p
     repository.close()
 
 
+def test_migration_23_backfills_existing_accounts_to_active_status(tmp_path):
+    # Freeze a database at migration 22 (before accounts.status/
+    # hosting_provider existed - see schema.py) with an existing account,
+    # then confirm migration 23 backfills status to 'active' for it, not
+    # 'new' - a pre-existing account already has history by definition,
+    # unlike one created fresh from here on (AccountService.create_account
+    # passes 'new' explicitly - see CLAUDE.md). Only migration 23's own
+    # script is applied - see the migration 5 test above for why not
+    # repository.migrate().
+    db_path = tmp_path / "frozen.db"
+    conn = sqlite3.connect(str(db_path))
+    for version, script in enumerate(MIGRATIONS[:22], start=1):
+        conn.executescript(script)
+        conn.execute(f"PRAGMA user_version = {version}")
+    conn.commit()
+
+    org_id = new_id()
+    account_id = new_id()
+    now = datetime(2026, 1, 1, tzinfo=UTC).isoformat()
+    conn.execute("INSERT INTO organisations (id, name, created_at) VALUES (?, 'Org A', ?)", (org_id, now))
+    conn.execute(
+        "INSERT INTO accounts (id, organisation_id, business_name, email, address_line1, created_at) "
+        "VALUES (?, ?, 'Acme', 'a@b.test', '1 Main St', ?)",
+        (account_id, org_id, now),
+    )
+    conn.commit()
+
+    conn.executescript(MIGRATIONS[22])
+    conn.execute("PRAGMA user_version = 23")
+    conn.commit()
+    conn.close()
+
+    repository = SqliteRepository(db_path)
+    fetched = repository.get_account(org_id, account_id)
+    assert fetched is not None
+    assert fetched.status == AccountStatus.ACTIVE
+    assert fetched.hosting_provider is None
+
+    # The new hosting_providers table actually works post-migration too.
+    created = repository.create_hosting_provider(_hosting_provider(org_id))
+    assert created.id is not None
+    repository.close()
+
+
 def test_get_organisation_id_for_user_returns_none_when_unset(repo):
     assert repo.get_organisation_id_for_user("user-1") is None
 
@@ -442,6 +495,8 @@ def _account(organisation_id: str, **overrides: object) -> Account:
         "town_or_city": None,
         "county": None,
         "postcode": None,
+        "status": AccountStatus.ACTIVE,
+        "hosting_provider": None,
         "created_at": datetime(2026, 1, 1, tzinfo=UTC),
     }
     defaults.update(overrides)
@@ -1336,6 +1391,76 @@ def test_count_domains_by_registrar_groups_by_name_and_scopes_by_organisation(re
 
 def test_count_domains_by_registrar_omits_registrars_with_no_domains(repo, organisation_id):
     assert repo.count_domains_by_registrar(organisation_id) == {}
+
+
+def _hosting_provider(organisation_id: str, **overrides: object) -> HostingProvider:
+    defaults: dict = {
+        "id": new_id(),
+        "organisation_id": organisation_id,
+        "name": "Acme Hosting",
+        "notes": None,
+        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+        "updated_at": datetime(2026, 1, 1, tzinfo=UTC),
+    }
+    defaults.update(overrides)
+    return HostingProvider(**defaults)
+
+
+def test_hosting_provider_crud_and_tenant_scoping(repo, organisation_id):
+    other_organisation = repo.create_organisation(
+        Organisation(id=new_id(), name="Other Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
+    )
+
+    acme = repo.create_hosting_provider(_hosting_provider(organisation_id, name="Acme Hosting"))
+    repo.create_hosting_provider(_hosting_provider(organisation_id, name="Big Hosting Co"))
+    repo.create_hosting_provider(_hosting_provider(other_organisation.id, name="Unrelated"))
+
+    # organisation_id-scoped, ordered alphabetically (see
+    # models.HostingProvider) - not the newest-created-first convention
+    # every other list_* method in this file uses.
+    hosting_providers = repo.list_hosting_providers(organisation_id)
+    assert [p.name for p in hosting_providers] == ["Acme Hosting", "Big Hosting Co"]
+
+    fetched = repo.get_hosting_provider(organisation_id, acme.id)
+    assert fetched is not None
+    assert fetched.name == "Acme Hosting"
+
+    # Scoped by organisation_id - another organisation can't fetch this
+    # one's hosting provider by id.
+    assert repo.get_hosting_provider(other_organisation.id, acme.id) is None
+
+    acme.name = "Acme Hosting Ltd"
+    acme.notes = "Transferred here"
+    updated = repo.update_hosting_provider(acme)
+    assert updated.name == "Acme Hosting Ltd"
+    assert repo.get_hosting_provider(organisation_id, acme.id).notes == "Transferred here"
+
+    repo.delete_hosting_provider(organisation_id, acme.id)
+    assert repo.get_hosting_provider(organisation_id, acme.id) is None
+
+
+def test_count_accounts_by_hosting_provider_groups_by_name_and_scopes_by_organisation(repo, organisation_id):
+    other_organisation = repo.create_organisation(
+        Organisation(id=new_id(), name="Other Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
+    )
+
+    repo.create_account(_account(organisation_id, business_name="A", hosting_provider="Acme Hosting"))
+    repo.create_account(_account(organisation_id, business_name="B", hosting_provider="Acme Hosting"))
+    repo.create_account(_account(organisation_id, business_name="C", hosting_provider="Big Hosting Co"))
+    # An account with no hosting provider must not appear in the result at
+    # all - IS NOT NULL in the query, not just a count of zero.
+    repo.create_account(_account(organisation_id, business_name="D", hosting_provider=None))
+    # An account in a *different* organisation naming the same hosting
+    # provider string must not be counted against this organisation's total.
+    repo.create_account(_account(other_organisation.id, business_name="E", hosting_provider="Acme Hosting"))
+
+    counts = repo.count_accounts_by_hosting_provider(organisation_id)
+    assert counts == {"Acme Hosting": 2, "Big Hosting Co": 1}
+    assert repo.count_accounts_by_hosting_provider(other_organisation.id) == {"Acme Hosting": 1}
+
+
+def test_count_accounts_by_hosting_provider_omits_providers_with_no_accounts(repo, organisation_id):
+    assert repo.count_accounts_by_hosting_provider(organisation_id) == {}
 
 
 def test_next_expense_number_increments_and_is_scoped_per_organisation(repo, organisation_id):

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from ..models import (
     Account,
+    AccountStatus,
     ActivityEvent,
     ActivityEventType,
     BusinessProfile,
@@ -13,6 +14,7 @@ from ..models import (
     DomainWithAccount,
     Expense,
     ExpenseAttachment,
+    HostingProvider,
     Invoice,
     InvoiceStatus,
     LineItem,
@@ -97,8 +99,8 @@ class SqliteRepository:
         with self._lock:
             self._conn.execute(
                 "INSERT INTO accounts (id, organisation_id, business_name, contact_name, email, phone, "
-                "address_line1, address_line2, town_or_city, county, postcode, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "address_line1, address_line2, town_or_city, county, postcode, status, "
+                "hosting_provider, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     account.id,
                     account.organisation_id,
@@ -111,6 +113,8 @@ class SqliteRepository:
                     account.town_or_city,
                     account.county,
                     account.postcode,
+                    account.status.value,
+                    account.hosting_provider,
                     account.created_at.isoformat(),
                 ),
             )
@@ -174,8 +178,8 @@ class SqliteRepository:
         with self._lock:
             self._conn.execute(
                 "UPDATE accounts SET business_name = ?, contact_name = ?, email = ?, phone = ?, "
-                "address_line1 = ?, address_line2 = ?, town_or_city = ?, county = ?, postcode = ? "
-                "WHERE id = ? AND organisation_id = ?",
+                "address_line1 = ?, address_line2 = ?, town_or_city = ?, county = ?, postcode = ?, "
+                "status = ?, hosting_provider = ? WHERE id = ? AND organisation_id = ?",
                 (
                     account.business_name,
                     account.contact_name,
@@ -186,6 +190,8 @@ class SqliteRepository:
                     account.town_or_city,
                     account.county,
                     account.postcode,
+                    account.status.value,
+                    account.hosting_provider,
                     account.id,
                     account.organisation_id,
                 ),
@@ -207,6 +213,8 @@ class SqliteRepository:
             town_or_city=row["town_or_city"],
             county=row["county"],
             postcode=row["postcode"],
+            status=AccountStatus(row["status"]),
+            hosting_provider=row["hosting_provider"],
             created_at=datetime.fromisoformat(row["created_at"]),
         )
 
@@ -387,6 +395,90 @@ class SqliteRepository:
     @staticmethod
     def _row_to_registrar(row: sqlite3.Row) -> Registrar:
         return Registrar(
+            id=row["id"],
+            organisation_id=row["organisation_id"],
+            name=row["name"],
+            notes=row["notes"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+    # -- Hosting providers -------------------------------------------------------
+
+    def create_hosting_provider(self, hosting_provider: HostingProvider) -> HostingProvider:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO hosting_providers (id, organisation_id, name, notes, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    hosting_provider.id,
+                    hosting_provider.organisation_id,
+                    hosting_provider.name,
+                    hosting_provider.notes,
+                    hosting_provider.created_at.isoformat(),
+                    hosting_provider.updated_at.isoformat(),
+                ),
+            )
+            self._conn.commit()
+        return hosting_provider
+
+    def get_hosting_provider(self, organisation_id: str, hosting_provider_id: str) -> HostingProvider | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM hosting_providers WHERE id = ? AND organisation_id = ?",
+                (hosting_provider_id, organisation_id),
+            ).fetchone()
+        return self._row_to_hosting_provider(row) if row else None
+
+    def list_hosting_providers(self, organisation_id: str) -> list[HostingProvider]:
+        # Alphabetical, not newest-first - the useful default for a
+        # dropdown's option order (see models.HostingProvider).
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM hosting_providers WHERE organisation_id = ? ORDER BY name COLLATE NOCASE",
+                (organisation_id,),
+            ).fetchall()
+        return [self._row_to_hosting_provider(row) for row in rows]
+
+    def update_hosting_provider(self, hosting_provider: HostingProvider) -> HostingProvider:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE hosting_providers SET name = ?, notes = ?, updated_at = ? "
+                "WHERE id = ? AND organisation_id = ?",
+                (
+                    hosting_provider.name,
+                    hosting_provider.notes,
+                    hosting_provider.updated_at.isoformat(),
+                    hosting_provider.id,
+                    hosting_provider.organisation_id,
+                ),
+            )
+            self._conn.commit()
+        return hosting_provider
+
+    def delete_hosting_provider(self, organisation_id: str, hosting_provider_id: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM hosting_providers WHERE id = ? AND organisation_id = ?",
+                (hosting_provider_id, organisation_id),
+            )
+            self._conn.commit()
+
+    def count_accounts_by_hosting_provider(self, organisation_id: str) -> dict[str, int]:
+        # Only hosting provider names actually used by at least one account
+        # appear in the result - callers treat a missing key as 0, not an
+        # error (same convention as count_domains_by_registrar).
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT hosting_provider, COUNT(*) AS account_count FROM accounts "
+                "WHERE organisation_id = ? AND hosting_provider IS NOT NULL GROUP BY hosting_provider",
+                (organisation_id,),
+            ).fetchall()
+        return {row["hosting_provider"]: row["account_count"] for row in rows}
+
+    @staticmethod
+    def _row_to_hosting_provider(row: sqlite3.Row) -> HostingProvider:
+        return HostingProvider(
             id=row["id"],
             organisation_id=row["organisation_id"],
             name=row["name"],

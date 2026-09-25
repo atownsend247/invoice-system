@@ -543,6 +543,21 @@ button.danger:hover:not(:disabled) {
   color: #5b21b6;
 }
 
+.status-new {
+  background: #dbe6ff;
+  color: #1d3fae;
+}
+
+.status-active {
+  background: #d9f2df;
+  color: #17703a;
+}
+
+.status-closed {
+  background: var(--border);
+  color: var(--text-muted);
+}
+
 .inline-form {
   display: flex;
   flex-wrap: wrap;

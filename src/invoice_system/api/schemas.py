@@ -3,6 +3,8 @@ from decimal import Decimal, InvalidOperation
 
 from pydantic import BaseModel, field_validator
 
+from ..models import AccountStatus
+
 
 def _validate_decimal_string(value: str) -> str:
     try:
@@ -22,6 +24,12 @@ class AccountIn(BaseModel):
     town_or_city: str | None = None
     county: str | None = None
     postcode: str | None = None
+    # Defaults to "new" on create; a caller updating an account normally
+    # sends its current value back (AccountForm.tsx's dropdown always has
+    # one selected) - same full-replace-with-a-default reasoning as every
+    # other optional field here, see CLAUDE.md.
+    status: AccountStatus = AccountStatus.NEW
+    hosting_provider: str | None = None
 
 
 class AccountOut(BaseModel):
@@ -35,6 +43,8 @@ class AccountOut(BaseModel):
     town_or_city: str | None
     county: str | None
     postcode: str | None
+    status: str
+    hosting_provider: str | None
     created_at: datetime
 
     @classmethod
@@ -50,6 +60,8 @@ class AccountOut(BaseModel):
             town_or_city=account.town_or_city,
             county=account.county,
             postcode=account.postcode,
+            status=account.status.value,
+            hosting_provider=account.hosting_provider,
             created_at=account.created_at,
         )
 
@@ -147,6 +159,39 @@ class RegistrarOut(BaseModel):
         return cls.from_model(
             usage.registrar, domain_count=usage.domain_count, account_count=usage.account_count
         )
+
+
+class HostingProviderIn(BaseModel):
+    name: str
+    notes: str | None = None
+
+
+class HostingProviderOut(BaseModel):
+    id: str
+    name: str
+    notes: str | None
+    # How many accounts currently name this hosting provider - see
+    # models.HostingProviderUsage. Always present, not optional - every
+    # route that returns a HostingProviderOut computes it (0 for a
+    # just-created one, in practice).
+    account_count: int
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_model(cls, hosting_provider, *, account_count: int = 0) -> "HostingProviderOut":
+        return cls(
+            id=hosting_provider.id,
+            name=hosting_provider.name,
+            notes=hosting_provider.notes,
+            account_count=account_count,
+            created_at=hosting_provider.created_at,
+            updated_at=hosting_provider.updated_at,
+        )
+
+    @classmethod
+    def from_usage(cls, usage) -> "HostingProviderOut":
+        return cls.from_model(usage.hosting_provider, account_count=usage.account_count)
 
 
 class LineItemIn(BaseModel):

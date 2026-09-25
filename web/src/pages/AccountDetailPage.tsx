@@ -51,6 +51,9 @@ export function AccountDetailPage() {
     [accountId],
   )
   const { data: allDomains, refetch: refetchAllDomains } = useAsync(() => api.listDomains(), [])
+  // Fetched once here, not per AccountForm instance - same reasoning as
+  // DomainsPage.tsx's own registrars fetch for DomainForm.
+  const { data: hostingProviders } = useAsync(() => api.listHostingProviders(), [])
   const [editing, setEditing] = useState(false)
 
   function refetchBothDomainLists() {
@@ -71,6 +74,7 @@ export function AccountDetailPage() {
     <section>
       <div className="page-header">
         <h1>{account.business_name}</h1>
+        <StatusBadge status={account.status} />
         {!editing && (
           <button type="button" onClick={() => setEditing(true)}>
             Edit
@@ -81,6 +85,7 @@ export function AccountDetailPage() {
       {editing ? (
         <AccountForm
           initial={account}
+          hostingProviders={hostingProviders ?? []}
           submitLabel="Save"
           submittingLabel="Saving…"
           onSubmit={(input) => api.updateAccount(account.id, input)}
@@ -116,6 +121,10 @@ export function AccountDetailPage() {
                 </span>
               ))}
             </dd>
+          </div>
+          <div>
+            <dt>Hosting provider</dt>
+            <dd>{account.hosting_provider ?? '—'}</dd>
           </div>
         </dl>
       )}

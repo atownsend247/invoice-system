@@ -41,6 +41,8 @@ from .schemas import (
     ExpenseCreateIn,
     ExpenseDateIn,
     ExpenseOut,
+    HostingProviderIn,
+    HostingProviderOut,
     InvoiceCustomerNotesIn,
     InvoiceListOut,
     InvoiceOut,
@@ -181,6 +183,8 @@ def create_account(
         town_or_city=body.town_or_city,
         county=body.county,
         postcode=body.postcode,
+        status=body.status,
+        hosting_provider=body.hosting_provider,
     )
     return AccountOut.from_model(account)
 
@@ -225,6 +229,8 @@ def update_account(
         town_or_city=body.town_or_city,
         county=body.county,
         postcode=body.postcode,
+        status=body.status,
+        hosting_provider=body.hosting_provider,
     )
     return AccountOut.from_model(account)
 
@@ -344,6 +350,52 @@ def delete_registrar(
     organisation_id: str = Depends(get_organisation_id),
 ) -> None:
     application.registrars.delete_registrar(organisation_id, registrar_id)
+
+
+@domain_router.post("/hosting-providers", response_model=HostingProviderOut, status_code=201)
+def create_hosting_provider(
+    body: HostingProviderIn,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> HostingProviderOut:
+    hosting_provider = application.hosting_providers.create_hosting_provider(
+        organisation_id, name=body.name, notes=body.notes
+    )
+    return HostingProviderOut.from_model(hosting_provider)
+
+
+@domain_router.get("/hosting-providers", response_model=list[HostingProviderOut])
+def list_hosting_providers(
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> list[HostingProviderOut]:
+    usages = application.hosting_providers.list_hosting_providers_with_usage(organisation_id)
+    return [HostingProviderOut.from_usage(u) for u in usages]
+
+
+@domain_router.put("/hosting-providers/{hosting_provider_id}", response_model=HostingProviderOut)
+def update_hosting_provider(
+    hosting_provider_id: str,
+    body: HostingProviderIn,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> HostingProviderOut:
+    application.hosting_providers.update_hosting_provider(
+        organisation_id, hosting_provider_id, name=body.name, notes=body.notes
+    )
+    # Re-fetch usage against the (possibly renamed) current name, not the
+    # pre-update one - a rename can change which accounts actually match.
+    usage = application.hosting_providers.get_hosting_provider_usage(organisation_id, hosting_provider_id)
+    return HostingProviderOut.from_usage(usage)
+
+
+@domain_router.delete("/hosting-providers/{hosting_provider_id}", status_code=204)
+def delete_hosting_provider(
+    hosting_provider_id: str,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> None:
+    application.hosting_providers.delete_hosting_provider(organisation_id, hosting_provider_id)
 
 
 @domain_router.post("/quotes", response_model=QuoteOut, status_code=201)

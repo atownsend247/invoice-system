@@ -761,14 +761,45 @@ Four separate things are easy to conflate here — don't:
   it doesn't also trigger the row's own navigation. Creating a new account
   navigates straight to its detail page on success, rather than staying on
   the list.
-- **`Domain`/`Registrar`** (`core.py`'s `DomainService`/`RegistrarService`)
-  are the standalone "Domains" page (`web/src/pages/DomainsPage.tsx`, nav
-  link between Accounts and Quotes) - the central place to manage both,
-  moved out of being scattered across `AccountDetailPage.tsx` (domains)
-  and a Settings tab (registrars). See `docs/api.md`'s `Domain`/
-  `Registrar` Conventions for the field/route shape (required fields, no
-  format validation, plain-string `Domain.registrar` not a FK to
-  `Registrar`).
+- **`Account.status`** (migration 23, `AccountStatus`: `new`/`active`/
+  `closed`) is a plain lifecycle label with **no enforced transition
+  rules** - any value can change to any other directly, and it has no
+  effect on whether quotes/invoices/expenses/domain-links can be created
+  against the account - presentation only, same spirit as `Domain.
+  auto_renew`. Defaults to `new` on `create_account` (both the API schema
+  and `AccountService` itself default it there); on `update_account` it's
+  just another full-replace field, same as every other optional field on
+  that method - a caller that omits it defaults back to `new` too (this
+  is what "full replace" already means for every other field here, e.g.
+  omitting `contact_name` clears it - `AccountForm.tsx`'s dropdown always
+  has one of the three selected, so this never actually happens through
+  the web UI). Migration 23 backfills every *pre-existing* account to
+  `active`, not `new` - it already has history by definition, unlike one
+  created fresh from here on; see `docs/data-model.md`'s migration list
+  for why that backfill value was deliberately chosen over defaulting the
+  whole column to `new`. Shown as a `StatusBadge` (same component
+  `QuoteDetailPage.tsx`/`InvoiceDetailPage.tsx` already use, extended to
+  accept `AccountStatus` too) on both `AccountsPage.tsx`'s list (a new
+  "Status" column) and `AccountDetailPage.tsx`'s header, and editable via
+  a `<select>` on `AccountForm.tsx`. `Account.hosting_provider` (also
+  migration 23) is a plain nullable string, not a foreign key - see the
+  `Domain`/`Registrar`/`HostingProvider` bullet below for the managed
+  list it's picked from; unlike `status`, genuinely optional (many
+  accounts have no hosting tracked), shown in `AccountDetailPage.tsx`'s
+  details list (`—` when unset) alongside Contact/Email/Phone/Address.
+- **`Domain`/`Registrar`/`HostingProvider`** (`core.py`'s `DomainService`/
+  `RegistrarService`/`HostingProviderService`) are the standalone "Domains"
+  page (`web/src/pages/DomainsPage.tsx`, nav link between Accounts and
+  Quotes) - the central place to manage all three, moved out of being
+  scattered across `AccountDetailPage.tsx` (domains) and a Settings tab
+  (registrars) - `HostingProvider` lives here too even though it's an
+  `Account` field, not a `Domain` one (confirmed with the user: both
+  domains and accounts are "things this business tracks the provider of",
+  so one page manages every provider-ish reference list). See
+  `docs/api.md`'s `Domain`/`Registrar`/`HostingProvider` Conventions for
+  the field/route shape (required fields, no format validation,
+  plain-string `Domain.registrar`/`Account.hosting_provider`, neither a FK
+  to `Registrar`/`HostingProvider`).
   - `Domain` is organisation-scoped directly (its own `organisation_id`,
     migration 21) and structurally close to `Registrar` now, **not**
     resolved through a parent `Account` the way it used to be - a domain
@@ -822,26 +853,50 @@ Four separate things are easy to conflate here — don't:
     server's rejection after a click. `GET /registrars` always includes
     `domain_count`/`account_count` in `RegistrarOut` (0/0 for a
     just-created registrar).
-  - Web UI: `DomainsPage.tsx` is two stacked sections on one page (no
+  - **`HostingProviderUsage`** (models.py) - the `Account`-only analogue of
+    `RegistrarUsage`: a `HostingProvider` alongside how many `Account`s
+    currently name it, computed at request time
+    (`HostingProviderService.list_hosting_providers_with_usage`/
+    `get_hosting_provider_usage`, backed by
+    `SqliteRepository.count_accounts_by_hosting_provider` - a plain `GROUP
+    BY hosting_provider` on `accounts` filtered by `organisation_id`, `IS
+    NOT NULL` so an account with no hosting provider set doesn't show up
+    as a phantom empty-string key). No `domain_count` the way
+    `RegistrarUsage` has - a hosting provider isn't a `Domain`-level
+    concern at all, only an `Account`-level one. Same name-drift tradeoff
+    as `RegistrarUsage` (matched by the provider's *current* `name`
+    against `Account.hosting_provider`, a plain string) and the same
+    `delete_hosting_provider` guard (`Conflict`, 409, if
+    `account_count > 0`), both client-side-disabled-button and
+    server-side. `GET /hosting-providers` always includes `account_count`
+    in `HostingProviderOut` (0 for a just-created one).
+  - Web UI: `DomainsPage.tsx` is three stacked sections on one page (no
     sub-tabs - deliberately avoids reintroducing the shared-tab-state
     issues just fixed on Settings, see above) - a "Domains" section (full
     CRUD: "Add domain" reveals `components/DomainForm.tsx`, same
     `initial`/`submitLabel`/`onSubmit`/`onDone`/`onCancel` prop shape as
     `AccountForm.tsx`, reused for add and per-row edit; the table's
     "Linked account" column links to that account's own page, or shows
-    "Unlinked") and a "Registrars" section (self-contained list with its
-    own immediate add/edit/delete actions, each backed by its own
-    `<form>` - `components/RegistrarForm.tsx`, same reusable prop shape
-    as `AccountForm.tsx`/`DomainForm.tsx`). `DomainForm.tsx` takes the
-    registrar list as a `registrars` prop (fetched once by the caller,
-    not per form instance) - if a domain's already-recorded `registrar`
-    string isn't in the current list (predates this feature, or its
-    matching `Registrar` was since renamed/deleted), that value is
-    prepended as an extra `<option>` so opening "Edit" never silently
-    changes it; if the list is empty (and there's no such value to fall
-    back to), the field and submit button are disabled with a hint
-    pointing at the Domains page's own Registrars section, rather than
-    presenting a dead-end empty `<select>`.
+    "Unlinked"), a "Registrars" section, and a "Hosting providers"
+    section (both self-contained lists with their own immediate add/edit/
+    delete actions, each backed by its own `<form>` -
+    `components/RegistrarForm.tsx`/`components/HostingProviderForm.tsx`,
+    same reusable prop shape as `AccountForm.tsx`/`DomainForm.tsx`).
+    `DomainForm.tsx` takes the registrar list as a `registrars` prop
+    (fetched once by the caller, not per form instance) - if a domain's
+    already-recorded `registrar` string isn't in the current list
+    (predates this feature, or its matching `Registrar` was since
+    renamed/deleted), that value is prepended as an extra `<option>` so
+    opening "Edit" never silently changes it; if the list is empty (and
+    there's no such value to fall back to), the field and submit button
+    are disabled with a hint pointing at the Domains page's own Registrars
+    section, rather than presenting a dead-end empty `<select>`.
+    `AccountForm.tsx` takes an equivalent `hostingProviders` prop and
+    applies the identical stale-value-prepending logic for
+    `Account.hosting_provider` - the one difference is the field itself is
+    optional (a `<select>` with a real "None" option, not disabled/
+    required the way Registrar's is on `DomainForm.tsx`), since not every
+    account has a hosting provider tracked.
   - `AccountDetailPage.tsx`'s own "Domains" section is link/unlink only,
     not create/edit/delete - fetches this account's linked domains
     (`api.listDomains({ accountId })`) and, separately, every

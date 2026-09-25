@@ -1,6 +1,7 @@
 import pytest
 
 from invoice_system.errors import NotFound, ValidationFailed
+from invoice_system.models import AccountStatus
 
 
 def test_create_and_get_account(application, organisation_id):
@@ -155,6 +156,7 @@ def test_update_account_persists_changes(application, organisation_id):
         address_line1="2 High St",
         town_or_city="Bristol",
         postcode="BS1 4ST",
+        status=AccountStatus.ACTIVE,
     )
     assert updated.id == created.id
     assert updated.business_name == "Acme Ltd"
@@ -186,6 +188,7 @@ def test_update_account_clears_optional_address_lines_left_blank(application, or
         email="jane@acme.test",
         address_line1="1 Main St",
         town_or_city="",
+        status=AccountStatus.ACTIVE,
     )
     assert updated.town_or_city is None
 
@@ -193,7 +196,12 @@ def test_update_account_clears_optional_address_lines_left_blank(application, or
 def test_update_missing_account_raises_not_found(application, organisation_id):
     with pytest.raises(NotFound):
         application.accounts.update_account(
-            organisation_id, 999, business_name="A", email="a@b.test", address_line1="x"
+            organisation_id,
+            999,
+            business_name="A",
+            email="a@b.test",
+            address_line1="x",
+            status=AccountStatus.ACTIVE,
         )
 
 
@@ -208,7 +216,12 @@ def test_update_account_from_another_organisation_raises_not_found(application, 
 
     with pytest.raises(NotFound):
         application.accounts.update_account(
-            other_organisation_id, created.id, business_name="A", email="a@b.test", address_line1="x"
+            other_organisation_id,
+            created.id,
+            business_name="A",
+            email="a@b.test",
+            address_line1="x",
+            status=AccountStatus.ACTIVE,
         )
 
 
@@ -220,7 +233,76 @@ def test_update_account_requires_non_blank_fields(application, organisation_id, 
         email="jane@acme.test",
         address_line1="1 Main St",
     )
-    kwargs = {"business_name": "Acme Co", "email": "jane@acme.test", "address_line1": "1 Main St"}
+    kwargs = {
+        "business_name": "Acme Co",
+        "email": "jane@acme.test",
+        "address_line1": "1 Main St",
+        "status": AccountStatus.ACTIVE,
+    }
     kwargs[field] = "   "
     with pytest.raises(ValidationFailed):
         application.accounts.update_account(organisation_id, created.id, **kwargs)
+
+
+def test_create_account_defaults_status_to_new(application, organisation_id):
+    account = application.accounts.create_account(
+        organisation_id=organisation_id, business_name="Acme Co", email="a@b.test", address_line1="1 Main St"
+    )
+    assert account.status == AccountStatus.NEW
+
+
+def test_create_account_accepts_an_explicit_status_and_hosting_provider(application, organisation_id):
+    account = application.accounts.create_account(
+        organisation_id=organisation_id,
+        business_name="Acme Co",
+        email="a@b.test",
+        address_line1="1 Main St",
+        status=AccountStatus.ACTIVE,
+        hosting_provider="Acme Hosting",
+    )
+    assert account.status == AccountStatus.ACTIVE
+    assert account.hosting_provider == "Acme Hosting"
+
+
+def test_update_account_changes_status_and_hosting_provider(application, organisation_id):
+    created = application.accounts.create_account(
+        organisation_id=organisation_id, business_name="Acme Co", email="a@b.test", address_line1="1 Main St"
+    )
+    assert created.status == AccountStatus.NEW
+
+    updated = application.accounts.update_account(
+        organisation_id,
+        created.id,
+        business_name="Acme Co",
+        email="a@b.test",
+        address_line1="1 Main St",
+        status=AccountStatus.CLOSED,
+        hosting_provider="Acme Hosting",
+    )
+    assert updated.status == AccountStatus.CLOSED
+    assert updated.hosting_provider == "Acme Hosting"
+
+    fetched = application.accounts.get_account(organisation_id, created.id)
+    assert fetched.status == AccountStatus.CLOSED
+    assert fetched.hosting_provider == "Acme Hosting"
+
+
+def test_update_account_clears_hosting_provider_left_blank(application, organisation_id):
+    created = application.accounts.create_account(
+        organisation_id=organisation_id,
+        business_name="Acme Co",
+        email="a@b.test",
+        address_line1="1 Main St",
+        hosting_provider="Acme Hosting",
+    )
+
+    updated = application.accounts.update_account(
+        organisation_id,
+        created.id,
+        business_name="Acme Co",
+        email="a@b.test",
+        address_line1="1 Main St",
+        status=AccountStatus.NEW,
+        hosting_provider="   ",
+    )
+    assert updated.hosting_provider is None

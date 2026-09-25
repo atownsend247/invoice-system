@@ -10,6 +10,7 @@ from .ids import IdGenerator
 from .ids import new_id as default_new_id
 from .models import (
     Account,
+    AccountStatus,
     ActivityEvent,
     ActivityEventType,
     BusinessProfile,
@@ -17,6 +18,8 @@ from .models import (
     DomainWithAccount,
     Expense,
     ExpenseAttachment,
+    HostingProvider,
+    HostingProviderUsage,
     Invoice,
     InvoiceStatus,
     LineItem,
@@ -109,6 +112,8 @@ class AccountService:
         town_or_city: str | None = None,
         county: str | None = None,
         postcode: str | None = None,
+        status: AccountStatus = AccountStatus.NEW,
+        hosting_provider: str | None = None,
     ) -> Account:
         if not business_name.strip():
             raise ValidationFailed("business_name is required")
@@ -128,6 +133,8 @@ class AccountService:
             town_or_city=_blank_to_none(town_or_city),
             county=_blank_to_none(county),
             postcode=_blank_to_none(postcode),
+            status=status,
+            hosting_provider=_blank_to_none(hosting_provider),
             created_at=self._clock(),
         )
         return self._repository.create_account(account)
@@ -170,6 +177,8 @@ class AccountService:
         town_or_city: str | None = None,
         county: str | None = None,
         postcode: str | None = None,
+        status: AccountStatus = AccountStatus.NEW,
+        hosting_provider: str | None = None,
     ) -> Account:
         existing = self.get_account(organisation_id, account_id)
         if not business_name.strip():
@@ -187,6 +196,8 @@ class AccountService:
         existing.town_or_city = _blank_to_none(town_or_city)
         existing.county = _blank_to_none(county)
         existing.postcode = _blank_to_none(postcode)
+        existing.status = status
+        existing.hosting_provider = _blank_to_none(hosting_provider)
         return self._repository.update_account(existing)
 
 
@@ -404,6 +415,93 @@ class RegistrarService:
         if registrar is None:
             raise NotFound(f"registrar {registrar_id} not found")
         return registrar
+
+
+class HostingProviderService:
+    """A business's managed list of hosting providers, used to populate
+    the Account form's hosting-provider dropdown (see
+    models.HostingProvider). Structurally identical to RegistrarService -
+    organisation-scoped, tenant ownership checked directly, supports
+    delete since nothing holds a foreign key to a HostingProvider
+    (Account.hosting_provider stores the chosen name as a plain string,
+    not a reference). delete_hosting_provider refuses (Conflict) to
+    delete one that at least one Account currently names - see
+    get_hosting_provider_usage/list_hosting_providers_with_usage and
+    models.HostingProviderUsage."""
+
+    def __init__(
+        self, repository: Repository, clock: Clock = system_clock, new_id: IdGenerator = default_new_id
+    ) -> None:
+        self._repository = repository
+        self._clock = clock
+        self._new_id = new_id
+
+    def create_hosting_provider(
+        self, organisation_id: str, *, name: str, notes: str | None = None
+    ) -> HostingProvider:
+        if not name.strip():
+            raise ValidationFailed("name is required")
+        now = self._clock()
+        hosting_provider = HostingProvider(
+            id=self._new_id(),
+            organisation_id=organisation_id,
+            name=name,
+            notes=_blank_to_none(notes),
+            created_at=now,
+            updated_at=now,
+        )
+        return self._repository.create_hosting_provider(hosting_provider)
+
+    def get_hosting_provider(self, organisation_id: str, hosting_provider_id: str) -> HostingProvider:
+        return self._get_hosting_provider(organisation_id, hosting_provider_id)
+
+    def list_hosting_providers(self, organisation_id: str) -> list[HostingProvider]:
+        return self._repository.list_hosting_providers(organisation_id)
+
+    def list_hosting_providers_with_usage(self, organisation_id: str) -> list[HostingProviderUsage]:
+        hosting_providers = self._repository.list_hosting_providers(organisation_id)
+        counts = self._repository.count_accounts_by_hosting_provider(organisation_id)
+        return [self._usage(hosting_provider, counts) for hosting_provider in hosting_providers]
+
+    def get_hosting_provider_usage(
+        self, organisation_id: str, hosting_provider_id: str
+    ) -> HostingProviderUsage:
+        hosting_provider = self._get_hosting_provider(organisation_id, hosting_provider_id)
+        counts = self._repository.count_accounts_by_hosting_provider(organisation_id)
+        return self._usage(hosting_provider, counts)
+
+    @staticmethod
+    def _usage(hosting_provider: HostingProvider, counts: dict[str, int]) -> HostingProviderUsage:
+        account_count = counts.get(hosting_provider.name, 0)
+        return HostingProviderUsage(hosting_provider=hosting_provider, account_count=account_count)
+
+    def update_hosting_provider(
+        self, organisation_id: str, hosting_provider_id: str, *, name: str, notes: str | None = None
+    ) -> HostingProvider:
+        existing = self._get_hosting_provider(organisation_id, hosting_provider_id)
+        if not name.strip():
+            raise ValidationFailed("name is required")
+        existing.name = name
+        existing.notes = _blank_to_none(notes)
+        existing.updated_at = self._clock()
+        return self._repository.update_hosting_provider(existing)
+
+    def delete_hosting_provider(self, organisation_id: str, hosting_provider_id: str) -> None:
+        usage = self.get_hosting_provider_usage(
+            organisation_id, hosting_provider_id
+        )  # 404s if missing/wrong organisation
+        if usage.account_count > 0:
+            raise Conflict(
+                f"hosting provider {hosting_provider_id} is still used by {usage.account_count} "
+                "account(s) - remove or reassign them first"
+            )
+        self._repository.delete_hosting_provider(organisation_id, hosting_provider_id)
+
+    def _get_hosting_provider(self, organisation_id: str, hosting_provider_id: str) -> HostingProvider:
+        hosting_provider = self._repository.get_hosting_provider(organisation_id, hosting_provider_id)
+        if hosting_provider is None:
+            raise NotFound(f"hosting provider {hosting_provider_id} not found")
+        return hosting_provider
 
 
 def _month_start(d: date_) -> date_:

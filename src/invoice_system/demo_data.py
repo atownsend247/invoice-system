@@ -36,12 +36,14 @@ from .core import (
     BusinessProfileService,
     DomainService,
     ExpenseService,
+    HostingProviderService,
     InvoiceService,
     OrganisationService,
     QuoteService,
     RegistrarService,
 )
 from .factory import Application
+from .models import AccountStatus
 
 DEMO_EMAIL = "demo@example.test"
 DEMO_PASSWORD = "demo-password-123"  # noqa: S105 - a throwaway local demo login, not a real secret.
@@ -72,6 +74,11 @@ class _DemoAccount:
     town_or_city: str | None = None
     county: str | None = None
     postcode: str | None = None
+    # Left at the AccountService default ("new") for most accounts below -
+    # only a couple are customised, showing off the status/hosting-provider
+    # fields without making every single seeded account a special case.
+    status: str = "new"
+    hosting_provider: str | None = None
 
 
 _NAMED_ACCOUNTS = [
@@ -83,6 +90,8 @@ _NAMED_ACCOUNTS = [
         "020 7946 0958",
         town_or_city="London",
         postcode="SW1A 1AA",
+        status="active",
+        hosting_provider="Acme Hosting",
     ),
     _DemoAccount(
         "Blue Harbour Consulting",
@@ -93,6 +102,7 @@ _NAMED_ACCOUNTS = [
         address_line2="Floor 2",
         town_or_city="Bristol",
         postcode="BS1 4ST",
+        status="closed",
     ),
     _DemoAccount(
         "Fenwick & Vale",
@@ -103,6 +113,8 @@ _NAMED_ACCOUNTS = [
         town_or_city="Manchester",
         county="Greater Manchester",
         postcode="M1 2WD",
+        status="active",
+        hosting_provider="SiteGround",
     ),
     _DemoAccount(
         "Orchard Studio",
@@ -496,6 +508,8 @@ def seed_demo_data(application: Application, auth: Auth, *, now: datetime | None
             town_or_city=a.town_or_city,
             county=a.county,
             postcode=a.postcode,
+            status=AccountStatus(a.status),
+            hosting_provider=a.hosting_provider,
         ).id
         for a in _ACCOUNTS
     ]
@@ -505,6 +519,14 @@ def seed_demo_data(application: Application, auth: Auth, *, now: datetime | None
     registrars = RegistrarService(application.repository, clock=lambda: now)
     registrars.create_registrar(organisation_id, name="123-Reg", notes="https://www.123-reg.co.uk")
     registrars.create_registrar(organisation_id, name="GoDaddy")
+
+    # The managed hosting-provider list Northwind Traders/Fenwick & Vale
+    # above pick from - also shown on the standalone Domains page, even
+    # though it's an Account field, not a Domain one (confirmed with the
+    # user - see CLAUDE.md).
+    hosting_providers = HostingProviderService(application.repository, clock=lambda: now)
+    hosting_providers.create_hosting_provider(organisation_id, name="Acme Hosting")
+    hosting_providers.create_hosting_provider(organisation_id, name="SiteGround")
 
     # A couple of domains, on a couple of accounts - not every account has
     # one, same "not every account needs every kind of child record" spirit

@@ -107,13 +107,14 @@ one-for-one over the same storage, but is **not** behind login — it's a
 local, trusted tool (see `CLAUDE.md`). Where the API resolves both "which
 user" and "which organisation" from the Bearer token, the CLI has no
 session to resolve either from, so **every** `account`/`quote`/`invoice`/
-`expense`/`domain`/`registrar`
+`expense`/`domain`/`registrar`/`hosting-provider`
 command takes a **required** `--user-id` (`account create/list/update`,
 `quote create/update/add-item/update-item/delete-item/send/convert/delete-all/pdf`, `invoice
 list/send/void/pay/set-customer-notes/delete-all/monthly-totals/pdf`, `expense
 create/list/add-item/update-item/delete-item/delete-all/monthly-totals/pdf`,
 `expense attachment add/list/download/delete`, `domain
 create/list/update/delete/link/unlink`, `registrar create/list/update/delete`,
+`hosting-provider create/list/update/delete`,
 `stats`) purely to resolve
 `organisation_id` (`OrganisationService.get_or_create_for_user`, same
 auto-create-on-first-use as the API) — this is a breaking change from
@@ -127,7 +128,14 @@ immediately on create, or filter the list to just that account) rather
 than the required positional argument they used to - a domain is created
 independently now, same as the API (see the `Domain` Convention below);
 `domain link <domain_id> --account-id`/`domain unlink <domain_id>` are new,
-mirroring `POST /domains/{id}/link|unlink`.
+mirroring `POST /domains/{id}/link|unlink`. `account create`/`account
+update` take `--status` (`click.Choice(["new", "active", "closed"])`,
+defaults `new`) and `--hosting-provider` (free text, not validated
+against the managed `hosting-provider` list the way the web UI's
+`<select>` is - see the `Account.status`/`HostingProvider` Conventions
+below). `hosting-provider create/list/update/delete` mirror `registrar`'s
+own commands exactly, one accounts-only field removed (`hosting-provider
+list` prints account counts, not domain-and-account counts).
 `expense add-item`/`quote add-item` both echo the new line item's id
 (`Added line item <id>`) - the two `add-*` commands that do, since their
 matching `update-item`/`delete-item <parent_id> <item_id>` commands need

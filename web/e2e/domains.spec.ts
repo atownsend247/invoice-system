@@ -145,3 +145,74 @@ test('registrar list shows domain/account counts and blocks deleting one still i
   await expect(deleteButton).toBeDisabled()
   await expect(deleteButton).toHaveAttribute('title', /still used by 1 domain/i)
 })
+
+test('adding, editing, and deleting a hosting provider', async ({ authenticatedPage: page }, testInfo) => {
+  // Unique per test (same reasoning as the registrar tests above) -
+  // hosting providers are a shared organisation-wide list too.
+  const name = `${testInfo.testId} Acme Hosting`
+  const renamed = `${testInfo.testId} SiteGround`
+
+  await page.goto('/domains')
+
+  await page.getByRole('button', { name: 'Add hosting provider' }).click()
+  // exact: true - "Name" is otherwise a substring match against "Domain
+  // name"/other fields on this same page.
+  await page.getByLabel('Name', { exact: true }).fill(name)
+  await page.getByLabel('Notes (optional)').fill('https://acme-hosting.test')
+  await page.getByRole('button', { name: 'Add', exact: true }).click()
+
+  const row = page.locator('tbody tr', { hasText: name })
+  await expect(row).toContainText('https://acme-hosting.test')
+
+  await row.getByRole('button', { name: 'Edit' }).click()
+  await page.getByLabel('Name', { exact: true }).fill(renamed)
+  await page.getByLabel('Notes (optional)').fill('')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+
+  const updatedRow = page.locator('tbody tr', { hasText: renamed })
+  await expect(updatedRow).toBeVisible()
+  await expect(page.getByText(name, { exact: true })).toHaveCount(0)
+
+  await updatedRow.getByRole('button', { name: 'Delete' }).click()
+  await expect(page.getByText(renamed)).toHaveCount(0)
+})
+
+test('hosting provider list shows account counts and blocks deleting one still in use', async ({
+  authenticatedPage: page,
+  apiToken,
+}, testInfo) => {
+  const name = `${testInfo.testId} Acme Hosting`
+
+  await page.goto('/domains')
+  await page.getByRole('button', { name: 'Add hosting provider' }).click()
+  await page.getByLabel('Name', { exact: true }).fill(name)
+  await page.getByRole('button', { name: 'Add', exact: true }).click()
+
+  // Scoped to the Hosting providers group specifically - once the account
+  // below exists, other groups on this page could otherwise make an
+  // unscoped page-wide row lookup ambiguous.
+  const hostingProvidersGroup = page.getByRole('group', { name: 'Hosting providers' })
+  const row = hostingProvidersGroup.locator('tbody tr', { hasText: name })
+  await expect(row).toContainText('No accounts')
+  await expect(row.getByRole('button', { name: 'Delete' })).toBeEnabled()
+
+  await apiFetch('/accounts', apiToken, {
+    method: 'POST',
+    body: JSON.stringify({
+      business_name: `${testInfo.testId} Acme`,
+      email: `${testInfo.testId}@example.test`,
+      address_line1: '1 Main St',
+      hosting_provider: name,
+    }),
+  })
+
+  await page.reload()
+  const rowAfter = hostingProvidersGroup.locator('tbody tr', { hasText: name })
+  await expect(rowAfter).toContainText('1 account')
+
+  // Blocked client-side (a disabled button with an explanatory title), not
+  // just server-side - see CLAUDE.md's HostingProviderService.delete_hosting_provider.
+  const deleteButton = rowAfter.getByRole('button', { name: 'Delete' })
+  await expect(deleteButton).toBeDisabled()
+  await expect(deleteButton).toHaveAttribute('title', /still used by 1 account/i)
+})

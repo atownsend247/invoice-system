@@ -1,9 +1,11 @@
 import type {
   Account,
+  AccountStatus,
   BusinessProfile,
   Domain,
   Expense,
   ExpenseAttachment,
+  HostingProvider,
   Invoice,
   InvoiceStatus,
   LoginResult,
@@ -208,6 +210,8 @@ export interface CreateAccountInput {
   town_or_city?: string
   county?: string
   postcode?: string
+  status?: AccountStatus
+  hosting_provider?: string
 }
 
 export function createAccount(input: CreateAccountInput): Promise<Account> {
@@ -283,6 +287,32 @@ export function updateRegistrar(id: string, input: SaveRegistrarInput): Promise<
 
 export function deleteRegistrar(id: string): Promise<void> {
   return request(`/registrars/${id}`, { method: 'DELETE' })
+}
+
+// -- hosting providers ----------------------------------------------------------------
+
+export interface SaveHostingProviderInput {
+  name: string
+  notes?: string
+}
+
+export function listHostingProviders(): Promise<HostingProvider[]> {
+  return request('/hosting-providers')
+}
+
+export function createHostingProvider(input: SaveHostingProviderInput): Promise<HostingProvider> {
+  return request('/hosting-providers', { method: 'POST', body: JSON.stringify(input) })
+}
+
+export function updateHostingProvider(
+  id: string,
+  input: SaveHostingProviderInput,
+): Promise<HostingProvider> {
+  return request(`/hosting-providers/${id}`, { method: 'PUT', body: JSON.stringify(input) })
+}
+
+export function deleteHostingProvider(id: string): Promise<void> {
+  return request(`/hosting-providers/${id}`, { method: 'DELETE' })
 }
 
 // -- quotes ----------------------------------------------------------------
