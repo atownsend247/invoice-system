@@ -1653,5 +1653,74 @@ flow," not a restructuring, whenever it's actually needed.
       are tested the same way) does use the shared organisation, since it
       never actually deletes anything.
 
+## Phase 44 — Account status + hosting provider tracking (done)
+
+- [x] Requested feature: a `status` field on `Account` (new/active/closed)
+      and hosting-provider tracking, managed from the Domains page
+      alongside registrars. Confirmed hosting providers are Account-scoped
+      (not linked to Domain), and picked from a managed reference list -
+      structurally identical to `Registrar`, just for hosting instead of
+      domain registration.
+- [x] Migration 23: `accounts.status TEXT NOT NULL DEFAULT 'active'` (the
+      backfill value for every *pre-existing* account - it already has
+      history, unlike one created fresh from here on, which
+      `AccountService.create_account` defaults to `'new'` explicitly),
+      nullable `accounts.hosting_provider TEXT`, and a brand new
+      `hosting_providers` table (mirroring `registrars` exactly). New
+      `AccountStatus` enum, `HostingProvider`/`HostingProviderUsage`
+      dataclasses (the latter mirroring `RegistrarUsage` but with only
+      `account_count` - no `domain_count`, since a hosting provider isn't
+      a `Domain`-level concern).
+- [x] `AccountService.create_account`/`update_account` gain `status`
+      (optional, defaults `AccountStatus.NEW` in both - "full replace"
+      means an update that omits it reverts to `new`, same as every other
+      optional field on that method) and `hosting_provider` (optional,
+      `_blank_to_none`-normalised, same as the address lines). New
+      `HostingProviderService` (`core.py`), a line-for-line structural
+      mirror of `RegistrarService` - `create/get/list/update/
+      delete_hosting_provider`, `list_hosting_providers_with_usage`/
+      `get_hosting_provider_usage`, `delete_hosting_provider` refusing
+      (`Conflict`) while `account_count > 0`.
+- [x] `PUT /accounts/{id}`'s existing `AccountIn` schema gains `status`/
+      `hosting_provider` (no separate create/update schema needed - every
+      other field already shares one). New `POST`/`GET`/`PUT`/`DELETE
+      /hosting-providers[/{id}]`, mirroring the registrar routes exactly.
+      CLI: `account create`/`account update` gain `--status`
+      (`click.Choice`, default `new`) and `--hosting-provider`; new
+      `hosting-provider create/list/update/delete` command group.
+- [x] Web UI: `StatusBadge` (already used by Quote/Invoice) extended to
+      accept `AccountStatus` too, with new `.status-new`/`.status-active`/
+      `.status-closed` CSS classes. `AccountsPage.tsx` gains a Status
+      column; `AccountDetailPage.tsx` shows the badge in its header and
+      `hosting_provider` in its details list. `AccountForm.tsx` gains a
+      Status `<select>` and a Hosting provider `<select>` (a real "None"
+      option, not required, unlike `DomainForm.tsx`'s Registrar field) -
+      the latter takes a `hostingProviders` prop (fetched once by the
+      caller) and applies the identical stale-value-prepending fallback
+      `DomainForm.tsx` already established for `registrar`. New
+      `components/HostingProviderForm.tsx` (mirrors `RegistrarForm.tsx`).
+      `DomainsPage.tsx` gains a third stacked section, "Hosting
+      providers" (mirrors its own "Registrars" section exactly).
+- [x] Demo data: two named accounts customised with an explicit
+      `status`/`hosting_provider` (Northwind Traders: active + Acme
+      Hosting; Fenwick & Vale: active + SiteGround; Blue Harbour
+      Consulting: closed), the rest left at the default - showing off the
+      feature without making every seeded account a special case. Two
+      hosting providers seeded (`Acme Hosting`, `SiteGround`), same
+      pattern as the existing registrar seeding.
+- [x] Found in passing while wiring this up: the migration-5 test
+      (`test_migration_5_splits_account_address_into_structured_fields_
+      and_preserves_data`) called `repository.get_account()`, which now
+      unconditionally reads `accounts.status`/`hosting_provider` - columns
+      that don't exist on that test's deliberately-frozen-at-migration-5
+      database. Fixed by switching it to a raw SQL read of just the
+      columns migration 5 actually cares about, same pattern the
+      migration 4 test above it already used for an equivalent
+      `get_quote()` conflict.
+- [x] Full backend suite (544 tests, 98.9%+ coverage) and full e2e suite
+      (84 tests) updated and passing, including a `--repeat-each=3` stress
+      run of `accounts.spec.ts`/`domains.spec.ts` (both touch the shared
+      organisation's account/hosting-provider/registrar lists).
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

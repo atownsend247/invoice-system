@@ -40,10 +40,10 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | POST | `/auth/register` | public | `{token, email, password}` → the created user (same shape as `/auth/login`'s `user`), `201`. Consumes the invite *before* creating the login, so a `409` (duplicate email) or `422` (e.g. password under 8 characters) still burns it — see Conventions below. `404` for the same three invite-invalid cases as the validate route above. |
 | GET | `/auth/me` | required | The current user for this token. |
 | POST | `/auth/logout` | required | Revoke the current token. `204`. |
-| POST | `/accounts` | required | Create an account in the current user's organisation (business_name, email, address_line1 required; contact_name, phone, address_line2, town_or_city, county, postcode optional). |
+| POST | `/accounts` | required | Create an account in the current user's organisation (business_name, email, address_line1 required; contact_name, phone, address_line2, town_or_city, county, postcode optional; `status` optional, defaults `"new"` - one of `new`/`active`/`closed`; `hosting_provider` optional free text, not validated against the managed hosting-provider list - see Conventions below). |
 | GET | `/accounts` | required | Paginated list of accounts in the current user's organisation - `{items, total}`. `?query=` matches (case-insensitively) business/contact name, email, phone, or any set address line. `?page=`/`?page_size=` (defaults `1`/`20`, `page_size` max `200`) - see Conventions below. |
 | GET | `/accounts/{id}` | required | Fetch one account. 404 if missing *or* it belongs to a different organisation (see `docs/data-model.md`'s "Multi-tenancy"). |
-| PUT | `/accounts/{id}` | required | Replace it (same required/optional fields as create — a full replace, not a partial patch). 404 if missing, 422 on a blank required field. |
+| PUT | `/accounts/{id}` | required | Replace it (same required/optional fields as create — a full replace, not a partial patch, including `status`/`hosting_provider` - a caller that omits either gets the same default as create). 404 if missing, 422 on a blank required field or an invalid `status`. |
 | POST | `/domains` | required | Add a domain to the current user's organisation (`domain_name`, `expiry_date`, `registrar` required; `auto_renew` optional, defaults `false`; `account_id` optional - link it to that account immediately, or leave unset to create it unlinked, see Conventions below). 404 if `account_id` is given but missing/wrong organisation, 422 on a blank `domain_name`/`registrar`. |
 | GET | `/domains` | required | List the organisation's domains, soonest-expiry-first (not the newest-first convention every other list here uses) - a plain array, not paginated (see Conventions below). Optional `?account_id=` filter. No single-domain `GET` route - the list is the only read path, same as `/registrars`. |
 | PUT | `/domains/{domain_id}` | required | Replace a domain's own fields (same as create, minus `account_id` - **never touches the link**, see Conventions below). 404 if missing/wrong organisation, 422 on a blank `domain_name`/`registrar`. |
@@ -54,6 +54,10 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | GET | `/registrars` | required | List the organisation's registrars, alphabetically by name (not the newest-first convention most lists here use) - a plain array, not paginated (see Conventions below). Populates the Domain form's registrar `<select>`, which ignores the `domain_count`/`account_count` fields this same response carries. |
 | PUT | `/registrars/{id}` | required | Replace a registrar (same fields as create - a full replace). 404 if missing/wrong organisation, 422 on a blank `name`. Response's `domain_count`/`account_count` reflect usage under the (possibly just-renamed) current name. |
 | DELETE | `/registrars/{id}` | required | Delete it. 204, 404 if missing/wrong organisation. **409** if at least one domain still names it (`domain_count > 0`) - see Conventions below; no database-level cascade either way, since `Domain.registrar` stores the chosen name as a plain string, not a reference to this row. |
+| POST | `/hosting-providers` | required | Add a hosting provider to the current user's organisation (`name` required; `notes` optional). 422 on a blank `name`. Response includes `account_count` (`0` for a just-created one - see Conventions below). |
+| GET | `/hosting-providers` | required | List the organisation's hosting providers, alphabetically by name - a plain array, not paginated. Populates the Account form's hosting-provider `<select>`. |
+| PUT | `/hosting-providers/{id}` | required | Replace a hosting provider (same fields as create - a full replace). 404 if missing/wrong organisation, 422 on a blank `name`. Response's `account_count` reflects usage under the (possibly just-renamed) current name. |
+| DELETE | `/hosting-providers/{id}` | required | Delete it. 204, 404 if missing/wrong organisation. **409** if at least one account still names it (`account_count > 0`) - see Conventions below; no database-level cascade either way, since `Account.hosting_provider` stores the chosen name as a plain string, not a reference to this row. |
 | POST | `/quotes` | required | Create a draft quote (`account_id` required; `currency` defaults `USD`; `issue_date` optional, defaults to today). `expiry_date` is computed server-side as `issue_date + ` the caller's `BusinessProfile.quote_validity_days` - not a request field. |
 | GET | `/quotes` | required | Paginated list of quotes - `{items, total}`. Optionally filtered by `?account_id=` (exact), `?account_name=` (matches the linked account's business_name, case-insensitively), and/or `?status=` (`draft`/`sent`/`accepted`/`rejected`/`expired`/`converted`). `?page=`/`?page_size=`, same as `/accounts` - see Conventions below. |
 | GET | `/quotes/{id}` | required | Fetch one quote with its line items, `events` (its audit trail, newest-first - see Conventions below), `subtotal`, `tax_total`, and (gross) `total`. |
@@ -315,6 +319,31 @@ See `docs/data-model.md`'s "Demo data" section and `CLAUDE.md`.
   so could always be deleted with nothing breaking, leaving domains
   pointing at a no-longer-listed name would be confusing, so this is an
   application-level guard, not a constraint the database enforces.
+- **`Account.status`**: `new`/`active`/`closed` - a plain lifecycle label
+  with no enforced transition rules (any value can change to any other)
+  and no effect on whether quotes/invoices/expenses/domain-links can be
+  created against the account - presentation only. Defaults to `new` on
+  `POST /accounts`; `PUT /accounts/{id}` treats it like every other
+  optional field on that route (a full replace - omit it and it reverts
+  to `new`, same as omitting `contact_name` clears it).
+- **`Account.hosting_provider`**: a plain nullable string, not a foreign
+  key - same "managed reference list, but the record stores the chosen
+  name" shape as `Domain.registrar`/`Registrar` above, just for hosting
+  instead of domain registration. Genuinely optional (unlike `status`) -
+  many accounts have no hosting tracked at all.
+- **`HostingProvider`**: a business's managed list of hosting providers,
+  used to populate the Account form's hosting-provider `<select>` -
+  structurally identical to `Registrar` (top-level `/hosting-providers`,
+  organisation-wide, `name` required/`notes` optional, editable in place,
+  no database-level cascade on rename since `Account.hosting_provider`
+  stores the chosen name as a plain string). **`account_count`**: every
+  `HostingProviderOut` (create, list, update) includes how many accounts
+  currently name this provider (by its *current* name) - computed at
+  request time, not stored. No `domain_count` the way `Registrar` has - a
+  hosting provider isn't a `Domain`-level concern, only an `Account`-level
+  one. `DELETE /hosting-providers/{id}` is blocked (`409`) while
+  `account_count > 0`, same application-level-guard reasoning as
+  `Registrar`'s own delete guard.
 - **`Expense.issue_date` vs `expense_date`**: `issue_date` is when the
   record was created (a system timestamp, never editable); `expense_date`
   is when the money was actually spent (defaults to today at creation,
