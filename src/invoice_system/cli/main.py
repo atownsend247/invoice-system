@@ -168,7 +168,6 @@ def account() -> None:
 @click.option("--county", default=None)
 @click.option("--postcode", default=None)
 @click.option("--status", type=click.Choice(["new", "active", "closed"]), default="new", show_default=True)
-@click.option("--hosting-provider", default=None)
 @click.pass_obj
 def account_create(
     application: Application,
@@ -183,7 +182,6 @@ def account_create(
     county: str | None,
     postcode: str | None,
     status: str,
-    hosting_provider: str | None,
 ) -> None:
     created = application.accounts.create_account(
         organisation_id=_organisation_id(application, user_id),
@@ -197,7 +195,6 @@ def account_create(
         county=county,
         postcode=postcode,
         status=AccountStatus(status),
-        hosting_provider=hosting_provider,
     )
     click.echo(f"Created account {created.id}: {created.business_name}")
 
@@ -229,7 +226,6 @@ def account_list(application: Application, user_id: str, page: int, page_size: i
 @click.option("--county", default=None)
 @click.option("--postcode", default=None)
 @click.option("--status", type=click.Choice(["new", "active", "closed"]), default="new", show_default=True)
-@click.option("--hosting-provider", default=None)
 @click.pass_obj
 def account_update(
     application: Application,
@@ -245,7 +241,6 @@ def account_update(
     county: str | None,
     postcode: str | None,
     status: str,
-    hosting_provider: str | None,
 ) -> None:
     updated = application.accounts.update_account(
         _organisation_id(application, user_id),
@@ -260,9 +255,97 @@ def account_update(
         county=county,
         postcode=postcode,
         status=AccountStatus(status),
-        hosting_provider=hosting_provider,
     )
     click.echo(f"Updated account {updated.id}: {updated.business_name}")
+
+
+@account.group("hosting-provider")
+def account_hosting_provider() -> None:
+    pass
+
+
+@account_hosting_provider.command("add")
+@click.argument("account_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option("--hosting-provider-id", required=True)
+@click.option("--notes", default=None)
+@click.option("--provider-account-id", default=None)
+@click.option("--provider-email", default=None)
+@click.pass_obj
+def account_hosting_provider_add(
+    application: Application,
+    account_id: str,
+    user_id: str,
+    hosting_provider_id: str,
+    notes: str | None,
+    provider_account_id: str | None,
+    provider_email: str | None,
+) -> None:
+    linked = application.accounts.add_hosting_provider_link(
+        _organisation_id(application, user_id),
+        account_id,
+        hosting_provider_id=hosting_provider_id,
+        notes=notes,
+        provider_account_id=provider_account_id,
+        provider_email=provider_email,
+    )
+    click.echo(f"Linked hosting provider {linked.hosting_provider_name} ({linked.link.id})")
+
+
+@account_hosting_provider.command("list")
+@click.argument("account_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.pass_obj
+def account_hosting_provider_list(application: Application, account_id: str, user_id: str) -> None:
+    for linked in application.accounts.list_hosting_provider_links(
+        _organisation_id(application, user_id), account_id
+    ):
+        provider_account_id = linked.link.provider_account_id or ""
+        click.echo(f"{linked.link.id}\t{linked.hosting_provider_name}\t{provider_account_id}")
+
+
+@account_hosting_provider.command("update")
+@click.argument("account_id")
+@click.argument("link_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.option("--hosting-provider-id", required=True)
+@click.option("--notes", default=None)
+@click.option("--provider-account-id", default=None)
+@click.option("--provider-email", default=None)
+@click.pass_obj
+def account_hosting_provider_update(
+    application: Application,
+    account_id: str,
+    link_id: str,
+    user_id: str,
+    hosting_provider_id: str,
+    notes: str | None,
+    provider_account_id: str | None,
+    provider_email: str | None,
+) -> None:
+    linked = application.accounts.update_hosting_provider_link(
+        _organisation_id(application, user_id),
+        account_id,
+        link_id,
+        hosting_provider_id=hosting_provider_id,
+        notes=notes,
+        provider_account_id=provider_account_id,
+        provider_email=provider_email,
+    )
+    click.echo(f"Updated hosting provider link {linked.link.id}")
+
+
+@account_hosting_provider.command("remove")
+@click.argument("account_id")
+@click.argument("link_id")
+@click.option("--user-id", required=True, help=_USER_ID_HELP)
+@click.pass_obj
+def account_hosting_provider_remove(
+    application: Application, account_id: str, link_id: str, user_id: str
+) -> None:
+    organisation_id = _organisation_id(application, user_id)
+    application.accounts.delete_hosting_provider_link(organisation_id, account_id, link_id)
+    click.echo(f"Removed hosting provider link {link_id}")
 
 
 @cli.group()

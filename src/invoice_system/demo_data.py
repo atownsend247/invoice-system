@@ -75,10 +75,9 @@ class _DemoAccount:
     county: str | None = None
     postcode: str | None = None
     # Left at the AccountService default ("new") for most accounts below -
-    # only a couple are customised, showing off the status/hosting-provider
-    # fields without making every single seeded account a special case.
+    # only a couple are customised, showing off the status field without
+    # making every single seeded account a special case.
     status: str = "new"
-    hosting_provider: str | None = None
 
 
 _NAMED_ACCOUNTS = [
@@ -91,7 +90,6 @@ _NAMED_ACCOUNTS = [
         town_or_city="London",
         postcode="SW1A 1AA",
         status="active",
-        hosting_provider="Acme Hosting",
     ),
     _DemoAccount(
         "Blue Harbour Consulting",
@@ -114,7 +112,6 @@ _NAMED_ACCOUNTS = [
         county="Greater Manchester",
         postcode="M1 2WD",
         status="active",
-        hosting_provider="SiteGround",
     ),
     _DemoAccount(
         "Orchard Studio",
@@ -509,7 +506,6 @@ def seed_demo_data(application: Application, auth: Auth, *, now: datetime | None
             county=a.county,
             postcode=a.postcode,
             status=AccountStatus(a.status),
-            hosting_provider=a.hosting_provider,
         ).id
         for a in _ACCOUNTS
     ]
@@ -520,13 +516,37 @@ def seed_demo_data(application: Application, auth: Auth, *, now: datetime | None
     registrars.create_registrar(organisation_id, name="123-Reg", notes="https://www.123-reg.co.uk")
     registrars.create_registrar(organisation_id, name="GoDaddy")
 
-    # The managed hosting-provider list Northwind Traders/Fenwick & Vale
-    # above pick from - also shown on the standalone Domains page, even
-    # though it's an Account field, not a Domain one (confirmed with the
-    # user - see CLAUDE.md).
+    # The managed hosting-provider list, linked to accounts below via
+    # AccountHostingProvider - an account can link more than one (e.g. one
+    # for the website, one for email), each with its own notes/account-
+    # reference/email metadata (confirmed with the user - see CLAUDE.md).
     hosting_providers = HostingProviderService(application.repository, clock=lambda: now)
-    hosting_providers.create_hosting_provider(organisation_id, name="Acme Hosting")
-    hosting_providers.create_hosting_provider(organisation_id, name="SiteGround")
+    acme_hosting = hosting_providers.create_hosting_provider(organisation_id, name="Acme Hosting")
+    siteground = hosting_providers.create_hosting_provider(organisation_id, name="SiteGround")
+
+    accounts.add_hosting_provider_link(
+        organisation_id,
+        account_ids[0],
+        hosting_provider_id=acme_hosting.id,
+        notes="Shared hosting plan for the main website",
+        provider_account_id="ACME-88213",
+        provider_email="billing@northwindtraders.test",
+    )
+    accounts.add_hosting_provider_link(
+        organisation_id,
+        account_ids[0],
+        hosting_provider_id=siteground.id,
+        notes="Mailbox hosting only",
+        provider_account_id="SG-4471290",
+        provider_email="billing@northwindtraders.test",
+    )
+    accounts.add_hosting_provider_link(
+        organisation_id,
+        account_ids[2],
+        hosting_provider_id=siteground.id,
+        provider_account_id="SG-9012344",
+        provider_email="sarah@fenwickvale.test",
+    )
 
     # A couple of domains, on a couple of accounts - not every account has
     # one, same "not every account needs every kind of child record" spirit

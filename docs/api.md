@@ -40,10 +40,14 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | POST | `/auth/register` | public | `{token, email, password}` → the created user (same shape as `/auth/login`'s `user`), `201`. Consumes the invite *before* creating the login, so a `409` (duplicate email) or `422` (e.g. password under 8 characters) still burns it — see Conventions below. `404` for the same three invite-invalid cases as the validate route above. |
 | GET | `/auth/me` | required | The current user for this token. |
 | POST | `/auth/logout` | required | Revoke the current token. `204`. |
-| POST | `/accounts` | required | Create an account in the current user's organisation (business_name, email, address_line1 required; contact_name, phone, address_line2, town_or_city, county, postcode optional; `status` optional, defaults `"new"` - one of `new`/`active`/`closed`; `hosting_provider` optional free text, not validated against the managed hosting-provider list - see Conventions below). |
+| POST | `/accounts` | required | Create an account in the current user's organisation (business_name, email, address_line1 required; contact_name, phone, address_line2, town_or_city, county, postcode optional; `status` optional, defaults `"new"` - one of `new`/`active`/`closed`). |
 | GET | `/accounts` | required | Paginated list of accounts in the current user's organisation - `{items, total}`. `?query=` matches (case-insensitively) business/contact name, email, phone, or any set address line. `?page=`/`?page_size=` (defaults `1`/`20`, `page_size` max `200`) - see Conventions below. |
 | GET | `/accounts/{id}` | required | Fetch one account. 404 if missing *or* it belongs to a different organisation (see `docs/data-model.md`'s "Multi-tenancy"). |
-| PUT | `/accounts/{id}` | required | Replace it (same required/optional fields as create — a full replace, not a partial patch, including `status`/`hosting_provider` - a caller that omits either gets the same default as create). 404 if missing, 422 on a blank required field or an invalid `status`. |
+| PUT | `/accounts/{id}` | required | Replace it (same required/optional fields as create — a full replace, not a partial patch, including `status` - a caller that omits it gets the same default as create). 404 if missing, 422 on a blank required field or an invalid `status`. |
+| POST | `/accounts/{account_id}/hosting-providers` | required | Link a hosting provider to an account (`hosting_provider_id` required; `notes`, `provider_account_id`, `provider_email` all optional free text - see the `AccountHostingProvider` Convention below). `201` with the created link (includes `hosting_provider_name`, resolved server-side). 404 if the account or the hosting provider is missing/wrong organisation. The same account can link the same or a different hosting provider more than once - there's no uniqueness constraint. |
+| GET | `/accounts/{account_id}/hosting-providers` | required | List this account's hosting-provider links - a plain array, not paginated. 404 if the account is missing/wrong organisation. |
+| PUT | `/accounts/{account_id}/hosting-providers/{link_id}` | required | Replace a link's own fields (same body as create, including which `hosting_provider_id` it points at - a full replace). 404 if the account/link/hosting-provider doesn't resolve under the caller's organisation. |
+| DELETE | `/accounts/{account_id}/hosting-providers/{link_id}` | required | Remove the link (the hosting provider itself is untouched). `204`, 404 if missing/wrong organisation. |
 | POST | `/domains` | required | Add a domain to the current user's organisation (`domain_name`, `expiry_date`, `registrar` required; `auto_renew` optional, defaults `false`; `account_id` optional - link it to that account immediately, or leave unset to create it unlinked, see Conventions below). 404 if `account_id` is given but missing/wrong organisation, 422 on a blank `domain_name`/`registrar`. |
 | GET | `/domains` | required | List the organisation's domains, soonest-expiry-first (not the newest-first convention every other list here uses) - a plain array, not paginated (see Conventions below). Optional `?account_id=` filter. No single-domain `GET` route - the list is the only read path, same as `/registrars`. |
 | PUT | `/domains/{domain_id}` | required | Replace a domain's own fields (same as create, minus `account_id` - **never touches the link**, see Conventions below). 404 if missing/wrong organisation, 422 on a blank `domain_name`/`registrar`. |
@@ -55,9 +59,9 @@ port in dev, and likely a different origin in prod) can call this API at all.
 | PUT | `/registrars/{id}` | required | Replace a registrar (same fields as create - a full replace). 404 if missing/wrong organisation, 422 on a blank `name`. Response's `domain_count`/`account_count` reflect usage under the (possibly just-renamed) current name. |
 | DELETE | `/registrars/{id}` | required | Delete it. 204, 404 if missing/wrong organisation. **409** if at least one domain still names it (`domain_count > 0`) - see Conventions below; no database-level cascade either way, since `Domain.registrar` stores the chosen name as a plain string, not a reference to this row. |
 | POST | `/hosting-providers` | required | Add a hosting provider to the current user's organisation (`name` required; `notes` optional). 422 on a blank `name`. Response includes `account_count` (`0` for a just-created one - see Conventions below). |
-| GET | `/hosting-providers` | required | List the organisation's hosting providers, alphabetically by name - a plain array, not paginated. Populates the Account form's hosting-provider `<select>`. |
-| PUT | `/hosting-providers/{id}` | required | Replace a hosting provider (same fields as create - a full replace). 404 if missing/wrong organisation, 422 on a blank `name`. Response's `account_count` reflects usage under the (possibly just-renamed) current name. |
-| DELETE | `/hosting-providers/{id}` | required | Delete it. 204, 404 if missing/wrong organisation. **409** if at least one account still names it (`account_count > 0`) - see Conventions below; no database-level cascade either way, since `Account.hosting_provider` stores the chosen name as a plain string, not a reference to this row. |
+| GET | `/hosting-providers` | required | List the organisation's hosting providers, alphabetically by name - a plain array, not paginated. Populates the "link a hosting provider" `<select>` on an account's page. |
+| PUT | `/hosting-providers/{id}` | required | Replace a hosting provider (same fields as create - a full replace). 404 if missing/wrong organisation, 422 on a blank `name`. Response's `account_count` reflects usage - unaffected by a rename, since links reference this row's id, not its name (see Conventions below). |
+| DELETE | `/hosting-providers/{id}` | required | Delete it. 204, 404 if missing/wrong organisation. **409** if at least one `AccountHostingProvider` link still references it (`account_count > 0`) - see Conventions below; no database-level cascade either way. |
 | POST | `/quotes` | required | Create a draft quote (`account_id` required; `currency` defaults `USD`; `issue_date` optional, defaults to today). `expiry_date` is computed server-side as `issue_date + ` the caller's `BusinessProfile.quote_validity_days` - not a request field. |
 | GET | `/quotes` | required | Paginated list of quotes - `{items, total}`. Optionally filtered by `?account_id=` (exact), `?account_name=` (matches the linked account's business_name, case-insensitively), and/or `?status=` (`draft`/`sent`/`accepted`/`rejected`/`expired`/`converted`). `?page=`/`?page_size=`, same as `/accounts` - see Conventions below. |
 | GET | `/quotes/{id}` | required | Fetch one quote with its line items, `events` (its audit trail, newest-first - see Conventions below), `subtotal`, `tax_total`, and (gross) `total`. |
@@ -134,12 +138,19 @@ independently now, same as the API (see the `Domain` Convention below);
 `domain link <domain_id> --account-id`/`domain unlink <domain_id>` are new,
 mirroring `POST /domains/{id}/link|unlink`. `account create`/`account
 update` take `--status` (`click.Choice(["new", "active", "closed"])`,
-defaults `new`) and `--hosting-provider` (free text, not validated
-against the managed `hosting-provider` list the way the web UI's
-`<select>` is - see the `Account.status`/`HostingProvider` Conventions
-below). `hosting-provider create/list/update/delete` mirror `registrar`'s
-own commands exactly, one accounts-only field removed (`hosting-provider
-list` prints account counts, not domain-and-account counts).
+defaults `new` - see the `Account.status` Convention below).
+`hosting-provider create/list/update/delete` mirror `registrar`'s own
+commands exactly, one accounts-only field removed (`hosting-provider
+list` prints account counts, not domain-and-account counts). `account
+hosting-provider add/list/update/remove <account_id> [<link_id>]
+--user-id` mirror `POST`/`GET`/`PUT`/`DELETE
+/accounts/{account_id}/hosting-providers[/{link_id}]` - see the
+`AccountHostingProvider` Convention below; `add`/`update` also take
+`--hosting-provider-id` (required) and `--notes`/`--provider-account-id`/
+`--provider-email` (all optional), and `add` echoes the new link's id
+(`Linked hosting provider <name> (<id>)`) the same way `expense add-item`/
+`quote add-item` echo a new line item's id, since a later `update`/`remove`
+call needs it.
 `expense add-item`/`quote add-item` both echo the new line item's id
 (`Added line item <id>`) - the two `add-*` commands that do, since their
 matching `update-item`/`delete-item <parent_id> <item_id>` commands need
@@ -326,24 +337,41 @@ See `docs/data-model.md`'s "Demo data" section and `CLAUDE.md`.
   `POST /accounts`; `PUT /accounts/{id}` treats it like every other
   optional field on that route (a full replace - omit it and it reverts
   to `new`, same as omitting `contact_name` clears it).
-- **`Account.hosting_provider`**: a plain nullable string, not a foreign
-  key - same "managed reference list, but the record stores the chosen
-  name" shape as `Domain.registrar`/`Registrar` above, just for hosting
-  instead of domain registration. Genuinely optional (unlike `status`) -
-  many accounts have no hosting tracked at all.
+- **`AccountHostingProvider`**: a hosting provider linked to an account,
+  with its own metadata - an account can link the same provider more than
+  once (e.g. two separate hosting accounts held there) or several
+  different ones (e.g. one for the website, one for email). Replaces what
+  used to be a single `Account.hosting_provider` string field (migration
+  24 dropped that column and backfilled one link per account that had a
+  value set). Referenced by `hosting_provider_id`, not a name - unlike
+  `Domain.registrar`/`Account.hosting_provider`'s old plain-string
+  convention above, this is a dedicated link row rather than a single
+  field on the parent, so there's no name-drift tradeoff to accept:
+  renaming a `HostingProvider` is reflected in every existing link
+  immediately. `notes` (free text, e.g. a support URL or plan tier),
+  `provider_account_id` (the customer/account reference *this business*
+  has at that provider - not this app's own `Account.id`), and
+  `provider_email` (the email used for that provider) are all optional,
+  captured when linking and editable afterwards via `PUT
+  /accounts/{account_id}/hosting-providers/{link_id}` (a full replace,
+  including which `hosting_provider_id` it points at). No `organisation_id`
+  of its own - tenant ownership is resolved via the parent `Account` first,
+  same shape as `ExpenseAttachment`.
 - **`HostingProvider`**: a business's managed list of hosting providers,
-  used to populate the Account form's hosting-provider `<select>` -
-  structurally identical to `Registrar` (top-level `/hosting-providers`,
-  organisation-wide, `name` required/`notes` optional, editable in place,
-  no database-level cascade on rename since `Account.hosting_provider`
-  stores the chosen name as a plain string). **`account_count`**: every
-  `HostingProviderOut` (create, list, update) includes how many accounts
-  currently name this provider (by its *current* name) - computed at
-  request time, not stored. No `domain_count` the way `Registrar` has - a
-  hosting provider isn't a `Domain`-level concern, only an `Account`-level
-  one. `DELETE /hosting-providers/{id}` is blocked (`409`) while
-  `account_count > 0`, same application-level-guard reasoning as
-  `Registrar`'s own delete guard.
+  used to populate the "link a hosting provider" `<select>` on an
+  account's page - structurally identical to `Registrar` (top-level
+  `/hosting-providers`, organisation-wide, `name` required/`notes`
+  optional, editable in place). **`account_count`**: every
+  `HostingProviderOut` (create, list, update) includes how many distinct
+  accounts currently link this provider (via `AccountHostingProvider.
+  hosting_provider_id`, a real reference - not a name match, so unlike
+  `Registrar`'s `domain_count` above, a rename doesn't lose the count) -
+  computed at request time, not stored; an account linking the same
+  provider twice still only counts once. No `domain_count` the way
+  `Registrar` has - a hosting provider isn't a `Domain`-level concern,
+  only an `Account`-level one. `DELETE /hosting-providers/{id}` is blocked
+  (`409`) while `account_count > 0`, same application-level-guard
+  reasoning as `Registrar`'s own delete guard.
 - **`Expense.issue_date` vs `expense_date`**: `issue_date` is when the
   record was created (a system timestamp, never editable); `expense_date`
   is when the money was actually spent (defaults to today at creation,

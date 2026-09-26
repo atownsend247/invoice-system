@@ -6,6 +6,8 @@ from pathlib import Path
 
 from ..models import (
     Account,
+    AccountHostingProvider,
+    AccountHostingProviderWithName,
     AccountStatus,
     ActivityEvent,
     ActivityEventType,
@@ -100,7 +102,7 @@ class SqliteRepository:
             self._conn.execute(
                 "INSERT INTO accounts (id, organisation_id, business_name, contact_name, email, phone, "
                 "address_line1, address_line2, town_or_city, county, postcode, status, "
-                "hosting_provider, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     account.id,
                     account.organisation_id,
@@ -114,7 +116,6 @@ class SqliteRepository:
                     account.county,
                     account.postcode,
                     account.status.value,
-                    account.hosting_provider,
                     account.created_at.isoformat(),
                 ),
             )
@@ -179,7 +180,7 @@ class SqliteRepository:
             self._conn.execute(
                 "UPDATE accounts SET business_name = ?, contact_name = ?, email = ?, phone = ?, "
                 "address_line1 = ?, address_line2 = ?, town_or_city = ?, county = ?, postcode = ?, "
-                "status = ?, hosting_provider = ? WHERE id = ? AND organisation_id = ?",
+                "status = ? WHERE id = ? AND organisation_id = ?",
                 (
                     account.business_name,
                     account.contact_name,
@@ -191,7 +192,6 @@ class SqliteRepository:
                     account.county,
                     account.postcode,
                     account.status.value,
-                    account.hosting_provider,
                     account.id,
                     account.organisation_id,
                 ),
@@ -214,8 +214,93 @@ class SqliteRepository:
             county=row["county"],
             postcode=row["postcode"],
             status=AccountStatus(row["status"]),
-            hosting_provider=row["hosting_provider"],
             created_at=datetime.fromisoformat(row["created_at"]),
+        )
+
+    # -- Account hosting providers ----------------------------------------------
+
+    def create_account_hosting_provider(self, link: AccountHostingProvider) -> AccountHostingProvider:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO account_hosting_providers "
+                "(id, account_id, hosting_provider_id, notes, provider_account_id, provider_email, "
+                "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    link.id,
+                    link.account_id,
+                    link.hosting_provider_id,
+                    link.notes,
+                    link.provider_account_id,
+                    link.provider_email,
+                    link.created_at.isoformat(),
+                    link.updated_at.isoformat(),
+                ),
+            )
+            self._conn.commit()
+            return link
+
+    def get_account_hosting_provider(self, account_id: str, link_id: str) -> AccountHostingProvider | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM account_hosting_providers WHERE id = ? AND account_id = ?",
+                (link_id, account_id),
+            ).fetchone()
+        return self._row_to_account_hosting_provider(row) if row else None
+
+    def list_account_hosting_providers(self, account_id: str) -> list[AccountHostingProviderWithName]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT ahp.*, hp.name AS hosting_provider_name FROM account_hosting_providers ahp "
+                "JOIN hosting_providers hp ON hp.id = ahp.hosting_provider_id "
+                "WHERE ahp.account_id = ? ORDER BY ahp.rowid",
+                (account_id,),
+            ).fetchall()
+        return [
+            AccountHostingProviderWithName(
+                link=self._row_to_account_hosting_provider(row),
+                hosting_provider_name=row["hosting_provider_name"],
+            )
+            for row in rows
+        ]
+
+    def update_account_hosting_provider(self, link: AccountHostingProvider) -> AccountHostingProvider:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE account_hosting_providers SET hosting_provider_id = ?, notes = ?, "
+                "provider_account_id = ?, provider_email = ?, updated_at = ? "
+                "WHERE id = ? AND account_id = ?",
+                (
+                    link.hosting_provider_id,
+                    link.notes,
+                    link.provider_account_id,
+                    link.provider_email,
+                    link.updated_at.isoformat(),
+                    link.id,
+                    link.account_id,
+                ),
+            )
+            self._conn.commit()
+            return link
+
+    def delete_account_hosting_provider(self, account_id: str, link_id: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM account_hosting_providers WHERE id = ? AND account_id = ?",
+                (link_id, account_id),
+            )
+            self._conn.commit()
+
+    @staticmethod
+    def _row_to_account_hosting_provider(row: sqlite3.Row) -> AccountHostingProvider:
+        return AccountHostingProvider(
+            id=row["id"],
+            account_id=row["account_id"],
+            hosting_provider_id=row["hosting_provider_id"],
+            notes=row["notes"],
+            provider_account_id=row["provider_account_id"],
+            provider_email=row["provider_email"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
         )
 
     # -- Domains ---------------------------------------------------------------
@@ -465,16 +550,22 @@ class SqliteRepository:
             self._conn.commit()
 
     def count_accounts_by_hosting_provider(self, organisation_id: str) -> dict[str, int]:
-        # Only hosting provider names actually used by at least one account
-        # appear in the result - callers treat a missing key as 0, not an
-        # error (same convention as count_domains_by_registrar).
+        # Keyed by hosting_provider_id (a real reference, not a name - see
+        # AccountHostingProvider's docstring) - only providers actually
+        # linked from at least one account appear in the result, callers
+        # treat a missing key as 0, not an error (same convention as
+        # count_domains_by_registrar). COUNT(DISTINCT account_id) so an
+        # account linked twice to the same provider still only counts once.
         with self._lock:
             rows = self._conn.execute(
-                "SELECT hosting_provider, COUNT(*) AS account_count FROM accounts "
-                "WHERE organisation_id = ? AND hosting_provider IS NOT NULL GROUP BY hosting_provider",
+                "SELECT ahp.hosting_provider_id AS hosting_provider_id, "
+                "COUNT(DISTINCT ahp.account_id) AS account_count "
+                "FROM account_hosting_providers ahp "
+                "JOIN hosting_providers hp ON hp.id = ahp.hosting_provider_id "
+                "WHERE hp.organisation_id = ? GROUP BY ahp.hosting_provider_id",
                 (organisation_id,),
             ).fetchall()
-        return {row["hosting_provider"]: row["account_count"] for row in rows}
+        return {row["hosting_provider_id"]: row["account_count"] for row in rows}
 
     @staticmethod
     def _row_to_hosting_provider(row: sqlite3.Row) -> HostingProvider:

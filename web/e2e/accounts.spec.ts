@@ -110,7 +110,21 @@ test('editing an account through the form pre-fills its current values and persi
   await expect(page.getByText('Bristol')).toBeVisible()
 })
 
-test('a new account defaults to New status, editable afterwards alongside hosting provider', async ({
+test('a new account defaults to New status, editable afterwards', async ({
+  authenticatedPage: page,
+  testAccount,
+}) => {
+  await page.goto(`/accounts/${testAccount.id}`)
+  await expect(page.locator('.page-header').getByText('new', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByLabel('Status').selectOption('active')
+  await page.getByRole('button', { name: 'Save' }).click()
+
+  await expect(page.locator('.page-header').getByText('active', { exact: true })).toBeVisible()
+})
+
+test('linking, editing, and removing a hosting provider on an account', async ({
   authenticatedPage: page,
   testAccount,
   apiToken,
@@ -118,22 +132,41 @@ test('a new account defaults to New status, editable afterwards alongside hostin
   // Created before navigating - AccountDetailPage.tsx fetches the hosting
   // provider list once on load, so creating it after the page has already
   // loaded wouldn't show up as an option without a reload.
-  const hostingProviderName = `${testInfo.testId} Acme Hosting`
+  const acmeName = `${testInfo.testId} Acme Hosting`
+  const siteGroundName = `${testInfo.testId} SiteGround`
   await apiFetch('/hosting-providers', apiToken, {
     method: 'POST',
-    body: JSON.stringify({ name: hostingProviderName }),
+    body: JSON.stringify({ name: acmeName }),
+  })
+  await apiFetch('/hosting-providers', apiToken, {
+    method: 'POST',
+    body: JSON.stringify({ name: siteGroundName }),
   })
 
   await page.goto(`/accounts/${testAccount.id}`)
-  await expect(page.locator('.page-header').getByText('new', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Add hosting provider' }).click()
+  await page.getByLabel('Hosting provider').selectOption(acmeName)
+  await page.getByLabel('Notes (optional)').fill('Website hosting')
+  await page.getByLabel('Provider account/customer reference (optional)').fill('ACME-123')
+  await page.getByRole('button', { name: 'Add', exact: true }).click()
 
-  await page.getByRole('button', { name: 'Edit' }).click()
-  await page.getByLabel('Status').selectOption('active')
-  await page.getByLabel('Hosting provider (optional)').selectOption(hostingProviderName)
-  await page.getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByRole('row', { name: new RegExp(acmeName) })).toBeVisible()
+  await expect(page.getByText('Website hosting')).toBeVisible()
+  await expect(page.getByText('ACME-123')).toBeVisible()
 
-  await expect(page.locator('.page-header').getByText('active', { exact: true })).toBeVisible()
-  await expect(page.getByText(hostingProviderName)).toBeVisible()
+  await page.getByRole('row', { name: new RegExp(acmeName) }).getByRole('button', { name: 'Edit' }).click()
+  await page.getByLabel('Hosting provider').selectOption(siteGroundName)
+  await page.getByLabel('Notes (optional)').fill('Mailbox only')
+  await page.getByRole('button', { name: 'Update' }).click()
+
+  await expect(page.getByRole('row', { name: new RegExp(siteGroundName) })).toBeVisible()
+  await expect(page.getByText('Mailbox only')).toBeVisible()
+
+  await page
+    .getByRole('row', { name: new RegExp(siteGroundName) })
+    .getByRole('button', { name: 'Remove' })
+    .click()
+  await expect(page.getByText('No hosting providers linked yet.')).toBeVisible()
 })
 
 test('cancelling an edit discards changes', async ({ authenticatedPage: page, testAccount }) => {

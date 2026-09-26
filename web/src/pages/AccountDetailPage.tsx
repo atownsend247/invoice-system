@@ -3,9 +3,10 @@ import { Link, useParams } from 'react-router-dom'
 import { accountAddressLines } from '../accountAddress'
 import * as api from '../api'
 import { AccountForm } from '../components/AccountForm'
+import { AccountHostingProviderForm } from '../components/AccountHostingProviderForm'
 import { StatusBadge } from '../components/StatusBadge'
 import { errorMessage, useAsync } from '../hooks/useAsync'
-import type { Domain, Expense, Invoice, Quote } from '../types'
+import type { AccountHostingProvider, Domain, Expense, HostingProvider, Invoice, Quote } from '../types'
 
 /** Newest first by issue_date (the "when this was created" convention used
  * throughout - see CLAUDE.md). Ids are random UUID4s now (see CLAUDE.md),
@@ -51,9 +52,15 @@ export function AccountDetailPage() {
     [accountId],
   )
   const { data: allDomains, refetch: refetchAllDomains } = useAsync(() => api.listDomains(), [])
-  // Fetched once here, not per AccountForm instance - same reasoning as
-  // DomainsPage.tsx's own registrars fetch for DomainForm.
+  // The managed hosting-provider list (see the Domains page's own Hosting
+  // providers section) - fetched once here, not per
+  // AccountHostingProviderForm instance, same reasoning as DomainsPage.tsx's
+  // own registrars fetch for DomainForm.
   const { data: hostingProviders } = useAsync(() => api.listHostingProviders(), [])
+  const { data: hostingProviderLinks, refetch: refetchHostingProviderLinks } = useAsync(
+    () => api.listAccountHostingProviders(accountId ?? ''),
+    [accountId],
+  )
   const [editing, setEditing] = useState(false)
 
   function refetchBothDomainLists() {
@@ -85,7 +92,6 @@ export function AccountDetailPage() {
       {editing ? (
         <AccountForm
           initial={account}
-          hostingProviders={hostingProviders ?? []}
           submitLabel="Save"
           submittingLabel="Saving…"
           onSubmit={(input) => api.updateAccount(account.id, input)}
@@ -121,10 +127,6 @@ export function AccountDetailPage() {
                 </span>
               ))}
             </dd>
-          </div>
-          <div>
-            <dt>Hosting provider</dt>
-            <dd>{account.hosting_provider ?? '—'}</dd>
           </div>
         </dl>
       )}
@@ -180,7 +182,149 @@ export function AccountDetailPage() {
           <DomainsTable domains={domains} onUnlinked={refetchBothDomainLists} />
         )}
       </div>
+
+      <div className="dashboard-section">
+        <div className="page-header">
+          <h2>Hosting providers</h2>
+        </div>
+        <HostingProviderLinksSection
+          accountId={account.id}
+          links={hostingProviderLinks ?? []}
+          hostingProviders={hostingProviders ?? []}
+          loading={!hostingProviderLinks}
+          onChanged={refetchHostingProviderLinks}
+        />
+      </div>
     </section>
+  )
+}
+
+/** This account's linked hosting providers - full add/edit/remove, unlike
+ * the Domains section above (which is link/unlink only, since domain
+ * fields themselves are managed on the standalone Domains page). A
+ * hosting-provider link has no separate "own fields" page to defer to, so
+ * its notes/provider-reference/email are editable right here, same
+ * add-form-plus-per-row-edit shape as DomainForm.tsx/RegistrarForm.tsx. */
+function HostingProviderLinksSection({
+  accountId,
+  links,
+  hostingProviders,
+  loading,
+  onChanged,
+}: {
+  accountId: string
+  links: AccountHostingProvider[]
+  hostingProviders: HostingProvider[]
+  loading: boolean
+  onChanged: () => void
+}) {
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [editingLink, setEditingLink] = useState<AccountHostingProvider | null>(null)
+  const [removingId, setRemovingId] = useState<string | null>(null)
+  const [removeError, setRemoveError] = useState<string | null>(null)
+
+  async function handleRemove(link: AccountHostingProvider) {
+    setRemoveError(null)
+    setRemovingId(link.id)
+    try {
+      await api.deleteAccountHostingProvider(accountId, link.id)
+      onChanged()
+    } catch (err) {
+      setRemoveError(errorMessage(err))
+    } finally {
+      setRemovingId(null)
+    }
+  }
+
+  return (
+    <>
+      {!showAddForm && !editingLink && (
+        <button type="button" onClick={() => setShowAddForm(true)}>
+          Add hosting provider
+        </button>
+      )}
+      {showAddForm && (
+        <AccountHostingProviderForm
+          hostingProviders={hostingProviders}
+          submitLabel="Add"
+          submittingLabel="Adding…"
+          onSubmit={(input) => api.addAccountHostingProvider(accountId, input)}
+          onDone={() => {
+            setShowAddForm(false)
+            onChanged()
+          }}
+          onCancel={() => setShowAddForm(false)}
+        />
+      )}
+
+      {loading && <p>Loading…</p>}
+      {!loading && links.length === 0 && !showAddForm && (
+        <p className="meta">No hosting providers linked yet.</p>
+      )}
+      {removeError && (
+        <p className="form-error" role="alert">
+          {removeError}
+        </p>
+      )}
+      {links.length > 0 && (
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Provider</th>
+                <th>Notes</th>
+                <th>Provider account/customer ref</th>
+                <th>Email</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {links.map((link) =>
+                editingLink?.id === link.id ? (
+                  <tr key={link.id}>
+                    <td colSpan={5}>
+                      <AccountHostingProviderForm
+                        key={link.id}
+                        initial={link}
+                        hostingProviders={hostingProviders}
+                        submitLabel="Update"
+                        submittingLabel="Updating…"
+                        onSubmit={(input) => api.updateAccountHostingProvider(accountId, link.id, input)}
+                        onDone={() => {
+                          setEditingLink(null)
+                          onChanged()
+                        }}
+                        onCancel={() => setEditingLink(null)}
+                      />
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={link.id}>
+                    <td>{link.hosting_provider_name}</td>
+                    <td>{link.notes ?? '—'}</td>
+                    <td>{link.provider_account_id ?? '—'}</td>
+                    <td>{link.provider_email ?? '—'}</td>
+                    <td>
+                      <button type="button" className="secondary" onClick={() => setEditingLink(link)}>
+                        Edit
+                      </button>{' '}
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => handleRemove(link)}
+                        disabled={removingId === link.id}
+                      >
+                        {removingId === link.id ? 'Removing…' : 'Remove'}
+                      </button>
+                    </td>
+                  </tr>
+                ),
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
   )
 }
 

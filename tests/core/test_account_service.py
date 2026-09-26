@@ -251,20 +251,18 @@ def test_create_account_defaults_status_to_new(application, organisation_id):
     assert account.status == AccountStatus.NEW
 
 
-def test_create_account_accepts_an_explicit_status_and_hosting_provider(application, organisation_id):
+def test_create_account_accepts_an_explicit_status(application, organisation_id):
     account = application.accounts.create_account(
         organisation_id=organisation_id,
         business_name="Acme Co",
         email="a@b.test",
         address_line1="1 Main St",
         status=AccountStatus.ACTIVE,
-        hosting_provider="Acme Hosting",
     )
     assert account.status == AccountStatus.ACTIVE
-    assert account.hosting_provider == "Acme Hosting"
 
 
-def test_update_account_changes_status_and_hosting_provider(application, organisation_id):
+def test_update_account_changes_status(application, organisation_id):
     created = application.accounts.create_account(
         organisation_id=organisation_id, business_name="Acme Co", email="a@b.test", address_line1="1 Main St"
     )
@@ -277,32 +275,182 @@ def test_update_account_changes_status_and_hosting_provider(application, organis
         email="a@b.test",
         address_line1="1 Main St",
         status=AccountStatus.CLOSED,
-        hosting_provider="Acme Hosting",
     )
     assert updated.status == AccountStatus.CLOSED
-    assert updated.hosting_provider == "Acme Hosting"
 
     fetched = application.accounts.get_account(organisation_id, created.id)
     assert fetched.status == AccountStatus.CLOSED
-    assert fetched.hosting_provider == "Acme Hosting"
 
 
-def test_update_account_clears_hosting_provider_left_blank(application, organisation_id):
-    created = application.accounts.create_account(
-        organisation_id=organisation_id,
-        business_name="Acme Co",
-        email="a@b.test",
-        address_line1="1 Main St",
-        hosting_provider="Acme Hosting",
+def test_add_hosting_provider_link(application, organisation_id):
+    hosting_provider = application.hosting_providers.create_hosting_provider(
+        organisation_id, name="Acme Hosting"
     )
-
-    updated = application.accounts.update_account(
+    account = application.accounts.create_account(
+        organisation_id=organisation_id, business_name="Acme Co", email="a@b.test", address_line1="1 Main St"
+    )
+    linked = application.accounts.add_hosting_provider_link(
         organisation_id,
-        created.id,
-        business_name="Acme Co",
-        email="a@b.test",
-        address_line1="1 Main St",
-        status=AccountStatus.NEW,
-        hosting_provider="   ",
+        account.id,
+        hosting_provider_id=hosting_provider.id,
+        notes="Shared hosting plan",
+        provider_account_id="ACME-123",
+        provider_email="billing@acme.test",
     )
-    assert updated.hosting_provider is None
+    assert linked.link.account_id == account.id
+    assert linked.link.hosting_provider_id == hosting_provider.id
+    assert linked.hosting_provider_name == "Acme Hosting"
+    assert linked.link.notes == "Shared hosting plan"
+    assert linked.link.provider_account_id == "ACME-123"
+    assert linked.link.provider_email == "billing@acme.test"
+
+
+def test_add_hosting_provider_link_notes_and_references_are_optional(application, organisation_id):
+    hosting_provider = application.hosting_providers.create_hosting_provider(
+        organisation_id, name="Acme Hosting"
+    )
+    account = application.accounts.create_account(
+        organisation_id=organisation_id, business_name="Acme Co", email="a@b.test", address_line1="1 Main St"
+    )
+    linked = application.accounts.add_hosting_provider_link(
+        organisation_id, account.id, hosting_provider_id=hosting_provider.id
+    )
+    assert linked.link.notes is None
+    assert linked.link.provider_account_id is None
+    assert linked.link.provider_email is None
+
+
+def test_add_hosting_provider_link_blank_fields_are_stored_as_none(application, organisation_id):
+    hosting_provider = application.hosting_providers.create_hosting_provider(
+        organisation_id, name="Acme Hosting"
+    )
+    account = application.accounts.create_account(
+        organisation_id=organisation_id, business_name="Acme Co", email="a@b.test", address_line1="1 Main St"
+    )
+    linked = application.accounts.add_hosting_provider_link(
+        organisation_id,
+        account.id,
+        hosting_provider_id=hosting_provider.id,
+        notes="   ",
+        provider_account_id="   ",
+        provider_email="   ",
+    )
+    assert linked.link.notes is None
+    assert linked.link.provider_account_id is None
+    assert linked.link.provider_email is None
+
+
+def test_add_hosting_provider_link_allows_the_same_provider_twice(application, organisation_id):
+    hosting_provider = application.hosting_providers.create_hosting_provider(
+        organisation_id, name="Acme Hosting"
+    )
+    account = application.accounts.create_account(
+        organisation_id=organisation_id, business_name="Acme Co", email="a@b.test", address_line1="1 Main St"
+    )
+    application.accounts.add_hosting_provider_link(
+        organisation_id, account.id, hosting_provider_id=hosting_provider.id, notes="Website"
+    )
+    application.accounts.add_hosting_provider_link(
+        organisation_id, account.id, hosting_provider_id=hosting_provider.id, notes="Email"
+    )
+    links = application.accounts.list_hosting_provider_links(organisation_id, account.id)
+    assert len(links) == 2
+
+
+def test_add_hosting_provider_link_missing_account_raises_not_found(application, organisation_id):
+    hosting_provider = application.hosting_providers.create_hosting_provider(
+        organisation_id, name="Acme Hosting"
+    )
+    with pytest.raises(NotFound):
+        application.accounts.add_hosting_provider_link(
+            organisation_id, "does-not-exist", hosting_provider_id=hosting_provider.id
+        )
+
+
+def test_add_hosting_provider_link_missing_hosting_provider_raises_not_found(application, organisation_id):
+    account = application.accounts.create_account(
+        organisation_id=organisation_id, business_name="Acme Co", email="a@b.test", address_line1="1 Main St"
+    )
+    with pytest.raises(NotFound):
+        application.accounts.add_hosting_provider_link(
+            organisation_id, account.id, hosting_provider_id="does-not-exist"
+        )
+
+
+def test_list_hosting_provider_links_missing_account_raises_not_found(application, organisation_id):
+    with pytest.raises(NotFound):
+        application.accounts.list_hosting_provider_links(organisation_id, "does-not-exist")
+
+
+def test_update_hosting_provider_link_replaces_all_fields(application, organisation_id):
+    acme = application.hosting_providers.create_hosting_provider(organisation_id, name="Acme Hosting")
+    siteground = application.hosting_providers.create_hosting_provider(organisation_id, name="SiteGround")
+    account = application.accounts.create_account(
+        organisation_id=organisation_id, business_name="Acme Co", email="a@b.test", address_line1="1 Main St"
+    )
+    linked = application.accounts.add_hosting_provider_link(
+        organisation_id, account.id, hosting_provider_id=acme.id, notes="Old notes"
+    )
+    updated = application.accounts.update_hosting_provider_link(
+        organisation_id,
+        account.id,
+        linked.link.id,
+        hosting_provider_id=siteground.id,
+        notes="New notes",
+        provider_account_id="SG-1",
+        provider_email="new@acme.test",
+    )
+    assert updated.link.id == linked.link.id
+    assert updated.link.hosting_provider_id == siteground.id
+    assert updated.hosting_provider_name == "SiteGround"
+    assert updated.link.notes == "New notes"
+    assert updated.link.provider_account_id == "SG-1"
+    assert updated.link.provider_email == "new@acme.test"
+
+
+def test_update_hosting_provider_link_missing_link_raises_not_found(application, organisation_id):
+    hosting_provider = application.hosting_providers.create_hosting_provider(
+        organisation_id, name="Acme Hosting"
+    )
+    account = application.accounts.create_account(
+        organisation_id=organisation_id, business_name="Acme Co", email="a@b.test", address_line1="1 Main St"
+    )
+    with pytest.raises(NotFound):
+        application.accounts.update_hosting_provider_link(
+            organisation_id, account.id, "does-not-exist", hosting_provider_id=hosting_provider.id
+        )
+
+
+def test_delete_hosting_provider_link(application, organisation_id):
+    hosting_provider = application.hosting_providers.create_hosting_provider(
+        organisation_id, name="Acme Hosting"
+    )
+    account = application.accounts.create_account(
+        organisation_id=organisation_id, business_name="Acme Co", email="a@b.test", address_line1="1 Main St"
+    )
+    linked = application.accounts.add_hosting_provider_link(
+        organisation_id, account.id, hosting_provider_id=hosting_provider.id
+    )
+    application.accounts.delete_hosting_provider_link(organisation_id, account.id, linked.link.id)
+    assert application.accounts.list_hosting_provider_links(organisation_id, account.id) == []
+
+
+def test_delete_missing_hosting_provider_link_raises_not_found(application, organisation_id):
+    account = application.accounts.create_account(
+        organisation_id=organisation_id, business_name="Acme Co", email="a@b.test", address_line1="1 Main St"
+    )
+    with pytest.raises(NotFound):
+        application.accounts.delete_hosting_provider_link(organisation_id, account.id, "does-not-exist")
+
+
+def test_hosting_provider_link_from_another_organisation_account_raises_not_found(application):
+    org_a = application.organisations.get_or_create_for_user("user-a")
+    org_b = application.organisations.get_or_create_for_user("user-b")
+    hosting_provider = application.hosting_providers.create_hosting_provider(org_a, name="Acme Hosting")
+    account = application.accounts.create_account(
+        organisation_id=org_a, business_name="Acme Co", email="a@b.test", address_line1="1 Main St"
+    )
+    with pytest.raises(NotFound):
+        application.accounts.add_hosting_provider_link(
+            org_b, account.id, hosting_provider_id=hosting_provider.id
+        )

@@ -671,4 +671,60 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_hosting_providers_organisation ON hosting_providers (organisation_id);
     """,
+    """
+    -- Account.hosting_provider (a single free-text string, added by
+    -- migration 23) becomes a proper link table - an account can use more
+    -- than one hosting provider, each with its own metadata (notes, the
+    -- account/customer reference and email used at that provider) -
+    -- confirmed with the user. Referenced by hosting_provider_id (a real
+    -- id), not a name - unlike domains.registrar's plain-string
+    -- convention, this is a dedicated link row, not a single field on the
+    -- parent, so a HostingProvider rename stays correctly reflected in
+    -- every link. No organisation_id of its own - same "resolve tenant
+    -- ownership via the parent" shape as expense_attachments, since every
+    -- row already has both account_id and hosting_provider_id, each
+    -- already organisation-scoped on their own tables.
+    CREATE TABLE account_hosting_providers (
+        id TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL REFERENCES accounts(id),
+        hosting_provider_id TEXT NOT NULL REFERENCES hosting_providers(id),
+        notes TEXT,
+        provider_account_id TEXT,
+        provider_email TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX idx_account_hosting_providers_account ON account_hosting_providers (account_id);
+    CREATE INDEX idx_account_hosting_providers_provider
+        ON account_hosting_providers (hosting_provider_id);
+
+    -- Backfill: every account that already had a hosting_provider string
+    -- set gets exactly one migrated link row (notes/provider_account_id/
+    -- provider_email left NULL - there was nowhere to have captured them
+    -- before this migration), matched to the HostingProvider with that
+    -- exact current name in the same organisation. An account whose
+    -- recorded string doesn't match any current HostingProvider name is
+    -- simply skipped (not defaulted to some placeholder) - shouldn't
+    -- happen in practice, since that string was always populated from
+    -- this same managed list, never typed freehand.
+    -- lower(hex(randomblob(16))) generates this one-time backfill
+    -- batch's ids in pure SQL, since no application id generator is
+    -- reachable from inside a migration script - every link created from
+    -- here on gets a real UUID4 from AccountService instead.
+    INSERT INTO account_hosting_providers
+        (id, account_id, hosting_provider_id, created_at, updated_at)
+    SELECT
+        lower(hex(randomblob(16))),
+        accounts.id,
+        hosting_providers.id,
+        accounts.created_at,
+        accounts.created_at
+    FROM accounts
+    JOIN hosting_providers
+        ON hosting_providers.organisation_id = accounts.organisation_id
+        AND hosting_providers.name = accounts.hosting_provider
+    WHERE accounts.hosting_provider IS NOT NULL;
+
+    ALTER TABLE accounts DROP COLUMN hosting_provider;
+    """,
 ]

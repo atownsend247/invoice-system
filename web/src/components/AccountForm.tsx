@@ -1,7 +1,7 @@
 import { type FormEvent, useState } from 'react'
 import type { CreateAccountInput } from '../api'
 import { errorMessage } from '../hooks/useAsync'
-import type { Account, AccountStatus, HostingProvider } from '../types'
+import type { Account, AccountStatus } from '../types'
 
 const STATUS_OPTIONS: { value: AccountStatus; label: string }[] = [
   { value: 'new', label: 'New' },
@@ -11,7 +11,6 @@ const STATUS_OPTIONS: { value: AccountStatus; label: string }[] = [
 
 export function AccountForm({
   initial,
-  hostingProviders,
   submitLabel,
   submittingLabel,
   onSubmit,
@@ -19,10 +18,6 @@ export function AccountForm({
   onCancel,
 }: {
   initial?: Account
-  // The managed hosting-provider list (see the Domains page's own Hosting
-  // providers section) - fetched once by the caller and passed down, same
-  // reasoning as DomainForm.tsx's own `registrars` prop.
-  hostingProviders: HostingProvider[]
   submitLabel: string
   submittingLabel: string
   onSubmit: (input: CreateAccountInput) => Promise<Account>
@@ -39,21 +34,8 @@ export function AccountForm({
   const [contactName, setContactName] = useState(initial?.contact_name ?? '')
   const [phone, setPhone] = useState(initial?.phone ?? '')
   const [status, setStatus] = useState<AccountStatus>(initial?.status ?? 'new')
-  const [hostingProvider, setHostingProvider] = useState(initial?.hosting_provider ?? '')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-
-  // An account recorded before this feature existed - or whose hosting
-  // provider was since renamed/deleted from the managed list - can hold a
-  // value that isn't one of the current options. Prepend it rather than
-  // silently dropping it, so opening "Edit" never changes the value just
-  // by rendering the form (see DomainForm.tsx's identical reasoning for
-  // registrar, and CLAUDE.md).
-  const hostingProviderNames = hostingProviders.map((p) => p.name)
-  const hostingProviderOptions =
-    initial?.hosting_provider && !hostingProviderNames.includes(initial.hosting_provider)
-      ? [initial.hosting_provider, ...hostingProviderNames]
-      : hostingProviderNames
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -71,7 +53,6 @@ export function AccountForm({
         county: county || undefined,
         postcode: postcode || undefined,
         status,
-        hosting_provider: hostingProvider || undefined,
       })
       onDone(account)
     } catch (err) {
@@ -125,20 +106,6 @@ export function AccountForm({
           {STATUS_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Hosting provider (optional)
-        <select
-          value={hostingProvider}
-          onChange={(event) => setHostingProvider(event.target.value)}
-        >
-          <option value="">None</option>
-          {hostingProviderOptions.map((name) => (
-            <option key={name} value={name}>
-              {name}
             </option>
           ))}
         </select>

@@ -25,9 +25,6 @@ export function AccountsPage() {
     () => api.listAccounts({ query: debouncedQuery || undefined, page, pageSize: PAGE_SIZE }),
     [debouncedQuery, page],
   )
-  // Fetched once here, not per AccountForm instance - same reasoning as
-  // DomainsPage.tsx's own registrars fetch for DomainForm.
-  const { data: hostingProviders } = useAsync(() => api.listHostingProviders(), [])
   const accounts = result?.items
   const totalPages = Math.max(1, Math.ceil((result?.total ?? 0) / PAGE_SIZE))
   const hasQuery = query.trim().length > 0
@@ -43,7 +40,6 @@ export function AccountsPage() {
 
       {showForm && (
         <AccountForm
-          hostingProviders={hostingProviders ?? []}
           submitLabel="Create account"
           submittingLabel="Creating…"
           onSubmit={(input) => api.createAccount(input)}

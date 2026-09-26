@@ -7,6 +7,7 @@ import pytest
 from invoice_system.ids import new_id
 from invoice_system.models import (
     Account,
+    AccountHostingProvider,
     AccountStatus,
     ActivityEvent,
     ActivityEventType,
@@ -437,12 +438,74 @@ def test_migration_23_backfills_existing_accounts_to_active_status(tmp_path):
     fetched = repository.get_account(org_id, account_id)
     assert fetched is not None
     assert fetched.status == AccountStatus.ACTIVE
-    assert fetched.hosting_provider is None
 
     # The new hosting_providers table actually works post-migration too.
     created = repository.create_hosting_provider(_hosting_provider(org_id))
     assert created.id is not None
     repository.close()
+
+
+def test_migration_24_backfills_hosting_provider_links_and_drops_the_column(tmp_path):
+    # Freeze a database at migration 23 (accounts.hosting_provider is a
+    # plain string, no link table yet), insert an account whose
+    # hosting_provider matches an existing HostingProvider by name, then
+    # confirm migration 24 backfills exactly one account_hosting_providers
+    # row for it and drops the old column - see schema.py's migration-24
+    # comment and CLAUDE.md's confirmed migration path.
+    db_path = tmp_path / "frozen.db"
+    conn = sqlite3.connect(str(db_path))
+    for version, script in enumerate(MIGRATIONS[:23], start=1):
+        conn.executescript(script)
+        conn.execute(f"PRAGMA user_version = {version}")
+    conn.commit()
+
+    org_id = new_id()
+    account_id = new_id()
+    unmatched_account_id = new_id()
+    hosting_provider_id = new_id()
+    now = datetime(2026, 1, 1, tzinfo=UTC).isoformat()
+    conn.execute("INSERT INTO organisations (id, name, created_at) VALUES (?, 'Org A', ?)", (org_id, now))
+    conn.execute(
+        "INSERT INTO hosting_providers (id, organisation_id, name, created_at, updated_at) "
+        "VALUES (?, ?, 'Acme Hosting', ?, ?)",
+        (hosting_provider_id, org_id, now, now),
+    )
+    conn.execute(
+        "INSERT INTO accounts "
+        "(id, organisation_id, business_name, email, address_line1, status, hosting_provider, created_at) "
+        "VALUES (?, ?, 'Acme', 'a@b.test', '1 Main St', 'active', 'Acme Hosting', ?)",
+        (account_id, org_id, now),
+    )
+    # An account whose recorded string doesn't match any current
+    # HostingProvider name - simply skipped, not defaulted to a placeholder.
+    conn.execute(
+        "INSERT INTO accounts "
+        "(id, organisation_id, business_name, email, address_line1, status, hosting_provider, created_at) "
+        "VALUES (?, ?, 'Unmatched', 'u@b.test', '2 Main St', 'active', 'Nonexistent Host', ?)",
+        (unmatched_account_id, org_id, now),
+    )
+    conn.commit()
+
+    conn.executescript(MIGRATIONS[23])
+    conn.execute("PRAGMA user_version = 24")
+    conn.commit()
+    conn.close()
+
+    repository = SqliteRepository(db_path)
+    [link] = repository.list_account_hosting_providers(account_id)
+    assert link.link.account_id == account_id
+    assert link.link.hosting_provider_id == hosting_provider_id
+    assert link.hosting_provider_name == "Acme Hosting"
+    assert link.link.notes is None
+    assert link.link.provider_account_id is None
+    assert link.link.provider_email is None
+
+    assert repository.list_account_hosting_providers(unmatched_account_id) == []
+    repository.close()
+
+    # The old column is actually gone, not just unused.
+    columns = {row[1] for row in sqlite3.connect(str(db_path)).execute("PRAGMA table_info(accounts)")}
+    assert "hosting_provider" not in columns
 
 
 def test_get_organisation_id_for_user_returns_none_when_unset(repo):
@@ -496,7 +559,6 @@ def _account(organisation_id: str, **overrides: object) -> Account:
         "county": None,
         "postcode": None,
         "status": AccountStatus.ACTIVE,
-        "hosting_provider": None,
         "created_at": datetime(2026, 1, 1, tzinfo=UTC),
     }
     defaults.update(overrides)
@@ -1439,24 +1501,95 @@ def test_hosting_provider_crud_and_tenant_scoping(repo, organisation_id):
     assert repo.get_hosting_provider(organisation_id, acme.id) is None
 
 
-def test_count_accounts_by_hosting_provider_groups_by_name_and_scopes_by_organisation(repo, organisation_id):
+def _account_hosting_provider(
+    account_id: str, hosting_provider_id: str, **overrides: object
+) -> AccountHostingProvider:
+    defaults: dict = {
+        "id": new_id(),
+        "account_id": account_id,
+        "hosting_provider_id": hosting_provider_id,
+        "notes": None,
+        "provider_account_id": None,
+        "provider_email": None,
+        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+        "updated_at": datetime(2026, 1, 1, tzinfo=UTC),
+    }
+    defaults.update(overrides)
+    return AccountHostingProvider(**defaults)
+
+
+def test_account_hosting_provider_crud_and_tenant_scoping(repo, organisation_id):
+    acme = repo.create_hosting_provider(_hosting_provider(organisation_id, name="Acme Hosting"))
+    siteground = repo.create_hosting_provider(_hosting_provider(organisation_id, name="SiteGround"))
+    account = repo.create_account(_account(organisation_id, business_name="A"))
+    other_account = repo.create_account(_account(organisation_id, business_name="B"))
+
+    created = repo.create_account_hosting_provider(
+        _account_hosting_provider(account.id, acme.id, notes="Website", provider_account_id="ACME-1")
+    )
+    assert created.id is not None
+
+    fetched = repo.get_account_hosting_provider(account.id, created.id)
+    assert fetched is not None
+    assert fetched.hosting_provider_id == acme.id
+    assert fetched.notes == "Website"
+
+    # Scoped by account_id - another account can't fetch this one's link by id.
+    assert repo.get_account_hosting_provider(other_account.id, created.id) is None
+
+    [linked] = repo.list_account_hosting_providers(account.id)
+    assert linked.link.id == created.id
+    assert linked.hosting_provider_name == "Acme Hosting"
+
+    created.hosting_provider_id = siteground.id
+    created.notes = "Mailbox only"
+    updated = repo.update_account_hosting_provider(created)
+    assert updated.hosting_provider_id == siteground.id
+    [refetched] = repo.list_account_hosting_providers(account.id)
+    assert refetched.hosting_provider_name == "SiteGround"
+    assert refetched.link.notes == "Mailbox only"
+
+    repo.delete_account_hosting_provider(account.id, created.id)
+    assert repo.list_account_hosting_providers(account.id) == []
+
+
+def test_count_accounts_by_hosting_provider_groups_by_id_and_scopes_by_organisation(repo, organisation_id):
     other_organisation = repo.create_organisation(
         Organisation(id=new_id(), name="Other Org", created_at=datetime(2026, 1, 1, tzinfo=UTC))
     )
 
-    repo.create_account(_account(organisation_id, business_name="A", hosting_provider="Acme Hosting"))
-    repo.create_account(_account(organisation_id, business_name="B", hosting_provider="Acme Hosting"))
-    repo.create_account(_account(organisation_id, business_name="C", hosting_provider="Big Hosting Co"))
-    # An account with no hosting provider must not appear in the result at
-    # all - IS NOT NULL in the query, not just a count of zero.
-    repo.create_account(_account(organisation_id, business_name="D", hosting_provider=None))
-    # An account in a *different* organisation naming the same hosting
-    # provider string must not be counted against this organisation's total.
-    repo.create_account(_account(other_organisation.id, business_name="E", hosting_provider="Acme Hosting"))
+    acme = repo.create_hosting_provider(_hosting_provider(organisation_id, name="Acme Hosting"))
+    big_hosting = repo.create_hosting_provider(_hosting_provider(organisation_id, name="Big Hosting Co"))
+    other_acme = repo.create_hosting_provider(_hosting_provider(other_organisation.id, name="Acme Hosting"))
+
+    account_a = repo.create_account(_account(organisation_id, business_name="A"))
+    account_b = repo.create_account(_account(organisation_id, business_name="B"))
+    account_c = repo.create_account(_account(organisation_id, business_name="C"))
+    # An account with no hosting-provider link must not appear in the
+    # result at all.
+    repo.create_account(_account(organisation_id, business_name="D"))
+    other_account = repo.create_account(_account(other_organisation.id, business_name="E"))
+
+    repo.create_account_hosting_provider(_account_hosting_provider(account_a.id, acme.id))
+    repo.create_account_hosting_provider(_account_hosting_provider(account_b.id, acme.id))
+    repo.create_account_hosting_provider(_account_hosting_provider(account_c.id, big_hosting.id))
+    # An account in a *different* organisation linking a same-name
+    # provider (a distinct row, its own id) must not be counted against
+    # this organisation's total.
+    repo.create_account_hosting_provider(_account_hosting_provider(other_account.id, other_acme.id))
 
     counts = repo.count_accounts_by_hosting_provider(organisation_id)
-    assert counts == {"Acme Hosting": 2, "Big Hosting Co": 1}
-    assert repo.count_accounts_by_hosting_provider(other_organisation.id) == {"Acme Hosting": 1}
+    assert counts == {acme.id: 2, big_hosting.id: 1}
+    assert repo.count_accounts_by_hosting_provider(other_organisation.id) == {other_acme.id: 1}
+
+
+def test_count_accounts_by_hosting_provider_counts_an_account_linked_twice_only_once(repo, organisation_id):
+    acme = repo.create_hosting_provider(_hosting_provider(organisation_id, name="Acme Hosting"))
+    account = repo.create_account(_account(organisation_id, business_name="A"))
+    repo.create_account_hosting_provider(_account_hosting_provider(account.id, acme.id, notes="Website"))
+    repo.create_account_hosting_provider(_account_hosting_provider(account.id, acme.id, notes="Email"))
+
+    assert repo.count_accounts_by_hosting_provider(organisation_id) == {acme.id: 1}
 
 
 def test_count_accounts_by_hosting_provider_omits_providers_with_no_accounts(repo, organisation_id):

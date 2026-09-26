@@ -27,6 +27,8 @@ from .auth import (
     public_router as auth_public_router,
 )
 from .schemas import (
+    AccountHostingProviderIn,
+    AccountHostingProviderOut,
     AccountIn,
     AccountListOut,
     AccountOut,
@@ -184,7 +186,6 @@ def create_account(
         county=body.county,
         postcode=body.postcode,
         status=body.status,
-        hosting_provider=body.hosting_provider,
     )
     return AccountOut.from_model(account)
 
@@ -230,9 +231,70 @@ def update_account(
         county=body.county,
         postcode=body.postcode,
         status=body.status,
-        hosting_provider=body.hosting_provider,
     )
     return AccountOut.from_model(account)
+
+
+@domain_router.post(
+    "/accounts/{account_id}/hosting-providers", response_model=AccountHostingProviderOut, status_code=201
+)
+def add_account_hosting_provider(
+    account_id: str,
+    body: AccountHostingProviderIn,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> AccountHostingProviderOut:
+    link = application.accounts.add_hosting_provider_link(
+        organisation_id,
+        account_id,
+        hosting_provider_id=body.hosting_provider_id,
+        notes=body.notes,
+        provider_account_id=body.provider_account_id,
+        provider_email=body.provider_email,
+    )
+    return AccountHostingProviderOut.from_model(link)
+
+
+@domain_router.get("/accounts/{account_id}/hosting-providers", response_model=list[AccountHostingProviderOut])
+def list_account_hosting_providers(
+    account_id: str,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> list[AccountHostingProviderOut]:
+    links = application.accounts.list_hosting_provider_links(organisation_id, account_id)
+    return [AccountHostingProviderOut.from_model(link) for link in links]
+
+
+@domain_router.put(
+    "/accounts/{account_id}/hosting-providers/{link_id}", response_model=AccountHostingProviderOut
+)
+def update_account_hosting_provider(
+    account_id: str,
+    link_id: str,
+    body: AccountHostingProviderIn,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> AccountHostingProviderOut:
+    link = application.accounts.update_hosting_provider_link(
+        organisation_id,
+        account_id,
+        link_id,
+        hosting_provider_id=body.hosting_provider_id,
+        notes=body.notes,
+        provider_account_id=body.provider_account_id,
+        provider_email=body.provider_email,
+    )
+    return AccountHostingProviderOut.from_model(link)
+
+
+@domain_router.delete("/accounts/{account_id}/hosting-providers/{link_id}", status_code=204)
+def delete_account_hosting_provider(
+    account_id: str,
+    link_id: str,
+    application: Application = Depends(get_application),
+    organisation_id: str = Depends(get_organisation_id),
+) -> None:
+    application.accounts.delete_hosting_provider_link(organisation_id, account_id, link_id)
 
 
 @domain_router.post("/domains", response_model=DomainOut, status_code=201)

@@ -1722,5 +1722,79 @@ flow," not a restructuring, whenever it's actually needed.
       run of `accounts.spec.ts`/`domains.spec.ts` (both touch the shared
       organisation's account/hosting-provider/registrar lists).
 
+## Phase 45 — Hosting providers become a many-to-many account link (done)
+
+- [x] Requested feature: an account can link *more than one* hosting
+      provider, each with its own notes, the provider's own account/
+      customer reference, and the email used at that provider - Phase 44's
+      single `Account.hosting_provider` string couldn't hold that.
+      Confirmed with the user: "account id" means the provider's own
+      customer reference, not this app's own `Account.id` (named
+      `provider_account_id` to avoid confusion); a pre-existing single
+      value auto-converts into the first link row rather than being
+      dropped.
+- [x] Migration 24: new `account_hosting_providers` table (`id`,
+      `account_id`, `hosting_provider_id`, `notes`, `provider_account_id`,
+      `provider_email`, `created_at`, `updated_at`, its own
+      `idx_account_hosting_providers_account`/`_provider` indexes) -
+      referencing `hosting_provider_id` (a real id), not a name, unlike
+      `Domain.registrar`'s convention, since this is a dedicated link row
+      rather than a single field on the parent. Backfilled one link row
+      per account that had a `hosting_provider` string set (matched to a
+      same-organisation `HostingProvider` by current name; skipped if no
+      match), then `ALTER TABLE accounts DROP COLUMN hosting_provider`.
+      New `AccountHostingProvider`/`AccountHostingProviderWithName`
+      dataclasses - the latter the same "entity + computed display data,
+      never persisted" shape as `DomainWithAccount`.
+- [x] `AccountService.create_account`/`update_account` lose their
+      `hosting_provider` param entirely. New `AccountService` methods -
+      `add_hosting_provider_link`/`list_hosting_provider_links`/
+      `update_hosting_provider_link`/`delete_hosting_provider_link` - the
+      same "sub-resource fully owned by a parent" shape as
+      `ExpenseService`'s attachment methods, since a link is inherently
+      account-owned (not a new dedicated service). `update_hosting_provider_link`
+      is a full replace, including which `HostingProvider` it points at.
+      `HostingProviderService._usage` now keys `count_accounts_by_hosting_provider`'s
+      dict by `hosting_provider.id`, not `.name` - a rename no longer
+      loses the usage count, unlike `Registrar`'s.
+- [x] `SqliteRepository.count_accounts_by_hosting_provider` rewritten to
+      query `account_hosting_providers` (`COUNT(DISTINCT account_id)`
+      grouped by `hosting_provider_id`, joined to `hosting_providers` for
+      organisation scoping) instead of the old `accounts.hosting_provider`
+      column - an account linking the same provider twice still only
+      counts once. New repository CRUD methods for
+      `account_hosting_providers`, mirroring `ExpenseAttachment`'s shape.
+- [x] `AccountIn`/`AccountOut` lose `hosting_provider`. New
+      `AccountHostingProviderIn`/`Out` schemas. New nested routes: `POST`/
+      `GET /accounts/{account_id}/hosting-providers`, `PUT`/`DELETE
+      /accounts/{account_id}/hosting-providers/{link_id}`. CLI:
+      `account create`/`account update` lose `--hosting-provider`; new
+      `account hosting-provider add/list/update/remove` command group
+      (`add`/`update` take `--hosting-provider-id`/`--notes`/
+      `--provider-account-id`/`--provider-email`).
+- [x] Web UI: `AccountForm.tsx` loses its Hosting provider `<select>`
+      entirely (and the `hostingProviders` prop `AccountsPage.tsx`/
+      `AccountDetailPage.tsx` fed it). New
+      `components/AccountHostingProviderForm.tsx` (add/edit, same
+      `initial`/`submitLabel`/`onSubmit`/`onDone`/`onCancel` shape as
+      `DomainForm.tsx`, with the same stale-value-prepending fallback for
+      a since-renamed/deleted provider). `AccountDetailPage.tsx` gains a
+      "Hosting providers" section below Domains - full add/edit/remove,
+      unlike the Domains section's link/unlink-only shape, since a link's
+      own fields (notes/references) have no separate "own fields" page to
+      defer to.
+- [x] Demo data: the two `hosting_provider="..."` fields on Northwind
+      Traders/Fenwick & Vale removed from `_DemoAccount`; replaced with
+      three seeded `AccountHostingProvider` links via
+      `accounts.add_hosting_provider_link` - Northwind Traders linked to
+      both Acme Hosting (website) and SiteGround (mailbox only, showing
+      off multiple links on one account) and Fenwick & Vale linked to
+      SiteGround, each with notes/`provider_account_id`/`provider_email`
+      set.
+- [x] Full backend suite (564 tests, 98.9%+ coverage) and full e2e suite
+      (85 tests) updated and passing, including a new
+      `account_hosting_providers` migration test and a rewritten
+      `accounts.spec.ts` hosting-provider test covering link/edit/remove.
+
 Update the checkboxes and phase status as work lands — this file is read as
 ground truth for "what's done," not aspirational copy.

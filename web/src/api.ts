@@ -1,5 +1,6 @@
 import type {
   Account,
+  AccountHostingProvider,
   AccountStatus,
   BusinessProfile,
   Domain,
@@ -211,7 +212,6 @@ export interface CreateAccountInput {
   county?: string
   postcode?: string
   status?: AccountStatus
-  hosting_provider?: string
 }
 
 export function createAccount(input: CreateAccountInput): Promise<Account> {
@@ -220,6 +220,44 @@ export function createAccount(input: CreateAccountInput): Promise<Account> {
 
 export function updateAccount(id: string, input: CreateAccountInput): Promise<Account> {
   return request(`/accounts/${id}`, { method: 'PUT', body: JSON.stringify(input) })
+}
+
+// -- account hosting providers -------------------------------------------------
+
+export interface SaveAccountHostingProviderInput {
+  hosting_provider_id: string
+  notes?: string
+  provider_account_id?: string
+  provider_email?: string
+}
+
+export function listAccountHostingProviders(accountId: string): Promise<AccountHostingProvider[]> {
+  return request(`/accounts/${accountId}/hosting-providers`)
+}
+
+export function addAccountHostingProvider(
+  accountId: string,
+  input: SaveAccountHostingProviderInput,
+): Promise<AccountHostingProvider> {
+  return request(`/accounts/${accountId}/hosting-providers`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export function updateAccountHostingProvider(
+  accountId: string,
+  linkId: string,
+  input: SaveAccountHostingProviderInput,
+): Promise<AccountHostingProvider> {
+  return request(`/accounts/${accountId}/hosting-providers/${linkId}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  })
+}
+
+export function deleteAccountHostingProvider(accountId: string, linkId: string): Promise<void> {
+  return request(`/accounts/${accountId}/hosting-providers/${linkId}`, { method: 'DELETE' })
 }
 
 // -- domains -----------------------------------------------------------------

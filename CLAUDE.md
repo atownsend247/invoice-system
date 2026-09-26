@@ -781,25 +781,25 @@ Four separate things are easy to conflate here — don't:
   `QuoteDetailPage.tsx`/`InvoiceDetailPage.tsx` already use, extended to
   accept `AccountStatus` too) on both `AccountsPage.tsx`'s list (a new
   "Status" column) and `AccountDetailPage.tsx`'s header, and editable via
-  a `<select>` on `AccountForm.tsx`. `Account.hosting_provider` (also
-  migration 23) is a plain nullable string, not a foreign key - see the
-  `Domain`/`Registrar`/`HostingProvider` bullet below for the managed
-  list it's picked from; unlike `status`, genuinely optional (many
-  accounts have no hosting tracked), shown in `AccountDetailPage.tsx`'s
-  details list (`—` when unset) alongside Contact/Email/Phone/Address.
+  a `<select>` on `AccountForm.tsx`. Which hosting provider(s) an account
+  uses is **not** a field on `Account` - migration 23 originally added a
+  single `hosting_provider` string, superseded by migration 24's
+  `AccountHostingProvider` link table (see below) once the user asked for
+  an account to be able to use more than one.
 - **`Domain`/`Registrar`/`HostingProvider`** (`core.py`'s `DomainService`/
   `RegistrarService`/`HostingProviderService`) are the standalone "Domains"
   page (`web/src/pages/DomainsPage.tsx`, nav link between Accounts and
   Quotes) - the central place to manage all three, moved out of being
   scattered across `AccountDetailPage.tsx` (domains) and a Settings tab
-  (registrars) - `HostingProvider` lives here too even though it's an
-  `Account` field, not a `Domain` one (confirmed with the user: both
-  domains and accounts are "things this business tracks the provider of",
-  so one page manages every provider-ish reference list). See
-  `docs/api.md`'s `Domain`/`Registrar`/`HostingProvider` Conventions for
-  the field/route shape (required fields, no format validation,
-  plain-string `Domain.registrar`/`Account.hosting_provider`, neither a FK
-  to `Registrar`/`HostingProvider`).
+  (registrars) - `HostingProvider` lives here too even though it's linked
+  from `Account`, not `Domain` (confirmed with the user: both domains and
+  accounts are "things this business tracks the provider of", so one page
+  manages every provider-ish reference list). See `docs/api.md`'s
+  `Domain`/`Registrar`/`HostingProvider`/`AccountHostingProvider`
+  Conventions for the field/route shape - `Domain.registrar` is a plain
+  string, not a FK to `Registrar` (accepting a name-drift tradeoff), but
+  `AccountHostingProvider` (below) is a dedicated link row referencing
+  `HostingProvider` by id instead, so it doesn't need that tradeoff.
   - `Domain` is organisation-scoped directly (its own `organisation_id`,
     migration 21) and structurally close to `Registrar` now, **not**
     resolved through a parent `Account` the way it used to be - a domain
@@ -854,22 +854,48 @@ Four separate things are easy to conflate here — don't:
     `domain_count`/`account_count` in `RegistrarOut` (0/0 for a
     just-created registrar).
   - **`HostingProviderUsage`** (models.py) - the `Account`-only analogue of
-    `RegistrarUsage`: a `HostingProvider` alongside how many `Account`s
-    currently name it, computed at request time
+    `RegistrarUsage`: a `HostingProvider` alongside how many distinct
+    `Account`s currently link it, computed at request time
     (`HostingProviderService.list_hosting_providers_with_usage`/
     `get_hosting_provider_usage`, backed by
-    `SqliteRepository.count_accounts_by_hosting_provider` - a plain `GROUP
-    BY hosting_provider` on `accounts` filtered by `organisation_id`, `IS
-    NOT NULL` so an account with no hosting provider set doesn't show up
-    as a phantom empty-string key). No `domain_count` the way
-    `RegistrarUsage` has - a hosting provider isn't a `Domain`-level
-    concern at all, only an `Account`-level one. Same name-drift tradeoff
-    as `RegistrarUsage` (matched by the provider's *current* `name`
-    against `Account.hosting_provider`, a plain string) and the same
-    `delete_hosting_provider` guard (`Conflict`, 409, if
+    `SqliteRepository.count_accounts_by_hosting_provider` - a `GROUP BY
+    hosting_provider_id` on `account_hosting_providers` joined to
+    `hosting_providers` for organisation scoping, `COUNT(DISTINCT
+    account_id)` so an account linking the same provider twice only counts
+    once). No `domain_count` the way `RegistrarUsage` has - a hosting
+    provider isn't a `Domain`-level concern at all, only an `Account`-level
+    one. **Unlike** `RegistrarUsage`, no name-drift tradeoff - matched by
+    `hosting_provider_id` (a real reference via `AccountHostingProvider`,
+    not a name), so renaming a `HostingProvider` doesn't lose its usage
+    count. Same `delete_hosting_provider` guard (`Conflict`, 409, if
     `account_count > 0`), both client-side-disabled-button and
     server-side. `GET /hosting-providers` always includes `account_count`
     in `HostingProviderOut` (0 for a just-created one).
+  - **`AccountHostingProvider`/`AccountHostingProviderWithName`**
+    (models.py, migration 24) - a `HostingProvider` linked to an `Account`,
+    with its own `notes`/`provider_account_id` (the customer/account
+    reference *this business* has at that provider - not this app's own
+    `Account.id`, confirmed with the user)/`provider_email`, all optional.
+    Superseded migration 23's single `Account.hosting_provider` string once
+    the user asked for an account to link more than one provider (e.g. one
+    for the website, one for email) - or the same provider more than once.
+    Structurally closest to `ExpenseAttachment`: no `organisation_id` of
+    its own, tenant ownership resolved via `AccountService`/
+    `self._repository.get_account(...)` first. Lives on `AccountService`
+    (not a new dedicated service, not on `HostingProviderService`) - same
+    "sub-resource fully owned by a parent" shape as
+    `ExpenseService.add_attachment`/`get_attachment_bytes`/
+    `delete_attachment` - `add_hosting_provider_link`/
+    `list_hosting_provider_links`/`update_hosting_provider_link`
+    (a full replace, including which `HostingProvider` it points at, same
+    PUT semantics as `update_account`)/`delete_hosting_provider_link`.
+    `AccountHostingProviderWithName` (link + the provider's *current*
+    name, same "entity + computed display data, never persisted" pattern
+    as `DomainWithAccount`) is what every one of those methods returns,
+    not a bare `AccountHostingProvider`. `POST`/`GET /accounts/
+    {account_id}/hosting-providers`, `PUT`/`DELETE /accounts/{account_id}/
+    hosting-providers/{link_id}`; CLI `account hosting-provider
+    add/list/update/remove <account_id> [<link_id>] --user-id`.
   - Web UI: `DomainsPage.tsx` is three stacked sections on one page (no
     sub-tabs - deliberately avoids reintroducing the shared-tab-state
     issues just fixed on Settings, see above) - a "Domains" section (full
@@ -891,12 +917,9 @@ Four separate things are easy to conflate here — don't:
     there's no such value to fall back to), the field and submit button
     are disabled with a hint pointing at the Domains page's own Registrars
     section, rather than presenting a dead-end empty `<select>`.
-    `AccountForm.tsx` takes an equivalent `hostingProviders` prop and
-    applies the identical stale-value-prepending logic for
-    `Account.hosting_provider` - the one difference is the field itself is
-    optional (a `<select>` with a real "None" option, not disabled/
-    required the way Registrar's is on `DomainForm.tsx`), since not every
-    account has a hosting provider tracked.
+    `AccountForm.tsx` no longer has a hosting-provider field at all - see
+    `AccountHostingProvider` above and the `AccountDetailPage.tsx` bullet
+    below for where linking one now lives.
   - `AccountDetailPage.tsx`'s own "Domains" section is link/unlink only,
     not create/edit/delete - fetches this account's linked domains
     (`api.listDomains({ accountId })`) and, separately, every
@@ -907,6 +930,17 @@ Four separate things are easy to conflate here — don't:
     the domain, so it stays available to link elsewhere; full domain
     management (editing its own fields, deleting it outright) only lives
     on the Domains page now.
+  - `AccountDetailPage.tsx` also has a "Hosting providers" section, below
+    Domains - **unlike** that Domains section, this one is full add/edit/
+    remove, not link/unlink-only, since a link's own fields (notes/
+    provider reference/email) have no separate "own fields" page to defer
+    to the way a `Domain`'s do. "Add hosting provider" reveals
+    `components/AccountHostingProviderForm.tsx` (same `initial`/
+    `submitLabel`/`onSubmit`/`onDone`/`onCancel` prop shape as
+    `DomainForm.tsx`, including the identical stale-value-prepending
+    fallback for a since-renamed/deleted provider); each row has its own
+    "Edit" (swaps that row for the same form, pre-filled) and "Remove"
+    actions.
 - `ExpenseService` (`core.py`) tracks costs incurred against an `Account` -
   e.g. a domain renewal paid on a client's behalf. Deliberately no draft/
   sent status field, unlike `Quote`/`Invoice`: an expense is a record of

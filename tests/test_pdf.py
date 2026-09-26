@@ -82,7 +82,6 @@ def _account(**overrides: object) -> Account:
         "county": None,
         "postcode": None,
         "status": AccountStatus.ACTIVE,
-        "hosting_provider": None,
         "created_at": datetime(2026, 1, 1, tzinfo=UTC),
     }
     defaults.update(overrides)

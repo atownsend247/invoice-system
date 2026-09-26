@@ -1096,7 +1096,7 @@ def test_registrar_from_another_login_user_is_isolated(client, auth_headers, oth
     assert response.status_code == 404
 
 
-def test_account_defaults_to_new_status_and_null_hosting_provider(client, auth_headers):
+def test_account_defaults_to_new_status(client, auth_headers):
     response = client.post(
         "/accounts",
         json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
@@ -1105,10 +1105,9 @@ def test_account_defaults_to_new_status_and_null_hosting_provider(client, auth_h
     assert response.status_code == 201
     body = response.json()
     assert body["status"] == "new"
-    assert body["hosting_provider"] is None
 
 
-def test_account_accepts_an_explicit_status_and_hosting_provider(client, auth_headers):
+def test_account_accepts_an_explicit_status(client, auth_headers):
     response = client.post(
         "/accounts",
         json={
@@ -1116,14 +1115,12 @@ def test_account_accepts_an_explicit_status_and_hosting_provider(client, auth_he
             "email": "a@b.test",
             "address_line1": "1 Main St",
             "status": "active",
-            "hosting_provider": "Acme Hosting",
         },
         headers=auth_headers,
     )
     assert response.status_code == 201
     body = response.json()
     assert body["status"] == "active"
-    assert body["hosting_provider"] == "Acme Hosting"
 
 
 def test_account_rejects_an_invalid_status(client, auth_headers):
@@ -1140,7 +1137,7 @@ def test_account_rejects_an_invalid_status(client, auth_headers):
     assert response.status_code == 422
 
 
-def test_update_account_changes_status_and_hosting_provider(client, auth_headers):
+def test_update_account_changes_status(client, auth_headers):
     account_id = client.post(
         "/accounts",
         json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
@@ -1154,18 +1151,120 @@ def test_update_account_changes_status_and_hosting_provider(client, auth_headers
             "email": "a@b.test",
             "address_line1": "1 Main St",
             "status": "closed",
-            "hosting_provider": "Acme Hosting",
         },
         headers=auth_headers,
     )
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "closed"
-    assert body["hosting_provider"] == "Acme Hosting"
 
     response = client.get(f"/accounts/{account_id}", headers=auth_headers)
     assert response.json()["status"] == "closed"
-    assert response.json()["hosting_provider"] == "Acme Hosting"
+
+
+def test_account_hosting_provider_add_list_update_remove_flow(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    acme_id = client.post("/hosting-providers", json={"name": "Acme Hosting"}, headers=auth_headers).json()[
+        "id"
+    ]
+    siteground_id = client.post(
+        "/hosting-providers", json={"name": "SiteGround"}, headers=auth_headers
+    ).json()["id"]
+
+    response = client.post(
+        f"/accounts/{account_id}/hosting-providers",
+        json={
+            "hosting_provider_id": acme_id,
+            "notes": "Website",
+            "provider_account_id": "ACME-1",
+            "provider_email": "billing@acme.test",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    body = response.json()
+    link_id = body["id"]
+    assert body["hosting_provider_id"] == acme_id
+    assert body["hosting_provider_name"] == "Acme Hosting"
+    assert body["notes"] == "Website"
+    assert body["provider_account_id"] == "ACME-1"
+    assert body["provider_email"] == "billing@acme.test"
+
+    response = client.get(f"/accounts/{account_id}/hosting-providers", headers=auth_headers)
+    assert response.status_code == 200
+    assert [link["id"] for link in response.json()] == [link_id]
+
+    response = client.put(
+        f"/accounts/{account_id}/hosting-providers/{link_id}",
+        json={"hosting_provider_id": siteground_id, "notes": "Mailbox only"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["hosting_provider_id"] == siteground_id
+    assert body["hosting_provider_name"] == "SiteGround"
+    assert body["notes"] == "Mailbox only"
+    assert body["provider_account_id"] is None
+
+    response = client.delete(f"/accounts/{account_id}/hosting-providers/{link_id}", headers=auth_headers)
+    assert response.status_code == 204
+    assert client.get(f"/accounts/{account_id}/hosting-providers", headers=auth_headers).json() == []
+
+
+def test_account_hosting_provider_add_missing_account_returns_404(client, auth_headers):
+    hosting_provider_id = client.post(
+        "/hosting-providers", json={"name": "Acme Hosting"}, headers=auth_headers
+    ).json()["id"]
+    response = client.post(
+        "/accounts/does-not-exist/hosting-providers",
+        json={"hosting_provider_id": hosting_provider_id},
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+def test_account_hosting_provider_add_missing_hosting_provider_returns_404(client, auth_headers):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    response = client.post(
+        f"/accounts/{account_id}/hosting-providers",
+        json={"hosting_provider_id": "does-not-exist"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+def test_account_hosting_provider_from_another_login_user_is_isolated(
+    client, auth_headers, other_auth_headers
+):
+    account_id = client.post(
+        "/accounts",
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    hosting_provider_id = client.post(
+        "/hosting-providers", json={"name": "Acme Hosting"}, headers=auth_headers
+    ).json()["id"]
+    link_id = client.post(
+        f"/accounts/{account_id}/hosting-providers",
+        json={"hosting_provider_id": hosting_provider_id},
+        headers=auth_headers,
+    ).json()["id"]
+
+    response = client.get(f"/accounts/{account_id}/hosting-providers", headers=other_auth_headers)
+    assert response.status_code == 404
+
+    response = client.delete(
+        f"/accounts/{account_id}/hosting-providers/{link_id}", headers=other_auth_headers
+    )
+    assert response.status_code == 404
 
 
 def test_hosting_provider_create_list_update_delete_flow(client, auth_headers):
@@ -1216,24 +1315,24 @@ def test_hosting_provider_list_reports_account_count(client, auth_headers):
     hosting_provider_id = client.post(
         "/hosting-providers", json={"name": "Acme Hosting"}, headers=auth_headers
     ).json()["id"]
-    client.post(
+    account_a_id = client.post(
         "/accounts",
-        json={
-            "business_name": "A",
-            "email": "a@b.test",
-            "address_line1": "1 Main St",
-            "hosting_provider": "Acme Hosting",
-        },
+        json={"business_name": "A", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    account_b_id = client.post(
+        "/accounts",
+        json={"business_name": "B", "email": "b@b.test", "address_line1": "2 High St"},
+        headers=auth_headers,
+    ).json()["id"]
+    client.post(
+        f"/accounts/{account_a_id}/hosting-providers",
+        json={"hosting_provider_id": hosting_provider_id},
         headers=auth_headers,
     )
     client.post(
-        "/accounts",
-        json={
-            "business_name": "B",
-            "email": "b@b.test",
-            "address_line1": "2 High St",
-            "hosting_provider": "Acme Hosting",
-        },
+        f"/accounts/{account_b_id}/hosting-providers",
+        json={"hosting_provider_id": hosting_provider_id},
         headers=auth_headers,
     )
 
@@ -1246,14 +1345,14 @@ def test_deleting_a_hosting_provider_still_used_by_an_account_returns_409(client
     hosting_provider_id = client.post(
         "/hosting-providers", json={"name": "Acme Hosting"}, headers=auth_headers
     ).json()["id"]
-    client.post(
+    account_id = client.post(
         "/accounts",
-        json={
-            "business_name": "Acme",
-            "email": "a@b.test",
-            "address_line1": "1 Main St",
-            "hosting_provider": "Acme Hosting",
-        },
+        json={"business_name": "Acme", "email": "a@b.test", "address_line1": "1 Main St"},
+        headers=auth_headers,
+    ).json()["id"]
+    client.post(
+        f"/accounts/{account_id}/hosting-providers",
+        json={"hosting_provider_id": hosting_provider_id},
         headers=auth_headers,
     )
 

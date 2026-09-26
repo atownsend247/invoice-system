@@ -196,14 +196,23 @@ test('hosting provider list shows account counts and blocks deleting one still i
   await expect(row).toContainText('No accounts')
   await expect(row.getByRole('button', { name: 'Delete' })).toBeEnabled()
 
-  await apiFetch('/accounts', apiToken, {
+  const hostingProviders = await apiFetch<{ id: string; name: string }[]>(
+    '/hosting-providers',
+    apiToken,
+  )
+  const hostingProviderId = hostingProviders.find((p) => p.name === name)?.id
+
+  const account = await apiFetch<{ id: string }>('/accounts', apiToken, {
     method: 'POST',
     body: JSON.stringify({
       business_name: `${testInfo.testId} Acme`,
       email: `${testInfo.testId}@example.test`,
       address_line1: '1 Main St',
-      hosting_provider: name,
     }),
+  })
+  await apiFetch(`/accounts/${account.id}/hosting-providers`, apiToken, {
+    method: 'POST',
+    body: JSON.stringify({ hosting_provider_id: hostingProviderId }),
   })
 
   await page.reload()

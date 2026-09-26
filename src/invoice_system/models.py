@@ -91,11 +91,11 @@ class Account:
     - with no enforced transition rules (any value can change to any
     other) and no effect on whether quotes/invoices/expenses can be
     created against this account; it's presentation only, same spirit as
-    `Domain.auto_renew`. `hosting_provider` (migration 23) is a plain
-    string, not a foreign key - same "managed reference list, but the
-    account stores the chosen name" shape as `Domain.registrar`, picked
-    from a `<select>` sourced from `HostingProvider` (see below) on
-    `AccountForm.tsx`, not typed freehand."""
+    `Domain.auto_renew`. Which hosting provider(s) this account uses is
+    **not** a field here (that was migration 23's `hosting_provider`
+    string - superseded by migration 24, see `AccountHostingProvider`
+    below: an account can use more than one, each with its own metadata,
+    so a single column can't hold it)."""
 
     id: str
     organisation_id: str
@@ -109,7 +109,6 @@ class Account:
     county: str | None
     postcode: str | None
     status: AccountStatus
-    hosting_provider: str | None
     created_at: datetime
 
 
@@ -235,19 +234,20 @@ class RegistrarUsage:
 @dataclass
 class HostingProvider:
     """A hosting provider a business uses - a managed reference list, kept
-    so `Account.hosting_provider` can be picked from a `<select>` instead
-    of typed freehand, same "avoid GoDaddy/godaddy/Go Daddy drift" reasoning
-    as `Registrar` above, and structurally identical to it: organisation-
-    scoped, full CRUD, tenant ownership checked directly. Managed from the
-    Domains page alongside `Registrar` (confirmed with the user - domains
-    and accounts are both "things this business tracks the provider of"),
-    even though it's an `Account` field, not a `Domain` one.
-    `HostingProviderService.delete_hosting_provider` refuses to delete one
-    that at least one `Account` currently names (`Conflict`, see
-    `HostingProviderUsage` below) - same application-level guard as
-    `Registrar`'s, and for the same reason (nothing would actually break,
-    since `Account.hosting_provider` stores the name as a plain string, but
-    silently orphaning the reference would be confusing).
+    so an account's hosting-provider link(s) can be picked from a
+    `<select>` instead of typed freehand, same "avoid GoDaddy/godaddy/Go
+    Daddy drift" reasoning as `Registrar` above, and structurally
+    identical to it: organisation-scoped, full CRUD, tenant ownership
+    checked directly. Managed from the Domains page alongside `Registrar`
+    (confirmed with the user - domains and accounts are both "things this
+    business tracks the provider of"), even though it's linked to
+    `Account`, not `Domain`. `HostingProviderService.delete_hosting_provider`
+    refuses to delete one that at least one `AccountHostingProvider` link
+    still references (`Conflict`, see `HostingProviderUsage` below) - same
+    application-level guard as `Registrar`'s, and for the same reason
+    (nothing would actually break at the database level - no FK
+    enforcement - but silently orphaning the reference would be
+    confusing).
 
     `name` is required (non-blank, enforced in `HostingProviderService`,
     never in storage); `notes` is optional free text, same convention as
@@ -263,19 +263,71 @@ class HostingProvider:
 
 @dataclass
 class HostingProviderUsage:
-    """A `HostingProvider` alongside how many `Account`s currently name it
-    - computed at request time by
+    """A `HostingProvider` alongside how many distinct `Account`s
+    currently link to it - computed at request time by
     `HostingProviderService.list_hosting_providers_with_usage`/
-    `get_hosting_provider_usage`, never persisted. Matched by the
-    provider's current `name` against `Account.hosting_provider` (a plain
-    string, not a foreign key), so an account still naming an *old*
-    provider name from before a rename won't count towards the renamed
-    provider's usage - same name-drift tradeoff as `RegistrarUsage`
-    above. No `domain_count` the way `RegistrarUsage` has - a hosting
-    provider isn't a `Domain`-level concern, only an `Account`-level one."""
+    `get_hosting_provider_usage`, backed by
+    `SqliteRepository.count_accounts_by_hosting_provider`, never
+    persisted. Counted via `AccountHostingProvider.hosting_provider_id` (a
+    real reference, not a name match) - unlike `RegistrarUsage` above,
+    there's no name-drift tradeoff here: renaming a `HostingProvider` is
+    reflected in every existing link's usage immediately, since nothing
+    stores the old name anywhere. No `domain_count` the way
+    `RegistrarUsage` has - a hosting provider isn't a `Domain`-level
+    concern, only an `Account`-level one."""
 
     hosting_provider: HostingProvider
     account_count: int
+
+
+@dataclass
+class AccountHostingProvider:
+    """A hosting provider linked to an `Account`, with its own metadata -
+    an account can link the *same* `HostingProvider` more than once (e.g.
+    two separate hosting accounts held there) or several different ones
+    (e.g. one for the website, one for email) - confirmed with the user
+    before building this, replacing migration 23's single
+    `Account.hosting_provider` string (migration 24 drops that column and
+    backfills one link per account that had a value set - see
+    `docs/data-model.md`'s migration list).
+
+    Structurally closest to `ExpenseAttachment`: no `organisation_id` of
+    its own - tenant ownership is resolved via
+    `AccountService`/`self._repository.get_account(...)` first (`NotFound`
+    if missing/wrong organisation), same reasoning as that docstring.
+    Referenced by `hosting_provider_id`, not the provider's name - unlike
+    `Domain.registrar`, this is a dedicated link row rather than a single
+    field on the parent, so there's no reason to accept that convention's
+    name-drift tradeoff (see `HostingProviderUsage` above).
+
+    `notes` (free text, e.g. a support URL or plan tier), `provider_account_id`
+    (the customer/account reference *this business* has at that
+    provider - not this app's own `Account.id`) and `provider_email` (the
+    email address used for that provider) are all optional, captured when
+    linking and editable afterwards via `AccountService.
+    update_hosting_provider_link` (a full replace of this row's own
+    fields, including which `HostingProvider` it points at)."""
+
+    id: str
+    account_id: str
+    hosting_provider_id: str
+    notes: str | None
+    provider_account_id: str | None
+    provider_email: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass
+class AccountHostingProviderWithName:
+    """An `AccountHostingProvider` alongside its hosting provider's
+    *current* name, computed at request time (same "entity + computed
+    display data, never persisted" pattern as `DomainWithAccount` above)
+    so the web UI can show which provider a link points to without a
+    second lookup per row."""
+
+    link: AccountHostingProvider
+    hosting_provider_name: str
 
 
 @dataclass

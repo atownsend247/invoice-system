@@ -42,10 +42,25 @@ export interface Account {
   county: string | null
   postcode: string | null
   status: AccountStatus
-  // A plain string, not a foreign key - see the HostingProvider interface
-  // below and CLAUDE.md.
-  hosting_provider: string | null
   created_at: string
+}
+
+// A hosting provider linked to an Account, with its own metadata - an
+// account can link more than one (e.g. one for the website, one for
+// email), or the same provider twice - see CLAUDE.md and the
+// AccountHostingProvider model. Referenced by hosting_provider_id, a real
+// id (not a name, unlike Domain.registrar) - hosting_provider_name is
+// resolved server-side so the UI doesn't need a second lookup per row.
+export interface AccountHostingProvider {
+  id: string
+  account_id: string
+  hosting_provider_id: string
+  hosting_provider_name: string
+  notes: string | null
+  provider_account_id: string | null
+  provider_email: string | null
+  created_at: string
+  updated_at: string
 }
 
 // A domain name a business tracks - which domain, when it expires, who
@@ -87,10 +102,10 @@ export interface Registrar {
 }
 
 // A business's managed list of hosting providers, used to populate the
-// Account form's hosting-provider <select> - see CLAUDE.md. Managed from
-// the Domains page alongside Registrar, even though it's an Account
-// field, not a Domain one. Account.hosting_provider stores the chosen
-// name as a plain string, not a reference to this row's id.
+// "link a hosting provider" picker on an Account's page - see CLAUDE.md.
+// Managed from the Domains page alongside Registrar, even though it's
+// linked from Account, not Domain. Referenced by AccountHostingProvider's
+// hosting_provider_id (a real id, not a name).
 export interface HostingProvider {
   id: string
   name: string

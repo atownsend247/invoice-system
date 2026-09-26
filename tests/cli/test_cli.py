@@ -2140,7 +2140,7 @@ def test_hosting_provider_create_list_update_delete(tmp_path):
     assert "GoDaddy Hosting" in result.output
 
 
-def test_hosting_provider_delete_blocked_while_an_account_still_names_it(tmp_path):
+def test_hosting_provider_delete_blocked_while_an_account_still_links_it(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()
     runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
@@ -2151,7 +2151,7 @@ def test_hosting_provider_delete_blocked_while_an_account_still_names_it(tmp_pat
     )
     hosting_provider_id = _id_from(result.output, r"Created hosting provider (\S+):")
 
-    runner.invoke(
+    result = runner.invoke(
         cli,
         [
             *_base_args(db_path),
@@ -2165,8 +2165,22 @@ def test_hosting_provider_delete_blocked_while_an_account_still_names_it(tmp_pat
             "a@b.test",
             "--address-line1",
             "1 Main St",
-            "--hosting-provider",
-            "Acme Hosting",
+        ],
+    )
+    account_id = _id_from(result.output, r"Created account (\S+):")
+
+    runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "account",
+            "hosting-provider",
+            "add",
+            account_id,
+            "--user-id",
+            "1",
+            "--hosting-provider-id",
+            hosting_provider_id,
         ],
     )
 
@@ -2180,7 +2194,7 @@ def test_hosting_provider_delete_blocked_while_an_account_still_names_it(tmp_pat
     assert "Acme Hosting" in result.output
 
 
-def test_account_create_and_update_accept_status_and_hosting_provider(tmp_path):
+def test_account_create_and_update_accept_status(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()
     runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
@@ -2201,8 +2215,6 @@ def test_account_create_and_update_accept_status_and_hosting_provider(tmp_path):
             "1 Main St",
             "--status",
             "active",
-            "--hosting-provider",
-            "Acme Hosting",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -2229,6 +2241,112 @@ def test_account_create_and_update_accept_status_and_hosting_provider(tmp_path):
     )
     assert result.exit_code == 0, result.output
     assert f"Updated account {account_id}: Acme" in result.output
+
+
+def test_account_hosting_provider_add_list_update_remove(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    runner.invoke(cli, [*_base_args(db_path), "init-db", "--no-demo"])
+
+    result = runner.invoke(
+        cli,
+        [*_base_args(db_path), "hosting-provider", "create", "--user-id", "1", "--name", "Acme Hosting"],
+    )
+    acme_id = _id_from(result.output, r"Created hosting provider (\S+):")
+    result = runner.invoke(
+        cli,
+        [*_base_args(db_path), "hosting-provider", "create", "--user-id", "1", "--name", "SiteGround"],
+    )
+    siteground_id = _id_from(result.output, r"Created hosting provider (\S+):")
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "account",
+            "create",
+            "--user-id",
+            "1",
+            "--business-name",
+            "Acme",
+            "--email",
+            "a@b.test",
+            "--address-line1",
+            "1 Main St",
+        ],
+    )
+    account_id = _id_from(result.output, r"Created account (\S+):")
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "account",
+            "hosting-provider",
+            "add",
+            account_id,
+            "--user-id",
+            "1",
+            "--hosting-provider-id",
+            acme_id,
+            "--notes",
+            "Website",
+            "--provider-account-id",
+            "ACME-1",
+            "--provider-email",
+            "billing@acme.test",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    link_id = _id_from(result.output, r"\((\S+)\)")
+
+    result = runner.invoke(
+        cli, [*_base_args(db_path), "account", "hosting-provider", "list", account_id, "--user-id", "1"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Acme Hosting" in result.output
+    assert "ACME-1" in result.output
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "account",
+            "hosting-provider",
+            "update",
+            account_id,
+            link_id,
+            "--user-id",
+            "1",
+            "--hosting-provider-id",
+            siteground_id,
+            "--notes",
+            "Mailbox only",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert f"Updated hosting provider link {link_id}" in result.output
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_args(db_path),
+            "account",
+            "hosting-provider",
+            "remove",
+            account_id,
+            link_id,
+            "--user-id",
+            "1",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert f"Removed hosting provider link {link_id}" in result.output
+
+    result = runner.invoke(
+        cli, [*_base_args(db_path), "account", "hosting-provider", "list", account_id, "--user-id", "1"]
+    )
+    assert result.output.strip() == ""
 
 
 def test_settings_show_defaults_then_set_and_show_again(tmp_path):

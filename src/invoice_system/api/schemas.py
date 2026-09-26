@@ -29,7 +29,6 @@ class AccountIn(BaseModel):
     # one selected) - same full-replace-with-a-default reasoning as every
     # other optional field here, see CLAUDE.md.
     status: AccountStatus = AccountStatus.NEW
-    hosting_provider: str | None = None
 
 
 class AccountOut(BaseModel):
@@ -44,7 +43,6 @@ class AccountOut(BaseModel):
     county: str | None
     postcode: str | None
     status: str
-    hosting_provider: str | None
     created_at: datetime
 
     @classmethod
@@ -61,8 +59,45 @@ class AccountOut(BaseModel):
             county=account.county,
             postcode=account.postcode,
             status=account.status.value,
-            hosting_provider=account.hosting_provider,
             created_at=account.created_at,
+        )
+
+
+class AccountHostingProviderIn(BaseModel):
+    """`POST`/`PUT` body for a hosting-provider link - a full replace of
+    the link's own fields, including which HostingProvider it points at
+    (see AccountService.update_hosting_provider_link)."""
+
+    hosting_provider_id: str
+    notes: str | None = None
+    provider_account_id: str | None = None
+    provider_email: str | None = None
+
+
+class AccountHostingProviderOut(BaseModel):
+    id: str
+    account_id: str
+    hosting_provider_id: str
+    hosting_provider_name: str
+    notes: str | None
+    provider_account_id: str | None
+    provider_email: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_model(cls, linked) -> "AccountHostingProviderOut":
+        link = linked.link
+        return cls(
+            id=link.id,
+            account_id=link.account_id,
+            hosting_provider_id=link.hosting_provider_id,
+            hosting_provider_name=linked.hosting_provider_name,
+            notes=link.notes,
+            provider_account_id=link.provider_account_id,
+            provider_email=link.provider_email,
+            created_at=link.created_at,
+            updated_at=link.updated_at,
         )
 
 

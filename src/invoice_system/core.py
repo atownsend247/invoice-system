@@ -10,6 +10,8 @@ from .ids import IdGenerator
 from .ids import new_id as default_new_id
 from .models import (
     Account,
+    AccountHostingProvider,
+    AccountHostingProviderWithName,
     AccountStatus,
     ActivityEvent,
     ActivityEventType,
@@ -113,7 +115,6 @@ class AccountService:
         county: str | None = None,
         postcode: str | None = None,
         status: AccountStatus = AccountStatus.NEW,
-        hosting_provider: str | None = None,
     ) -> Account:
         if not business_name.strip():
             raise ValidationFailed("business_name is required")
@@ -134,7 +135,6 @@ class AccountService:
             county=_blank_to_none(county),
             postcode=_blank_to_none(postcode),
             status=status,
-            hosting_provider=_blank_to_none(hosting_provider),
             created_at=self._clock(),
         )
         return self._repository.create_account(account)
@@ -178,7 +178,6 @@ class AccountService:
         county: str | None = None,
         postcode: str | None = None,
         status: AccountStatus = AccountStatus.NEW,
-        hosting_provider: str | None = None,
     ) -> Account:
         existing = self.get_account(organisation_id, account_id)
         if not business_name.strip():
@@ -197,8 +196,84 @@ class AccountService:
         existing.county = _blank_to_none(county)
         existing.postcode = _blank_to_none(postcode)
         existing.status = status
-        existing.hosting_provider = _blank_to_none(hosting_provider)
         return self._repository.update_account(existing)
+
+    def add_hosting_provider_link(
+        self,
+        organisation_id: str,
+        account_id: str,
+        *,
+        hosting_provider_id: str,
+        notes: str | None = None,
+        provider_account_id: str | None = None,
+        provider_email: str | None = None,
+    ) -> AccountHostingProviderWithName:
+        self.get_account(organisation_id, account_id)  # 404s if missing/wrong organisation
+        self._get_hosting_provider(organisation_id, hosting_provider_id)
+        now = self._clock()
+        link = AccountHostingProvider(
+            id=self._new_id(),
+            account_id=account_id,
+            hosting_provider_id=hosting_provider_id,
+            notes=_blank_to_none(notes),
+            provider_account_id=_blank_to_none(provider_account_id),
+            provider_email=_blank_to_none(provider_email),
+            created_at=now,
+            updated_at=now,
+        )
+        created = self._repository.create_account_hosting_provider(link)
+        return self._with_provider_name(organisation_id, created)
+
+    def list_hosting_provider_links(
+        self, organisation_id: str, account_id: str
+    ) -> list[AccountHostingProviderWithName]:
+        self.get_account(organisation_id, account_id)  # 404s if missing/wrong organisation
+        return self._repository.list_account_hosting_providers(account_id)
+
+    def update_hosting_provider_link(
+        self,
+        organisation_id: str,
+        account_id: str,
+        link_id: str,
+        *,
+        hosting_provider_id: str,
+        notes: str | None = None,
+        provider_account_id: str | None = None,
+        provider_email: str | None = None,
+    ) -> AccountHostingProviderWithName:
+        self.get_account(organisation_id, account_id)  # 404s if missing/wrong organisation
+        existing = self._get_hosting_provider_link(account_id, link_id)
+        self._get_hosting_provider(organisation_id, hosting_provider_id)
+        existing.hosting_provider_id = hosting_provider_id
+        existing.notes = _blank_to_none(notes)
+        existing.provider_account_id = _blank_to_none(provider_account_id)
+        existing.provider_email = _blank_to_none(provider_email)
+        existing.updated_at = self._clock()
+        updated = self._repository.update_account_hosting_provider(existing)
+        return self._with_provider_name(organisation_id, updated)
+
+    def delete_hosting_provider_link(self, organisation_id: str, account_id: str, link_id: str) -> None:
+        self.get_account(organisation_id, account_id)  # 404s if missing/wrong organisation
+        self._get_hosting_provider_link(account_id, link_id)  # 404s if not one of this account's own links
+        self._repository.delete_account_hosting_provider(account_id, link_id)
+
+    def _get_hosting_provider(self, organisation_id: str, hosting_provider_id: str) -> HostingProvider:
+        hosting_provider = self._repository.get_hosting_provider(organisation_id, hosting_provider_id)
+        if hosting_provider is None:
+            raise NotFound(f"hosting provider {hosting_provider_id} not found")
+        return hosting_provider
+
+    def _get_hosting_provider_link(self, account_id: str, link_id: str) -> AccountHostingProvider:
+        link = self._repository.get_account_hosting_provider(account_id, link_id)
+        if link is None:
+            raise NotFound(f"hosting provider link {link_id} not found")
+        return link
+
+    def _with_provider_name(
+        self, organisation_id: str, link: AccountHostingProvider
+    ) -> AccountHostingProviderWithName:
+        hosting_provider = self._get_hosting_provider(organisation_id, link.hosting_provider_id)
+        return AccountHostingProviderWithName(link=link, hosting_provider_name=hosting_provider.name)
 
 
 def _blank_to_none(value: str | None) -> str | None:
@@ -419,13 +494,11 @@ class RegistrarService:
 
 class HostingProviderService:
     """A business's managed list of hosting providers, used to populate
-    the Account form's hosting-provider dropdown (see
+    the "link a hosting provider" picker on an Account's page (see
     models.HostingProvider). Structurally identical to RegistrarService -
-    organisation-scoped, tenant ownership checked directly, supports
-    delete since nothing holds a foreign key to a HostingProvider
-    (Account.hosting_provider stores the chosen name as a plain string,
-    not a reference). delete_hosting_provider refuses (Conflict) to
-    delete one that at least one Account currently names - see
+    organisation-scoped, tenant ownership checked directly.
+    delete_hosting_provider refuses (Conflict) to delete one that at
+    least one AccountHostingProvider link still references - see
     get_hosting_provider_usage/list_hosting_providers_with_usage and
     models.HostingProviderUsage."""
 
@@ -472,7 +545,7 @@ class HostingProviderService:
 
     @staticmethod
     def _usage(hosting_provider: HostingProvider, counts: dict[str, int]) -> HostingProviderUsage:
-        account_count = counts.get(hosting_provider.name, 0)
+        account_count = counts.get(hosting_provider.id, 0)
         return HostingProviderUsage(hosting_provider=hosting_provider, account_count=account_count)
 
     def update_hosting_provider(

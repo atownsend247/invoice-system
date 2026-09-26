@@ -116,34 +116,55 @@ def test_list_hosting_providers_with_usage_reports_zero_for_an_unused_provider(a
 
 
 def test_list_hosting_providers_with_usage_counts_distinct_accounts(application, organisation_id):
-    application.hosting_providers.create_hosting_provider(organisation_id, name="Acme Hosting")
-    application.accounts.create_account(
-        organisation_id=organisation_id,
-        business_name="A",
-        email="a@b.test",
-        address_line1="1 Main St",
-        hosting_provider="Acme Hosting",
+    hosting_provider = application.hosting_providers.create_hosting_provider(
+        organisation_id, name="Acme Hosting"
     )
-    application.accounts.create_account(
-        organisation_id=organisation_id,
-        business_name="B",
-        email="b@b.test",
-        address_line1="2 High St",
-        hosting_provider="Acme Hosting",
+    account_a = application.accounts.create_account(
+        organisation_id=organisation_id, business_name="A", email="a@b.test", address_line1="1 Main St"
+    )
+    account_b = application.accounts.create_account(
+        organisation_id=organisation_id, business_name="B", email="b@b.test", address_line1="2 High St"
+    )
+    application.accounts.add_hosting_provider_link(
+        organisation_id, account_a.id, hosting_provider_id=hosting_provider.id
+    )
+    application.accounts.add_hosting_provider_link(
+        organisation_id, account_b.id, hosting_provider_id=hosting_provider.id
     )
 
     [usage] = application.hosting_providers.list_hosting_providers_with_usage(organisation_id)
     assert usage.account_count == 2
 
 
+def test_list_hosting_providers_with_usage_counts_an_account_linked_twice_only_once(
+    application, organisation_id
+):
+    hosting_provider = application.hosting_providers.create_hosting_provider(
+        organisation_id, name="Acme Hosting"
+    )
+    account = application.accounts.create_account(
+        organisation_id=organisation_id, business_name="A", email="a@b.test", address_line1="1 Main St"
+    )
+    application.accounts.add_hosting_provider_link(
+        organisation_id, account.id, hosting_provider_id=hosting_provider.id
+    )
+    application.accounts.add_hosting_provider_link(
+        organisation_id, account.id, hosting_provider_id=hosting_provider.id
+    )
+
+    [usage] = application.hosting_providers.list_hosting_providers_with_usage(organisation_id)
+    assert usage.account_count == 1
+
+
 def test_list_hosting_providers_with_usage_is_isolated_per_organisation(application, organisation_id):
-    application.hosting_providers.create_hosting_provider(organisation_id, name="Acme Hosting")
-    application.accounts.create_account(
-        organisation_id=organisation_id,
-        business_name="A",
-        email="a@b.test",
-        address_line1="1 Main St",
-        hosting_provider="Acme Hosting",
+    hosting_provider = application.hosting_providers.create_hosting_provider(
+        organisation_id, name="Acme Hosting"
+    )
+    account = application.accounts.create_account(
+        organisation_id=organisation_id, business_name="A", email="a@b.test", address_line1="1 Main St"
+    )
+    application.accounts.add_hosting_provider_link(
+        organisation_id, account.id, hosting_provider_id=hosting_provider.id
     )
 
     other_organisation_id = application.organisations.get_or_create_for_user("user-2")
@@ -152,39 +173,36 @@ def test_list_hosting_providers_with_usage_is_isolated_per_organisation(applicat
     assert other_usage.account_count == 0
 
 
-def test_get_hosting_provider_usage_matches_by_current_name_not_a_stale_one(application, organisation_id):
+def test_get_hosting_provider_usage_reflects_a_rename_immediately(application, organisation_id):
     hosting_provider = application.hosting_providers.create_hosting_provider(
         organisation_id, name="Acme Hosting"
     )
-    application.accounts.create_account(
-        organisation_id=organisation_id,
-        business_name="A",
-        email="a@b.test",
-        address_line1="1 Main St",
-        hosting_provider="Acme Hosting",
+    account = application.accounts.create_account(
+        organisation_id=organisation_id, business_name="A", email="a@b.test", address_line1="1 Main St"
+    )
+    application.accounts.add_hosting_provider_link(
+        organisation_id, account.id, hosting_provider_id=hosting_provider.id
     )
 
-    # An account recorded the old name as a plain string (see
-    # models.Account) - renaming the hosting provider doesn't
-    # retroactively update it, so usage under the *new* name is genuinely
-    # zero even though one account still exists that used to match.
+    # The link references hosting_provider_id, not a name (see
+    # AccountHostingProvider's docstring) - unlike Domain.registrar's
+    # plain-string convention, a rename doesn't lose the usage count.
     application.hosting_providers.update_hosting_provider(
         organisation_id, hosting_provider.id, name="Big Hosting Co"
     )
     usage = application.hosting_providers.get_hosting_provider_usage(organisation_id, hosting_provider.id)
-    assert usage.account_count == 0
+    assert usage.account_count == 1
 
 
-def test_delete_hosting_provider_still_used_by_an_account_raises_conflict(application, organisation_id):
+def test_delete_hosting_provider_still_linked_to_an_account_raises_conflict(application, organisation_id):
     hosting_provider = application.hosting_providers.create_hosting_provider(
         organisation_id, name="Acme Hosting"
     )
-    application.accounts.create_account(
-        organisation_id=organisation_id,
-        business_name="A",
-        email="a@b.test",
-        address_line1="1 Main St",
-        hosting_provider="Acme Hosting",
+    account = application.accounts.create_account(
+        organisation_id=organisation_id, business_name="A", email="a@b.test", address_line1="1 Main St"
+    )
+    application.accounts.add_hosting_provider_link(
+        organisation_id, account.id, hosting_provider_id=hosting_provider.id
     )
     with pytest.raises(Conflict):
         application.hosting_providers.delete_hosting_provider(organisation_id, hosting_provider.id)
@@ -195,25 +213,17 @@ def test_delete_hosting_provider_still_used_by_an_account_raises_conflict(applic
     )
 
 
-def test_delete_hosting_provider_succeeds_once_its_accounts_are_reassigned(application, organisation_id):
+def test_delete_hosting_provider_succeeds_once_its_links_are_removed(application, organisation_id):
     hosting_provider = application.hosting_providers.create_hosting_provider(
         organisation_id, name="Acme Hosting"
     )
     account = application.accounts.create_account(
-        organisation_id=organisation_id,
-        business_name="A",
-        email="a@b.test",
-        address_line1="1 Main St",
-        hosting_provider="Acme Hosting",
+        organisation_id=organisation_id, business_name="A", email="a@b.test", address_line1="1 Main St"
     )
-    application.accounts.update_account(
-        organisation_id,
-        account.id,
-        business_name="A",
-        email="a@b.test",
-        address_line1="1 Main St",
-        hosting_provider=None,
+    link = application.accounts.add_hosting_provider_link(
+        organisation_id, account.id, hosting_provider_id=hosting_provider.id
     )
+    application.accounts.delete_hosting_provider_link(organisation_id, account.id, link.link.id)
 
     application.hosting_providers.delete_hosting_provider(organisation_id, hosting_provider.id)
     with pytest.raises(NotFound):
